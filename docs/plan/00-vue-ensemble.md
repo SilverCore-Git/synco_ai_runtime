@@ -154,7 +154,29 @@ Invariants **ajoutés** par cette spécification (mêmes règles : test qui éch
 | Un `encryptionScheme` ne régresse jamais (pas de passage d'un schéma chiffré à `null` ni de `conv-gcm1-v1` à `gateway-aes-gcm-v1`) | 03 §6, 07 §2 | L03 |
 | Une clé créée par le runtime porte une enveloppe `rt1` vérifiable par les clients à jour, et reste acceptée (TOFU) par les clients anciens | 03 §10 | L07 (production), L10 (vérification), L01 (vecteur) |
 
-## 5. Décisions ouvertes pour la porte A
+## 5. Décisions de la porte A (tranchées le 2026-11-18)
+
+Ce tableau **fait foi**. Les analyses d'options des sections suivantes sont conservées pour mémoire ;
+partout où la spec écrit « dépend de Dx », appliquer la valeur ci-dessous.
+
+| # | Décision retenue |
+|---|---|
+| D1 | **Option A** : les clés API des fournisseurs LLM sont dans la configuration du runtime. `GET /api/runtime/v1/llm-policy` ne renvoie aucun secret ; la route `llm-credentials` **n'existe pas** ; `Organization.aiProviderKeys` n'est jamais lu pour le mode runtime. La passerelle est appelée avec un ticket `sgt1`. |
+| D2 | **Option A** : la crate vit dans `crates/synco-e2ee` du workspace du runtime, importable par dépendance git. |
+| D3 | Licence ajoutée par l'utilisateur (`LICENSE`, commit `cc6e0b9`) : **tous droits réservés**, code publié à des fins de transparence. La crate n'est réutilisable que par les projets de Silvercore ; P8 s'entend dans ce sens. |
+| D4 | **Option A** : 7 jours par défaut, renouvellement à l'ouverture de Synco quand il reste moins de 50 % ; maximum réglable par l'admin entre 1 h et 30 jours (09 §1). |
+| D5 | **Option A** : politique par outil `auto` / `ask` / `deny`, défaut selon le niveau de risque (affiné par L14 à la porte E) ; `ask` → `awaiting_confirmation` + notification ; délai 7 jours puis `failed` (`confirmation_timeout`). |
+| D6 | Valeurs proposées en 09 §2 **adoptées**, à réviser après les mesures de L06 ; l'org peut les abaisser, jamais les relever. |
+| D7 | **Option A** : le régime `server` est conservé tel quel. |
+| D10 | **Option A** : pas de relais par l'API en v1 ; mode dégradé de 05 §9 ; le runtime doit présenter un certificat TLS reconnu par les navigateurs (Q7). |
+
+Questions du §6, réponses de la porte A : **Q1** clé par conversation `CK`, `AiSessionKey` jamais
+déléguée (accepté) ; **Q2** affichage du signataire et de l'empreinte avant la première délégation,
+sans exiger la signature du propriétaire, risque résiduel documenté ; **Q3**, **Q4** (lecture actuelle :
+`exp` dans l'enveloppe de tête et le mandat), **Q5**, **Q6**, **Q7**, **Q8**, **Q10** : propositions de
+cette spec acceptées ; **Q9** : les documents du dossier de projet sont corrigés (séparateur `:`).
+
+## 5 bis. Analyse des décisions (pour mémoire)
 
 Les décisions D4 et D6 sont traitées dans [09-limites-et-valeurs-par-defaut.md](09-limites-et-valeurs-par-defaut.md).
 Les autres sont présentées ici. La spécification est écrite pour **tenir quel que soit le choix** ; les

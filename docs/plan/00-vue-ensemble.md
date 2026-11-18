@@ -132,7 +132,7 @@ le test qui échoue sans la protection.
 | L'API ne sert au runtime que les données chiffrées de l'org de la délégation, jamais une autre org ni les DM | 04 §4, §5 | L03 |
 | Une délégation expirée ou révoquée bloque l'accès côté API même si le runtime l'ignore | 03 §8, 04 §3 | L03 |
 | Une enveloppe de délégation copiée vers un autre runtime / org / utilisateur ne s'ouvre pas | 03 §3, §4 | L01 (vecteurs négatifs), L10 (côté TS) ; L05 vérifie aussi le mandat |
-| Le client refuse de déléguer si le certificat n'est pas signé par un admin épinglé, si la clé a changé ou si le défi échoue | 01 §5–§7 | L10 |
+| Le client refuse de déléguer si le certificat n'est pas signé par un admin épinglé, si la clé a changé ou si le défi échoue | 01 §5, §6.3, §8 | L10 |
 | Le client ne transmet jamais l'AK ni une clé privée d'identité au runtime | 03 §2 | L10 (inspection des charges) ; L01 (la crate n'a pas d'API pour sceller l'AK vers un runtime) |
 | Un worker ne lit pas `/proc` des autres, le disque hôte, ni n'ouvre de connexion non autorisée | 06 §6 | L06 |
 | Un worker qui dépasse son plafond RAM/CPU est tué sans affecter les autres | 06 §6, 09 §2 | L06 |

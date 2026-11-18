@@ -128,8 +128,14 @@ runtime a donc sa propre clé `CK`, et le runtime ne reçoit que les `CK` des co
    (`keyPinning.ts:22`) ;
 4. dépose le tout avec la bascule (§6.4) : modèle `AiConversationKey` (07 §3).
 
-Lecture : RSA-OAEP → `verifyKeyEnvelopeIfPresent(…, "aiconv:<sessionId>", 1, …)` →
-`pinOrCheckKey(…)`, comme `ensureAiSessionKey` (`AiSessionKeyService.ts:96-109`).
+Lecture : `GET /api/orgs/:orgId/ai/sessions/:sessionId/key` (propriétaire seulement) →
+`{ encryptedKey, version, creatorId, commitment, signature }` ; RSA-OAEP →
+`verifyKeyEnvelopeIfPresent(…, "aiconv:<sessionId>", 1, …)` → `pinOrCheckKey(…)`, comme
+`ensureAiSessionKey` (`AiSessionKeyService.ts:96-109`).
+
+Tant qu'une conversation est en régime `runtime`, seul le runtime écrit son historique : la route
+existante `PATCH /api/orgs/:orgId/ai/sessions/:sessionId` (`aiSessions.ts:136`) refuse alors
+`messages`, `status` et `pendingToolCall` (`409 runtime_owned`) ; le titre reste modifiable (chiffré).
 
 ### 6.3 Format des champs chiffrés (inchangé)
 

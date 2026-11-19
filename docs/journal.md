@@ -63,3 +63,13 @@ reproductibles (WebCrypto non déterministe), seulement vérifiées.
 **Suite** : L05 (superviseur : mandat, enveloppe, entrées, défi), L07 (champs `gcm1`, `rt1`), L10
 (client : fonctions TS `runtimeCert.ts`/`runtimeDelegation.ts`). Tickets `srt1`/`sgt1` et signature
 des requêtes internes : L02 (`crates/runtime-protocol`, hors de cette crate).
+
+### 2026-11-19 — L01, corrections après revue cryptographique
+
+`zeroize` activé sur aes-gcm/hmac/sha2 ; `verify_mandate` vérifie le mandat sur le wrap ouvert
+(scénario « mandat authentique + enveloppe forgée par l'API » testé), variante
+`verify_mandate_offline_from_wrap_hash` réservée au contrôle `rt1`, nouvelle `accept_delegation`
+(03 §4 étapes 1–3 puis §3) ; `UrlPolicy` explicite pour l'URL du certificat ; URL canonique unique
+(segments `.`/`..`, hôtes numériques ou `0x…` refusés sauf IPv4 décimal pointé canonique) ; cas
+négatifs renforcés (kind hors liste déchiffrable mais refusé, rt1, scope) ; `seal_with_iv` interne.
+Remarques consignées au README : malléabilité ECDSA, `legacy-seal` additive (contrôle CI, L09).

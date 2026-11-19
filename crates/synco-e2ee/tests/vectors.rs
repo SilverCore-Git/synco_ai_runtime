@@ -20,6 +20,7 @@ use synco_e2ee::keys::{self, KeyEnvelopeSignature};
 use synco_e2ee::primitives::{hkdf32, sha256};
 use synco_e2ee::runtime_cert::{
     self, ChallengePurpose, ChallengeRequest, RuntimeCertificate, RuntimePublicKeys, SignedRuntimeCertificate,
+    UrlPolicy,
 };
 use synco_e2ee::session;
 use synco_e2ee::{Error, RandomSource, Result, SymmetricKey};
@@ -134,29 +135,37 @@ fn certificat_du_runtime() {
     let v = load("runtime-cert.json");
     let admin = EcPublicKey::from_canonical(s(&v, "adminSignKey")).unwrap();
     let cert = certificate(&v["certificate"]);
-    assert_eq!(cert.cert_bytes().unwrap(), s(&v, "certBytes"));
-    cert.verify(&admin, s(&v, "signature")).unwrap();
+    assert_eq!(cert.cert_bytes(UrlPolicy::Production).unwrap(), s(&v, "certBytes"));
+    cert.verify(&admin, s(&v, "signature"), UrlPolicy::Production).unwrap();
 
-    let stored = SignedRuntimeCertificate::from_json(s(&v, "storedJson")).unwrap();
+    let stored = SignedRuntimeCertificate::from_json(s(&v, "storedJson"), UrlPolicy::Production).unwrap();
     assert_eq!(stored.certificate, cert);
-    stored.certificate.verify(&admin, &stored.signature).unwrap();
+    stored.certificate.verify(&admin, &stored.signature, UrlPolicy::Production).unwrap();
 
     for c in cases(&v, "cases") {
         // Un champ hors contrainte peut ne pas même se lire (clé invalide…) : cert_invalid.
-        let got = cert_outcome(&c["certificate"], &admin, s(c, "signature"));
+        let policy =
+            if c["allowDevHttp"].as_bool() == Some(true) { UrlPolicy::DevelopmentHttp } else { UrlPolicy::Production };
+        let got = cert_outcome(&c["certificate"], &admin, s(c, "signature"), policy);
         assert_eq!(got, s(c, "expect"), "{}", s(c, "name"));
     }
 
     // Forme stockée : champ inconnu ou version inconnue refusés.
     let mut extra: Value = serde_json::from_str(s(&v, "storedJson")).unwrap();
     extra["admin"] = Value::Bool(true);
-    assert_eq!(SignedRuntimeCertificate::from_json(&extra.to_string()).unwrap_err(), Error::CertInvalid);
+    assert_eq!(
+        SignedRuntimeCertificate::from_json(&extra.to_string(), UrlPolicy::Production).unwrap_err(),
+        Error::CertInvalid
+    );
     let mut v2: Value = serde_json::from_str(s(&v, "storedJson")).unwrap();
     v2["v"] = Value::from(2);
-    assert_eq!(SignedRuntimeCertificate::from_json(&v2.to_string()).unwrap_err(), Error::CertInvalid);
+    assert_eq!(
+        SignedRuntimeCertificate::from_json(&v2.to_string(), UrlPolicy::Production).unwrap_err(),
+        Error::CertInvalid
+    );
 }
 
-fn cert_outcome(c: &Value, admin: &EcPublicKey, signature: &str) -> &'static str {
+fn cert_outcome(c: &Value, admin: &EcPublicKey, signature: &str, policy: UrlPolicy) -> &'static str {
     let keys = RuntimePublicKeys::from_parts(
         s(&c["keys"], "sig"),
         EcPublicKey::from_jwk(s(&c["keys"], "kex")).unwrap(),
@@ -172,7 +181,7 @@ fn cert_outcome(c: &Value, admin: &EcPublicKey, signature: &str) -> &'static str
         issued_at: u(c, "issuedAt"),
         serial: u(c, "serial"),
     };
-    outcome(&cert.verify(admin, signature))
+    outcome(&cert.verify(admin, signature, policy))
 }
 
 fn challenge_request(v: &Value) -> ChallengeRequest {

@@ -9,7 +9,9 @@ use synco_e2ee::delegation::{self, DelegationContext, DelegationKey, EntryKind, 
 use synco_e2ee::ec::{EcPublicKey, EcSigningKey, EcdhSecret};
 use synco_e2ee::identity::{self, IdentityTransition};
 use synco_e2ee::keys;
-use synco_e2ee::runtime_cert::{self, ChallengePurpose, ChallengeRequest, RuntimeCertificate, RuntimePublicKeys};
+use synco_e2ee::runtime_cert::{
+    self, ChallengePurpose, ChallengeRequest, RuntimeCertificate, RuntimePublicKeys, UrlPolicy,
+};
 use synco_e2ee::session::{self, FieldName};
 use synco_e2ee::{Error, OsRandom, SymmetricKey, device};
 
@@ -271,14 +273,27 @@ fn certificat_et_defi() {
         issued_at: 1_795_000_000,
         serial: 1,
     };
-    let sig = cert.sign(&admin).unwrap();
-    cert.verify(&admin.public_key().unwrap(), &sig).unwrap();
+    let sig = cert.sign(&admin, UrlPolicy::Production).unwrap();
+    cert.verify(&admin.public_key().unwrap(), &sig, UrlPolicy::Production).unwrap();
     let mut other = cert.clone();
     other.serial = 2;
-    assert_eq!(other.verify(&admin.public_key().unwrap(), &sig).unwrap_err(), Error::CertBadSignature);
+    assert_eq!(
+        other.verify(&admin.public_key().unwrap(), &sig, UrlPolicy::Production).unwrap_err(),
+        Error::CertBadSignature
+    );
     let mut bad = cert.clone();
     bad.url = "https://Runtime.example.com/".into();
-    assert_eq!(bad.verify(&admin.public_key().unwrap(), &sig).unwrap_err(), Error::CertInvalid);
+    assert_eq!(bad.verify(&admin.public_key().unwrap(), &sig, UrlPolicy::Production).unwrap_err(), Error::CertInvalid);
+    // http://127.0.0.1 : refusé sauf drapeau de développement explicite.
+    let mut dev = cert.clone();
+    dev.url = "http://127.0.0.1:8080".into();
+    assert_eq!(dev.sign(&admin, UrlPolicy::Production).unwrap_err(), Error::CertInvalid);
+    let dev_sig = dev.sign(&admin, UrlPolicy::DevelopmentHttp).unwrap();
+    assert_eq!(
+        dev.verify(&admin.public_key().unwrap(), &dev_sig, UrlPolicy::Production).unwrap_err(),
+        Error::CertInvalid
+    );
+    dev.verify(&admin.public_key().unwrap(), &dev_sig, UrlPolicy::DevelopmentHttp).unwrap();
 
     let client = EcdhSecret::from_scalar(&[0x66; 32]).unwrap();
     let request = ChallengeRequest {

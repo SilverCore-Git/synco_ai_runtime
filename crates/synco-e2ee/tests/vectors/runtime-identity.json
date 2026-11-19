@@ -281,6 +281,90 @@
       "canonical": null
     },
     {
+      "name": "segment . dans le chemin",
+      "input": "https://runtime.example.com/a/./b",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "segment .. dans le chemin",
+      "input": "https://runtime.example.com/a/../b",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "segment .. final",
+      "input": "https://runtime.example.com/a/..",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "segment ... admis (pas un point de chemin)",
+      "input": "https://runtime.example.com/...",
+      "allowDevHttp": false,
+      "expect": "ok",
+      "canonical": "https://runtime.example.com/..."
+    },
+    {
+      "name": "hôte entier décimal (2130706433)",
+      "input": "https://2130706433",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "dernier label hexadécimal (0x7f.1)",
+      "input": "https://1.0x7f",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "IPv4 abrégée (0x7f.1)",
+      "input": "https://0x7f.1",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "IPv4 avec zéro de tête",
+      "input": "https://127.0.0.01",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "IPv4 à cinq parties",
+      "input": "https://1.2.3.4.5",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "IPv4 octet > 255",
+      "input": "https://1.2.3.256",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "IPv4 décimal pointé canonique",
+      "input": "https://192.0.2.10:8443",
+      "allowDevHttp": false,
+      "expect": "ok",
+      "canonical": "https://192.0.2.10:8443"
+    },
+    {
+      "name": "TLD composé de lettres hexadécimales (cafe)",
+      "input": "https://runtime.cafe",
+      "allowDevHttp": false,
+      "expect": "ok",
+      "canonical": "https://runtime.cafe"
+    },
+    {
       "name": "hôte non ASCII (signe kelvin)",
       "input": "https://Kelvin.example.com",
       "allowDevHttp": false,

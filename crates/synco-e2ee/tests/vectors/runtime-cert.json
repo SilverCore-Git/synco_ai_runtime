@@ -15,8 +15,8 @@
     "serial": 1
   },
   "certBytes": "synco-rt-cert-v1|cm3orgexample0000000000001|7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f|https://runtime.example.com|0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc|{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}|{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}|11111111-2222-4333-8444-555555555555|1795000000|1",
-  "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-  "storedJson": "{\"v\":1,\"orgId\":\"cm3orgexample0000000000001\",\"runtimeId\":\"7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\",\"url\":\"https://runtime.example.com\",\"keys\":{\"sig\":\"0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc\",\"kex\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"},\"csk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}},\"adminId\":\"11111111-2222-4333-8444-555555555555\",\"issuedAt\":1795000000,\"serial\":1,\"signature\":\"xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==\"}",
+  "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+  "storedJson": "{\"v\":1,\"orgId\":\"cm3orgexample0000000000001\",\"runtimeId\":\"7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\",\"url\":\"https://runtime.example.com\",\"keys\":{\"sig\":\"0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc\",\"kex\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"},\"csk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}},\"adminId\":\"11111111-2222-4333-8444-555555555555\",\"issuedAt\":1795000000,\"serial\":1,\"signature\":\"b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==\"}",
   "cases": [
     {
       "name": "certificat valide",
@@ -33,8 +33,9 @@
         "issuedAt": 1795000000,
         "serial": 1
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-      "expect": "ok"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "ok",
+      "allowDevHttp": false
     },
     {
       "name": "orgId modifié",
@@ -51,8 +52,9 @@
         "issuedAt": 1795000000,
         "serial": 1
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-      "expect": "cert_bad_signature"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "cert_bad_signature",
+      "allowDevHttp": false
     },
     {
       "name": "runtimeId modifié",
@@ -69,8 +71,9 @@
         "issuedAt": 1795000000,
         "serial": 1
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-      "expect": "cert_bad_signature"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "cert_bad_signature",
+      "allowDevHttp": false
     },
     {
       "name": "url modifié",
@@ -87,8 +90,9 @@
         "issuedAt": 1795000000,
         "serial": 1
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-      "expect": "cert_bad_signature"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "cert_bad_signature",
+      "allowDevHttp": false
     },
     {
       "name": "sig modifié",
@@ -105,8 +109,9 @@
         "issuedAt": 1795000000,
         "serial": 1
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-      "expect": "cert_bad_signature"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "cert_bad_signature",
+      "allowDevHttp": false
     },
     {
       "name": "kex modifié",
@@ -123,8 +128,9 @@
         "issuedAt": 1795000000,
         "serial": 1
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-      "expect": "cert_bad_signature"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "cert_bad_signature",
+      "allowDevHttp": false
     },
     {
       "name": "csk modifié",
@@ -141,8 +147,9 @@
         "issuedAt": 1795000000,
         "serial": 1
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-      "expect": "cert_bad_signature"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "cert_bad_signature",
+      "allowDevHttp": false
     },
     {
       "name": "adminId modifié",
@@ -159,8 +166,9 @@
         "issuedAt": 1795000000,
         "serial": 1
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-      "expect": "cert_bad_signature"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "cert_bad_signature",
+      "allowDevHttp": false
     },
     {
       "name": "issuedAt modifié",
@@ -177,8 +185,9 @@
         "issuedAt": 1795000001,
         "serial": 1
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-      "expect": "cert_bad_signature"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "cert_bad_signature",
+      "allowDevHttp": false
     },
     {
       "name": "serial modifié",
@@ -195,8 +204,9 @@
         "issuedAt": 1795000000,
         "serial": 2
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-      "expect": "cert_bad_signature"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "cert_bad_signature",
+      "allowDevHttp": false
     },
     {
       "name": "signé par une autre clé",
@@ -213,8 +223,9 @@
         "issuedAt": 1795000000,
         "serial": 1
       },
-      "signature": "JT8gKkeVO8KBcT8ksxrxkN/gqdj+2fS7IM3YBJ2839VoTaAP/Y/oNqsyAqTl3ldV8QmG2NeYs05YuhXf0VYDFA==",
-      "expect": "cert_bad_signature"
+      "signature": "e6kb3j4WTqqYCzXUtvCtxZbDqUCJDyTT820YO92Pee9J7IprgfY7QrU0U4c8qFZfFC+jzsGZfvbLIHatc3hxaw==",
+      "expect": "cert_bad_signature",
+      "allowDevHttp": false
     },
     {
       "name": "signature DER au lieu de P1363",
@@ -231,8 +242,9 @@
         "issuedAt": 1795000000,
         "serial": 1
       },
-      "signature": "MEUCIQDGWk4oAVg3/Vx8tTV2O1fm3CDhOPPZuHgsfFXSGqACDQIgMZu3xBOX66R/dawWq2JeqkXY5iE2V0bP+mGvf7cUmoY=",
-      "expect": "cert_bad_signature"
+      "signature": "MEQCIG/dqbij5ZAEdJLUuJSPXyJkZLP8vQhiMY7KNLElvG7LAiAGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "cert_bad_signature",
+      "allowDevHttp": false
     },
     {
       "name": "signature tronquée",
@@ -249,8 +261,9 @@
         "issuedAt": 1795000000,
         "serial": 1
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSa",
-      "expect": "cert_bad_signature"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF",
+      "expect": "cert_bad_signature",
+      "allowDevHttp": false
     },
     {
       "name": "URL non canonique",
@@ -267,8 +280,9 @@
         "issuedAt": 1795000000,
         "serial": 1
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-      "expect": "cert_invalid"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "cert_invalid",
+      "allowDevHttp": false
     },
     {
       "name": "serial 0",
@@ -285,8 +299,9 @@
         "issuedAt": 1795000000,
         "serial": 0
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-      "expect": "cert_invalid"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "cert_invalid",
+      "allowDevHttp": false
     },
     {
       "name": "orgId avec |",
@@ -303,8 +318,47 @@
         "issuedAt": 1795000000,
         "serial": 1
       },
-      "signature": "xlpOKAFYN/1cfLU1djtX5twg4Tjz2bh4LHxV0hqgAg0xm7fEE5frpH91rBarYl6qRdjmITZXRs/6Ya9/txSahg==",
-      "expect": "cert_invalid"
+      "signature": "b92puKPlkAR0ktS4lI9fImRks/y9CGIxjso0sSW8bssGxI4Ddc4ke0yRgQkWfWuA+qWBOwckjPfuehRifdcF1g==",
+      "expect": "cert_invalid",
+      "allowDevHttp": false
+    },
+    {
+      "name": "URL http://127.0.0.1 hors mode développement",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "http://127.0.0.1:8080",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "nz26l1jqH+UfkiRTFUe+lM8q+C6AaK/wLFK/516wMZJS0vqYsRPHrtjqoudzs6Uwp+DgQCXisoxFmnrIsRpt0g==",
+      "expect": "cert_invalid",
+      "allowDevHttp": false
+    },
+    {
+      "name": "URL http://127.0.0.1 avec le drapeau de développement",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "http://127.0.0.1:8080",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "nz26l1jqH+UfkiRTFUe+lM8q+C6AaK/wLFK/516wMZJS0vqYsRPHrtjqoudzs6Uwp+DgQCXisoxFmnrIsRpt0g==",
+      "expect": "ok",
+      "allowDevHttp": true
     }
   ]
 }

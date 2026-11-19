@@ -193,10 +193,34 @@ fn is_host_label(label: &str) -> bool {
         && !label.ends_with('-')
 }
 
+/// IPv4 décimal pointé canonique (4 octets décimaux sans zéro de tête).
+fn is_canonical_ipv4(host: &str) -> bool {
+    let parts: Vec<&str> = host.split('.').collect();
+    parts.len() == 4
+        && parts.iter().all(|p| {
+            !p.is_empty()
+                && p.len() <= 3
+                && p.bytes().all(|b| b.is_ascii_digit())
+                && (p.len() == 1 || !p.starts_with('0'))
+                && p.parse::<u16>().is_ok_and(|n| n <= 255)
+        })
+}
+
+/// Un dernier label numérique (`2130706433`, `1.2.3.4.5`) ou hexadécimal `0x…` serait lu comme
+/// une adresse IPv4 par les navigateurs (WHATWG) sous plusieurs écritures : seul l'IPv4 décimal
+/// pointé canonique est admis, pour que la forme canonique reste unique.
+fn is_unambiguous_host(host: &str) -> bool {
+    let last = host.rsplit('.').next().unwrap_or_default();
+    let numeric = last.bytes().all(|b| b.is_ascii_digit())
+        || last.strip_prefix("0x").is_some_and(|h| h.bytes().all(|b| b.is_ascii_hexdigit()));
+    !numeric || is_canonical_ipv4(host)
+}
+
 /// Canonise l'URL d'un runtime : `https` seulement (sauf `http://localhost:<port>` et
 /// `http://127.0.0.1:<port>` si `allow_dev_http`), sans identifiants, requête ni fragment, hôte en
-/// minuscules, port 443 omis, chemin sans `/` final et limité à `[A-Za-z0-9-._~/]`, ≤ 255
-/// caractères. Erreur : [`Error::UrlInvalid`].
+/// minuscules (dernier label non numérique, sauf IPv4 décimal pointé canonique), port 443 omis,
+/// chemin sans `/` final, sans segment `.` ni `..`, limité à `[A-Za-z0-9-._~/]`, ≤ 255 caractères.
+/// Erreur : [`Error::UrlInvalid`].
 pub fn canonical_runtime_url(input: &str, allow_dev_http: bool) -> Result<String> {
     let err = Error::UrlInvalid;
     if input.len() > 2048 || input.contains(['?', '#', '@', '\\']) || input.chars().any(char::is_whitespace) {
@@ -222,7 +246,7 @@ pub fn canonical_runtime_url(input: &str, allow_dev_http: bool) -> Result<String
         None => (authority, None),
     };
     let host = host.to_ascii_lowercase();
-    if host.is_empty() || host.len() > 253 || !host.split('.').all(is_host_label) {
+    if host.is_empty() || host.len() > 253 || !host.split('.').all(is_host_label) || !is_unambiguous_host(&host) {
         return Err(err);
     }
     let port = match (scheme.as_str(), port) {
@@ -232,7 +256,11 @@ pub fn canonical_runtime_url(input: &str, allow_dev_http: bool) -> Result<String
         _ => return Err(err),
     };
     let path = path.strip_suffix('/').unwrap_or(path);
-    if !path.chars().all(is_path_char) || path.ends_with('/') || path.contains("//") {
+    if !path.chars().all(is_path_char)
+        || path.ends_with('/')
+        || path.contains("//")
+        || path.split('/').any(|seg| seg == "." || seg == "..")
+    {
         return Err(err);
     }
     let url = match port {
@@ -245,8 +273,19 @@ pub fn canonical_runtime_url(input: &str, allow_dev_http: bool) -> Result<String
     Ok(url)
 }
 
-fn check_canonical_url(url: &str) -> Result<()> {
-    let canonical = canonical_runtime_url(url, false).or_else(|_| canonical_runtime_url(url, true))?;
+/// Politique d'URL appliquée à un certificat : `http://localhost|127.0.0.1` n'est admis que si
+/// l'appelant le demande explicitement (build de développement, 01 §3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UrlPolicy {
+    /// `https` seulement (défaut, production).
+    #[default]
+    Production,
+    /// Accepte aussi `http://localhost:<port>` et `http://127.0.0.1:<port>`.
+    DevelopmentHttp,
+}
+
+fn check_canonical_url(url: &str, policy: UrlPolicy) -> Result<()> {
+    let canonical = canonical_runtime_url(url, policy == UrlPolicy::DevelopmentHttp)?;
     if canonical == url { Ok(()) } else { Err(Error::UrlInvalid) }
 }
 
@@ -284,11 +323,11 @@ pub struct SignedRuntimeCertificate {
 
 impl RuntimeCertificate {
     /// Contrôle de forme (00 §3.2) → [`Error::CertInvalid`].
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self, policy: UrlPolicy) -> Result<()> {
         let ok = check_id(&self.org_id).is_ok()
             && check_id(&self.runtime_id).is_ok()
             && check_id(&self.admin_id).is_ok()
-            && check_canonical_url(&self.url).is_ok()
+            && check_canonical_url(&self.url, policy).is_ok()
             && check_uint(self.issued_at).is_ok()
             && check_uint(self.serial).is_ok()
             && self.serial >= 1;
@@ -296,8 +335,8 @@ impl RuntimeCertificate {
     }
 
     /// `certBytes` (01 §6.1).
-    pub fn cert_bytes(&self) -> Result<String> {
-        self.validate()?;
+    pub fn cert_bytes(&self, policy: UrlPolicy) -> Result<String> {
+        self.validate(policy)?;
         Ok(format!(
             "synco-rt-cert-v1|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             self.org_id,
@@ -313,13 +352,13 @@ impl RuntimeCertificate {
     }
 
     /// Signe avec la clé de signature d'identité de l'admin (`b64` P1363).
-    pub fn sign(&self, admin_sign_key: &EcSigningKey) -> Result<String> {
-        Ok(b64(&admin_sign_key.sign(self.cert_bytes()?.as_bytes())))
+    pub fn sign(&self, admin_sign_key: &EcSigningKey, policy: UrlPolicy) -> Result<String> {
+        Ok(b64(&admin_sign_key.sign(self.cert_bytes(policy)?.as_bytes())))
     }
 
     /// Vérifie la signature avec une clé de l'admin (01 §6.3 étape 3) → [`Error::CertBadSignature`].
-    pub fn verify(&self, admin_sign_public: &EcPublicKey, signature: &str) -> Result<()> {
-        let bytes = self.cert_bytes()?;
+    pub fn verify(&self, admin_sign_public: &EcPublicKey, signature: &str, policy: UrlPolicy) -> Result<()> {
+        let bytes = self.cert_bytes(policy)?;
         let sig = from_b64(signature).map_err(|_| Error::CertBadSignature)?;
         if admin_sign_public.verify(bytes.as_bytes(), &sig) { Ok(()) } else { Err(Error::CertBadSignature) }
     }
@@ -340,7 +379,7 @@ fn get_u64(obj: &Map<String, Value>, name: &str) -> Result<u64> {
 
 impl SignedRuntimeCertificate {
     /// Lit la forme JSON de 01 §6.2 (`v` = 1, champs exacts, aucun champ inconnu).
-    pub fn from_json(json: &str) -> Result<Self> {
+    pub fn from_json(json: &str, policy: UrlPolicy) -> Result<Self> {
         let value: Value = serde_json::from_str(json).map_err(|_| Error::CertInvalid)?;
         let obj = value.as_object().ok_or(Error::CertInvalid)?;
         const FIELDS: [&str; 9] =
@@ -368,7 +407,7 @@ impl SignedRuntimeCertificate {
             issued_at: get_u64(obj, "issuedAt")?,
             serial: get_u64(obj, "serial")?,
         };
-        certificate.validate()?;
+        certificate.validate(policy)?;
         let signature = get_str(obj, "signature")?.to_owned();
         Ok(Self { certificate, signature })
     }

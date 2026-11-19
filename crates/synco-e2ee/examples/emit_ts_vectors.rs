@@ -18,7 +18,9 @@ use synco_e2ee::ec::{EcSigningKey, EcdhSecret};
 use synco_e2ee::encoding::{b64u, hex};
 use synco_e2ee::identity::{self, IdentityPurpose};
 use synco_e2ee::keys;
-use synco_e2ee::runtime_cert::{self, ChallengePurpose, ChallengeRequest, RuntimeCertificate, RuntimePublicKeys};
+use synco_e2ee::runtime_cert::{
+    self, ChallengePurpose, ChallengeRequest, RuntimeCertificate, RuntimePublicKeys, UrlPolicy,
+};
 use synco_e2ee::session::{self, FieldName};
 use synco_e2ee::{Error, RandomSource, SymmetricKey};
 
@@ -68,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         issued_at: 1_795_100_000,
         serial: 3,
     };
-    let cert_sig = cert.sign(&admin)?;
+    let cert_sig = cert.sign(&admin, UrlPolicy::Production)?;
 
     // Défi : le TS vérifie la réponse avec la clé éphémère du client.
     let client = EcdhSecret::from_scalar(&fill(0x67, 32))?;
@@ -176,7 +178,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "certificate": {
             "adminSignKey": admin.public_key()?.to_canonical(),
             "certificate": { "orgId": cert.org_id, "runtimeId": cert.runtime_id, "url": cert.url, "keys": keys_json, "adminId": cert.admin_id, "issuedAt": cert.issued_at, "serial": cert.serial },
-            "certBytes": cert.cert_bytes()?, "signature": cert_sig,
+            "certBytes": cert.cert_bytes(UrlPolicy::Production)?, "signature": cert_sig,
         },
         "challenge": {
             "clientEphScalarHex": hex(&fill(0x67, 32)),

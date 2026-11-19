@@ -5,6 +5,11 @@ remplace l'esquisse `04_protocoles.md` du dossier de projet : en cas d'écart, *
 Les lots L01 à L13 l'implémentent ; un changement de format passe par une modification de ce dossier,
 relue comme la première version.
 
+**Révision après la vague B (2026-11-19, lot L00b)** : les écarts acceptés pendant L01 à L04 (crate,
+API, passerelle) sont reportés dans 01, 02, 03, 04, 05, 07, 08 et 09 (sections marquées « révisé
+après la vague B »), avec la source exacte dans le code ; aucun format chiffré ni exemple n'a changé.
+Les tensions relevées et non tranchées sont les questions Q11 à Q17 (§6).
+
 | Document | Contenu |
 |---|---|
 | [01-appairage-et-certificat.md](01-appairage-et-certificat.md) | Clés du runtime, empreinte, code d'appairage, défi de possession, certificat signé par un admin, épinglage TOFU, désappairage |
@@ -119,7 +124,7 @@ Tolérance d'horloge : 30 s pour les tickets (comme `sct1`), 60 s pour les requ�
 Chaque refus renvoie un **code machine** stable (`snake_case`), jamais le détail interne ni une valeur
 reçue. Le message lisible est construit côté client. Les codes sont listés dans chaque document.
 
-## 4. Invariants de sécurité et lots qui les testent
+## 4. Invariants de sécurité et lots qui les testent (révisé après la vague B, 2026-11-19)
 
 Rattachement de chaque invariant de `03_securite.md §4` au document qui le spécifie et au lot qui écrit
 le test qui échoue sans la protection.
@@ -152,7 +157,22 @@ Invariants **ajoutés** par cette spécification (mêmes règles : test qui éch
 | Le runtime n'utilise jamais, pour l'utilisateur A, une clé reçue dans la délégation de l'utilisateur B | 03 §9 | L05, L07 |
 | Deux workers ne peuvent pas écrire la même conversation (bail + jeton de clôture `leaseEpoch`) | 07 §4 | L03 |
 | Un `encryptionScheme` ne régresse jamais (pas de passage d'un schéma chiffré à `null` ni de `conv-gcm1-v1` à `gateway-aes-gcm-v1`) | 03 §6, 07 §2 | L03 |
-| Une clé créée par le runtime porte une enveloppe `rt1` vérifiable par les clients à jour, et reste acceptée (TOFU) par les clients anciens | 03 §10 | L07 (production), L10 (vérification), L01 (vecteur) |
+| Une clé créée par le runtime porte une enveloppe `rt1` vérifiable par les clients à jour, et reste acceptée (TOFU) par les clients anciens | 03 §10 | L07 (production), L10 (vérification), L01 (vecteur) — **en suspens pour les salons créés par le runtime** (Q11) |
+
+Invariants **ajoutés pendant la vague B** (révisé après la vague B, 2026-11-19), chacun déjà couvert par
+un test qui échoue sans la protection :
+
+| Invariant | Spécifié dans | Testé par (test existant) |
+|---|---|---|
+| L'anti-rejeu est propre à chaque runtime et n'évince jamais un nonce valide : un runtime qui sature son ensemble n'obtient que `429`, jamais la réacceptation d'une requête capturée | 04 §2.3 étape 5 | L02 (`synco_api/src/services/aiRuntime/runtimeAuth.test.ts:370`, `:391`, `:398`) |
+| Le corps d'une requête interne n'est lu qu'après en-têtes, horloge et runtime actif ; lectures non authentifiées bornées par IP | 04 §1, §2.3 | L02 (`runtimeAuth.test.ts:338`, `:349`) |
+| `x-synco-auth` présent sur une route « S » déclenche quand même le second verrou (M1) ; un `:sessionId` de chemin différent de l'autorisation est refusé | 04 §2.3 étape 6, §3.2 | L02 (`runtimeAuth.test.ts:219`, `:275`), L03b (`synco_api/src/routes/runtimeInternal/runtimeChannelE2e.test.ts:181`) |
+| Un outil `deny` n'est jamais exécuté par l'API, même si le worker l'ignore ; aucune action d'outil sans le bail courant | 04 §4.3, §5 | L03b (`synco_api/src/routes/runtimeInternal/runtimeE2eeWrites.test.ts:150`, `:175`, `:233`) |
+| Un changement d'état IA de l'org (bannie, IA ou mode runtime coupés, membre retiré) révoque les délégations concernées | 03 §8.1 | L03b (`synco_api/src/services/aiRuntime/runtimePolicyEnforcement.test.ts:60-88`) |
+| Le désappairage purge toutes les entrées ; un `runtimeId` désappairé ne revient ni dans une autre org ni avec d'autres clés | 01 §7.1, §9 | L02 (`synco_api/src/routes/aiRuntimeRoutes.test.ts:245`, `:253`) |
+| Le runtime vérifie le mandat sur l'enveloppe qu'il ouvre : un mandat authentique ne fait pas accepter une enveloppe forgée | 03 §4 | L01 (`crates/synco-e2ee/tests/roundtrip.rs:338`, `:384`) ; L05 (usage d'`accept_delegation`) |
+| La passerelle refuse de démarrer sans `SYNCO_ALLOWED_ORGS` non vide | 02 §5 étape 8 | L04 (`Synco_AI_Gateway/src/config.rs:226`, `tests/proxy.rs:464`) |
+| La passerelle borne la concurrence (16 au total, 4 par utilisateur) sans appeler Ollama au-delà, et ne relaie que les champs de sa liste blanche | 02 §6 bis | L04 (`Synco_AI_Gateway/tests/proxy.rs:519`, `:569`, `src/relay.rs:152`) |
 
 ## 5. Décisions de la porte A (tranchées le 2026-11-18)
 
@@ -250,7 +270,7 @@ Délai d'attente d'une confirmation : 09 §3 (proposition : 7 jours, puis `faile
 **Recommandation** : A, et documenter que le runtime doit être joignable en HTTPS par les navigateurs
 des membres (certificat TLS reconnu par les navigateurs, cf. question Q7 ci-dessous).
 
-## 6. Questions et tensions relevées pour la porte A
+## 6. Questions et tensions relevées pour la porte A (révisé après la vague B, 2026-11-19)
 
 | # | Point | Proposition de cette spec |
 |---|---|---|
@@ -264,3 +284,15 @@ des membres (certificat TLS reconnu par les navigateurs, cf. question Q7 ci-dess
 | Q8 | La bascule d'une conversation `client` (blob RSA `isE2EE`, `AIService.ts:917-927`) ou `server` (clair) vers le runtime impose de **réécrire l'historique** au format `StoredMessage[]` chiffré par `CK`. | Conversion par le client à la bascule (03 §6.4) ; la conversion depuis le format d'affichage du régime `client` est à valider par L11. L'historique `server` a déjà été vu en clair par l'API : le rechiffrer protège la suite, pas le passé. |
 | Q9 | Doc vs code : `02_architecture.md` et `03_securite.md` décrivent l'AAD des champs `gcm1:` comme `session|message|champ`. Le code utilise `:` (`crypto.rs:64-66`, `synco_app/src/assets/utils/crypto.ts:963`). | La spec suit le **code** (`:`). Les documents du dossier de projet sont à corriger. |
 | Q10 | Le runtime doit-il apparaître dans la liste des appareils de l'utilisateur (paramètres E2EE v4) ? | Non en v1 (ce n'est pas un `UserDevice`) ; il apparaît dans *Paramètres → Synco AI → Runtime* avec l'état de la délégation. À confirmer côté produit. |
+
+### Questions ouvertes après la vague B (ajoutées le 2026-11-19, **non tranchées**)
+
+| # | Point | Options et impact (aucune n'est choisie ici) |
+|---|---|---|
+| Q11 | **Signature `rt1` d'un salon créé par le runtime** (03 §10, 04 §4.3). L'enveloppe `rt1` signe `ctx = thread:<threadId>`, mais l'id du salon est tiré par l'API pendant `POST /e2ee/threads` : le runtime ne peut pas le signer d'avance. Aujourd'hui la route accepte `commitment` / `signature` (ensemble ou absents) mais le runtime ne peut pas les produire pour le bon `ctx` : le salon est accepté en **TOFU** par tous les clients, comme les salons créés par l'IA dans l'app actuelle (`CreateNewThread.vue`, `OrgAI.vue` n'envoient pas de `commitment`). L'invariant « clé créée par le runtime vérifiable par les clients à jour » (§4) n'est donc pas tenu pour ce cas. | **A. Le runtime propose l'id, validé par l'API** (recommandée par l'orchestrateur) : `POST /e2ee/threads` reçoit un champ `id` (conforme à 00 §3.2, de la forme des ids de salon) tiré par le runtime ; l'API refuse un id mal formé ou déjà pris (`409`) et crée le salon sous cet id ; le runtime signe `thread:<id>` avant l'appel ; une seule requête, aucune fenêtre sans signature. Impact : le service partagé `createThread` doit accepter un id injecté (réservé au canal, la route HTTP reste inchangée) ; nouveau champ et nouveau code dans 04 §4.3 ; vecteur `rt1` sur un id choisi (L01) ; L07 tire l'id. **B. Route de pose a posteriori** : nouvelle route S+A (bail exigé), par exemple `POST /e2ee/threads/:threadId/key-envelope { commitment, signature }`, qui pose l'enveloppe sur les `ThreadKey` de `creatorId = rt1:<délégation de l'autorisation>` encore sans `commitment`, sans jamais en écraser une. Impact : une route de plus dans la liste fermée ; deux requêtes, donc un état intermédiaire (salon créé non signé) en cas d'échec ; entre les deux, un client peut charger la clé et l'épingler en TOFU sans vérification, puis voir apparaître une enveloppe qu'il n'a pas vérifiée à la première vue. |
+| Q12 | **URL canonique : la règle de l'API diffère de celle de la crate** (01 §3). `canonicalRuntimeUrl` (`synco_api/src/services/aiRuntime/runtimeFormats.ts:41-54`) accepte des URL que `canonical_runtime_url` refuse (IPv6, `_` dans l'hôte, `//` et ponctuation dans le chemin) et refuse tout `http`, même sous drapeau de développement. | A. Porter la règle de la crate dans l'API (même algorithme, vecteurs d'URL partagés), avec `http://localhost|127.0.0.1:<port>` admis seulement derrière une variable de développement de l'API. Impact : une validation de plus dans `runtimeRegistry.ts`, vecteurs à ajouter (L01/L02). B. Laisser l'écart : l'API n'est pas une autorité, le client refuse ; coût : un certificat accepté par l'API puis refusé par tous les clients (runtime inutilisable jusqu'à recertification), et pas d'appairage `http` de développement de bout en bout. |
+| Q13 | **`user.revoked` n'est jamais émis** (02 §8, 04 §6) : la liste de révocation des tickets du runtime n'est alimentée que par `conversation.revoked`. | A. Émettre `user.revoked` `{ userId, until = maintenant }` à chaque révocation de toutes les délégations d'un utilisateur (départ, membre non autorisé, révocation par l'utilisateur ou l'admin) : un ticket `srt1` émis avant est refusé même pour une conversation encore inconnue du runtime. Impact : appels à ajouter dans `delegationService.ts`, aucun changement de format. B. Retirer `user.revoked` de la spec : `delegation.revoked` + `conversation.revoked` suffisent, puisque le runtime exige à la connexion une autorisation connue (05 §1 étape 4) et que l'autorisation est révoquée avec la délégation. Impact : 02 §8 et 04 §6 à simplifier ; le runtime doit alors garantir qu'il n'accepte aucun WebSocket sans autorisation active connue. |
+| Q14 | **Limites de la politique de l'org non appliquées** : (a) les délais `awaiting_*` sont fixes à 7 jours, alors que 09 §3 les dit réglables par l'org ; (b) baisser `maxDelegationDays` n'écourte pas une délégation existante ; (c) le bannissement d'un **utilisateur** (et non de l'org) : voir Q17. | (a) A : ajouter un champ de délai à `aiConfig.runtime.limits` (07 §6), lu par la maintenance ; B : retirer « (org) » de 09 §3. (b) A : à l'enregistrement de la politique, révoquer (raison à créer, par exemple `policy_shortened`) les délégations dont `exp − iat` dépasse le nouveau maximum ; B : laisser courir jusqu'à `exp` (≤ 30 j) et le documenter dans l'écran admin. (c) : Q17. |
+| Q15 | **Journal `tool_unknown_outcome` et `lease_lost`** (07 §5, 08 §5) : aucune route du canal ne permet au runtime d'écrire un `AiChatSessionEvent`. | A. Champ facultatif `events: [{ type, code? }]` (types limités à `tool_unknown_outcome`, `lease_lost`) dans `PUT …/transcript` et `POST …/status`. B. L'API déduit `tool_unknown_outcome` du clair de l'historique (`toolCalls[i].status` passé d'`executing` à `error` sous un autre `leaseEpoch`) et journalise `lease_lost` quand elle reprend un bail expiré. C. Retirer ces deux types de 07 §5 (journal tenu par l'API seule). |
+| Q16 | **Écarts mineurs reportés tels quels, à ratifier** : (a) le désappairage clôt le bail sans incrémenter `leaseEpoch` (01 §9 ; protection équivalente, mais contraire à la règle commune de 08 §2) ; (b) `awaitingKey` n'admet que `thread` et `space`, pas `conv` (04 §4.2) ; (c) ajout d'entrées par le client limité à 3 / 15 s au lieu de 1 / 5 s (09 §4.1) ; (d) le dépôt dans la boîte prend la trame **sans `v`** (05 §5.4, §6.2) ; (e) `POST /register` ne compare pas l'URL envoyée à celle du certificat (01 §7). | Proposition : ratifier (a) à (e) tels que décrits ; sinon, chaque point est une modification locale du code de L02/L03 sans changement de format chiffré. |
+| Q17 | **Utilisateur banni de la plateforme** (`User.bannedAt`, `POST /api/admin/users/:id/ban`, `synco_api/src/routes/admin.ts:440`) : ses requêtes à lui sont refusées par `banMiddleware`, mais le canal interne n'y passe pas (requêtes du runtime) et ni le second verrou (`runtimeAuth.ts:392-394`) ni `loadAuthorizedConversation` ne lisent `User.bannedAt` ; ses délégations ne sont pas révoquées (hors périmètre de M2, `SYNCOAI_REFONTE_FEATURE.md` §12.3). Le runtime peut donc continuer d'agir pour lui jusqu'à `exp` (≤ 30 j). | A. Révoquer ses délégations au bannissement (`revokeDelegations(ctx, { userId }, <raison à créer, par exemple user_banned>)`, appel dans `admin.ts`) et passe de maintenance en filet. B. Ajouter `User.bannedAt` à l'étape 4 du second verrou (`auth_invalid`) sans révoquer (accès rétabli à la levée du bannissement). C. A + B. Impact commun : test qui échoue sans la protection ; pour A, nouvelle valeur de `revokedReason` (07 §3). |

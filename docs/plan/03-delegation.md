@@ -350,7 +350,7 @@ hors délégation, `switched_to_local` et `session_deleted` (`conversationLifecy
 quand `features` change ; bannissement et levée (`synco_api/src/routes/admin.ts:677`, `:735`, `:783`) —
 la levée n'est qu'une invalidation de cache, rien n'est restauré. Filet : `sweepPolicyViolations` à
 chaque passe de maintenance (07 §9). L'ordre de priorité est `org_banned` > `ai_disabled` >
-`runtime_disabled` > `member_not_allowed`. Non traités en v1 (00 §6 Q14) : baisse de
+`runtime_disabled` > `member_not_allowed`. Non traités en v1 (00 §6 Q14, Q17) : baisse de
 `maxDelegationDays` sous la durée d'une délégation existante (elle court jusqu'à son `exp`),
 bannissement d'un **utilisateur**.
 

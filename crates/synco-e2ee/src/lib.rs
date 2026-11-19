@@ -43,3 +43,8 @@ pub use error::{Error, Result};
 pub use rng::OsRandom;
 pub use rng::RandomSource;
 pub use secret::SymmetricKey;
+
+/// Les exemples du README sont compilés comme doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;

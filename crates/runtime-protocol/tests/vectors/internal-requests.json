@@ -1,0 +1,556 @@
+{
+  "description": "Vecteurs des requêtes signées runtime → API, docs/plan/04 §2. Générés par synco_api tests/vectors/ai-runtime/generate.ts avec le code réel de l'API ; ne pas modifier à la main. Un cas a soit « request », soit « requests » (requêtes successives sur le même cache anti-rejeu : toutes « ok » sauf la dernière, qui vaut « expect »). « runtimes » = registre de l'API. « signedString » (cas valides) = chaîne signée sans le domaine « synco-rt-request-v1\\0 ». Le corps est en base64 standard (bodyB64).",
+  "seedHex": "1111111111111111111111111111111111111111111111111111111111111111",
+  "domain": "synco-rt-request-v1\\0",
+  "runtimes": [
+    {
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "sigPublicKey": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "status": "active"
+    },
+    {
+      "runtimeId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "sigPublicKey": "IEBA42TBDyvsnB_lAKHNTCR8idZQoB7X6CyrqGeHfCE",
+      "status": "active"
+    },
+    {
+      "runtimeId": "f0e1d2c3-b4a5-4968-8776-655443322110",
+      "sigPublicKey": "IEBA42TBDyvsnB_lAKHNTCR8idZQoB7X6CyrqGeHfCE",
+      "status": "revoked"
+    }
+  ],
+  "policy": {
+    "max_clock_drift_secs": 60,
+    "nonce_ttl_secs": 120
+  },
+  "cases": [
+    {
+      "name": "POST avec corps et x-synco-auth (exemple de 04 §2.2)",
+      "request": {
+        "method": "POST",
+        "path": "/api/runtime/v1/conversations/0f0e0d0c-0b0a-4908-8706-050403020100/status",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "WlpaWlpaWlpaWlpaWlpaWg",
+          "x-synco-auth": "9e8d7c6b-5a49-4382-9170-6f5e4d3c2b1a",
+          "x-synco-signature": "sPPFa6e54n7Vdg4HZSV8SZiqRkb8L3_xoihfgyqKKUG5-JGBySBhgBnbVRwHtBuy6RDvmgYWi2w76Nm7QPbhBg"
+        },
+        "bodyB64": "eyJiYXNlUmV2IjoxMiwic3RhdHVzIjoicnVubmluZyJ9",
+        "now": 1795000400,
+        "signedString": "POST\n/api/runtime/v1/conversations/0f0e0d0c-0b0a-4908-8706-050403020100/status\n1795000400\nWlpaWlpaWlpaWlpaWlpaWg\n7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\n9e8d7c6b-5a49-4382-9170-6f5e4d3c2b1a\nUvOjs3du6XMq1sU_UIFE_rVWfOC6WjzKx__91hqbcfw"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "GET sans corps, sans x-synco-auth (AUTH = -)",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "W1tbW1tbW1tbW1tbW1tbWw",
+          "x-synco-signature": "n5ajF7eL1aD3zFu_kA_zseo7OYyYyvPAUrxk0XbVhpFEneLCi6CH2c373XLaM2JbsIEI3iJBAnMvk6amPdCNDA"
+        },
+        "bodyB64": "",
+        "now": 1795000400,
+        "signedString": "GET\n/api/runtime/v1/llm-policy\n1795000400\nW1tbW1tbW1tbW1tbW1tbWw\n7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\n-\n47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "GET avec chaîne de requête",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/conversations?state=pending",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "XFxcXFxcXFxcXFxcXFxcXA",
+          "x-synco-signature": "8_BE2dvD2AmNtgSynJXtEF2Zrfwvf7GvKcexSZJNsoz5obUagKsgIHDkjzmFy2gnj7qhay5-fPasZ2O0mbczBQ"
+        },
+        "bodyB64": "",
+        "now": 1795000400,
+        "signedString": "GET\n/api/runtime/v1/conversations?state=pending\n1795000400\nXFxcXFxcXFxcXFxcXFxcXA\n7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\n-\n47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "POST sans corps",
+      "request": {
+        "method": "POST",
+        "path": "/api/runtime/v1/unpair",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "XV1dXV1dXV1dXV1dXV1dXQ",
+          "x-synco-signature": "ZuwnTFMEqqgoga5yays9_PlARlABZIiPTcwudCApQXqCtPu0gQsaxE0B4OS8hmCTASBSGg5KyI7mLaNsBFtDCw"
+        },
+        "bodyB64": "",
+        "now": 1795000400,
+        "signedString": "POST\n/api/runtime/v1/unpair\n1795000400\nXV1dXV1dXV1dXV1dXV1dXQ\n7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\n-\n47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "corps modifié d'un octet",
+      "request": {
+        "method": "POST",
+        "path": "/api/runtime/v1/conversations/0f0e0d0c-0b0a-4908-8706-050403020100/status",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "Xl5eXl5eXl5eXl5eXl5eXg",
+          "x-synco-auth": "9e8d7c6b-5a49-4382-9170-6f5e4d3c2b1a",
+          "x-synco-signature": "sTcbic-2XwvA6FEoTJoz2-kgVB9VEvc-SdjGDN3vd7QJaVEYUMJErhaxbi6ChTmfUkaB-9o2gXziCgSSOy8TAQ"
+        },
+        "bodyB64": "eyJiYXNlUmV2IjoxMywic3RhdHVzIjoicnVubmluZyJ9",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_invalid"
+    },
+    {
+      "name": "chemin modifié",
+      "request": {
+        "method": "POST",
+        "path": "/api/runtime/v1/conversations/0f0e0d0c-0b0a-4908-8706-050403020100/lease",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "X19fX19fX19fX19fX19fXw",
+          "x-synco-auth": "9e8d7c6b-5a49-4382-9170-6f5e4d3c2b1a",
+          "x-synco-signature": "h56DI5NPWhfJmdnr0DyP54lJDpEemrrY2UnwJr5lyi-1iJkm6maMRfcbiuYRynXGJSteQ-L-zKnP0MC4Q4X3Cw"
+        },
+        "bodyB64": "eyJiYXNlUmV2IjoxMiwic3RhdHVzIjoicnVubmluZyJ9",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_invalid"
+    },
+    {
+      "name": "chaîne de requête modifiée",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/conversations?state=all",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "YGBgYGBgYGBgYGBgYGBgYA",
+          "x-synco-signature": "Aqk-UWSwnlcUO4rMiA06IGisQ2yO4Nt8lOVopf1d6NjnjhQfH9PZwzj62CIHhB8Af9rYpxm9cehxIED4ZHvgAA"
+        },
+        "bodyB64": "",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_invalid"
+    },
+    {
+      "name": "chaîne de requête retirée",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/conversations",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "YWFhYWFhYWFhYWFhYWFhYQ",
+          "x-synco-signature": "XxYWb04QjUVeXw5cSZPMEEcOhMTTnbQIJ-Uz_jPPd-YNAv9kJURqa50BbqDtUjxkEDgvEw2BDGvT84mJ6VxsBA"
+        },
+        "bodyB64": "",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_invalid"
+    },
+    {
+      "name": "méthode modifiée",
+      "request": {
+        "method": "PUT",
+        "path": "/api/runtime/v1/conversations/0f0e0d0c-0b0a-4908-8706-050403020100/status",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "YmJiYmJiYmJiYmJiYmJiYg",
+          "x-synco-auth": "9e8d7c6b-5a49-4382-9170-6f5e4d3c2b1a",
+          "x-synco-signature": "UjwXd0Fpn_4akcKvAs_FIqeQs_OVpYYjr5OBl4z7Z22zO26UpDKrV4p3Szhtndqyt0KkzpCOZjOVNToWEICcAw"
+        },
+        "bodyB64": "eyJiYXNlUmV2IjoxMiwic3RhdHVzIjoicnVubmluZyJ9",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_invalid"
+    },
+    {
+      "name": "x-synco-auth ajouté après signature",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "Y2NjY2NjY2NjY2NjY2NjYw",
+          "x-synco-signature": "4etGYnSt2x5xKHcjPCS6vVuFsroPAvNHxdCxEMLC2Q58_aTJ1PhnkcYKe5N3WZiSNg1KPmqrPYt9043agcPnAg",
+          "x-synco-auth": "9e8d7c6b-5a49-4382-9170-6f5e4d3c2b1a"
+        },
+        "bodyB64": "",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_invalid"
+    },
+    {
+      "name": "x-synco-auth retiré après signature",
+      "request": {
+        "method": "POST",
+        "path": "/api/runtime/v1/conversations/0f0e0d0c-0b0a-4908-8706-050403020100/status",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "ZGRkZGRkZGRkZGRkZGRkZA",
+          "x-synco-signature": "_giRFwpYfsMRAIyyyNSoXb5xlqNSHhWX6yJVt-yBl4PLzm-GCd7aXTL0CZoqpbQlRxKOfU8_bqXu9g2mY5mrCA"
+        },
+        "bodyB64": "eyJiYXNlUmV2IjoxMiwic3RhdHVzIjoicnVubmluZyJ9",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_invalid"
+    },
+    {
+      "name": "x-synco-auth modifié après signature",
+      "request": {
+        "method": "POST",
+        "path": "/api/runtime/v1/conversations/0f0e0d0c-0b0a-4908-8706-050403020100/status",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "ZWVlZWVlZWVlZWVlZWVlZQ",
+          "x-synco-auth": "11111111-2222-4333-8444-555555555555",
+          "x-synco-signature": "7cm7Ize4jiw7ZQcO_H8tcV41JWG3g3H6Tlim5886EAqc4f98h-ai2RzsL_s2xPk8ZvTSUizkRi7IGm-Ymr-PDA"
+        },
+        "bodyB64": "eyJiYXNlUmV2IjoxMiwic3RhdHVzIjoicnVubmluZyJ9",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_invalid"
+    },
+    {
+      "name": "x-synco-runtime d'un autre runtime enregistré",
+      "request": {
+        "method": "POST",
+        "path": "/api/runtime/v1/conversations/0f0e0d0c-0b0a-4908-8706-050403020100/status",
+        "headers": {
+          "x-synco-runtime": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "ZmZmZmZmZmZmZmZmZmZmZg",
+          "x-synco-auth": "9e8d7c6b-5a49-4382-9170-6f5e4d3c2b1a",
+          "x-synco-signature": "586WVSJyPIhROaX2QFY7De8d3WQuLYrvktdgcL6_h2_-d-FO8ImKwVfWgKb28cTNoq0f6zcLTF6WzFYF1yk3AA"
+        },
+        "bodyB64": "eyJiYXNlUmV2IjoxMiwic3RhdHVzIjoicnVubmluZyJ9",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_invalid"
+    },
+    {
+      "name": "signé par une autre clé",
+      "request": {
+        "method": "POST",
+        "path": "/api/runtime/v1/conversations/0f0e0d0c-0b0a-4908-8706-050403020100/status",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "Z2dnZ2dnZ2dnZ2dnZ2dnZw",
+          "x-synco-auth": "9e8d7c6b-5a49-4382-9170-6f5e4d3c2b1a",
+          "x-synco-signature": "W5HdMw71EZlVZGLZr5sCmfW0AJ8r3jmteT7N-GXNMOtGHPlmFS4CQMswV8qJXu0kvIW7WSAi6mwfVnM5EiCVAg"
+        },
+        "bodyB64": "eyJiYXNlUmV2IjoxMiwic3RhdHVzIjoicnVubmluZyJ9",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_invalid"
+    },
+    {
+      "name": "runtime inconnu",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "00000000-0000-4000-8000-000000000000",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "aGhoaGhoaGhoaGhoaGhoaA",
+          "x-synco-signature": "Ebrk8k12-PyOhLTikCp3zd2mnJLv5Frz956E_EzR5MwZbNZBFL88hv3AU85y71D-KcgSFnU9mfJy9XBQbY6-Dw"
+        },
+        "bodyB64": "",
+        "now": 1795000400
+      },
+      "expect": "rt_unknown"
+    },
+    {
+      "name": "runtime désappairé",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "f0e1d2c3-b4a5-4968-8776-655443322110",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "aWlpaWlpaWlpaWlpaWlpaQ",
+          "x-synco-signature": "OFQTgWvk7cFgEBcbZgdGbf5QW7WeVVTD6VSD6jJUsMq2vRqy3nUISA-hchOXqR9zSBKhNGTLmMJMCk2a6m8gCg"
+        },
+        "bodyB64": "",
+        "now": 1795000400
+      },
+      "expect": "rt_revoked"
+    },
+    {
+      "name": "horodatage à +61 s",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000461",
+          "x-synco-nonce": "ampqampqampqampqampqag",
+          "x-synco-signature": "d0AIqcMkZ6myN1hcIrjdyJPC9gglNmQXQyyCQk-g-AR4VwGAGXKTnrOLmKpR7ma30kLBGRdRVapz0PGwNi3aAw"
+        },
+        "bodyB64": "",
+        "now": 1795000400,
+        "signedString": "GET\n/api/runtime/v1/llm-policy\n1795000461\nampqampqampqampqampqag\n7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\n-\n47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
+      },
+      "expect": "rt_clock_skew"
+    },
+    {
+      "name": "horodatage à −61 s",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000339",
+          "x-synco-nonce": "a2tra2tra2tra2tra2traw",
+          "x-synco-signature": "Zl_-prCRCBJTQrh48BDXVU8W3IaoB1ebXIZSC8OftznSkEm2wpgp44iRWZxQr0xFVOHxBqIVFHc2eY5zu3jWBQ"
+        },
+        "bodyB64": "",
+        "now": 1795000400,
+        "signedString": "GET\n/api/runtime/v1/llm-policy\n1795000339\na2tra2tra2tra2tra2traw\n7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\n-\n47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
+      },
+      "expect": "rt_clock_skew"
+    },
+    {
+      "name": "horodatage à +60 s",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000460",
+          "x-synco-nonce": "bGxsbGxsbGxsbGxsbGxsbA",
+          "x-synco-signature": "08iw6qGeBnYh5IqjlTnfQXLTUhaHjj696wBJjc8Im3NDkDBvbrm-QC2tjavKVUB4YteRdZZESCNosUxg-8ziCQ"
+        },
+        "bodyB64": "",
+        "now": 1795000400,
+        "signedString": "GET\n/api/runtime/v1/llm-policy\n1795000460\nbGxsbGxsbGxsbGxsbGxsbA\n7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\n-\n47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "horodatage à −60 s",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000340",
+          "x-synco-nonce": "bW1tbW1tbW1tbW1tbW1tbQ",
+          "x-synco-signature": "04lMgTNGT3I3gWlxMVc7ExWCAw7_HJk7OIRkO0EB6hVc-dA4ZrKOiUZMVGDoy37HhmqXDegaiEDDJPpBm8ysAg"
+        },
+        "bodyB64": "",
+        "now": 1795000400,
+        "signedString": "GET\n/api/runtime/v1/llm-policy\n1795000340\nbW1tbW1tbW1tbW1tbW1tbQ\n7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\n-\n47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "nonce rejoué (deuxième requête identique)",
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/api/runtime/v1/conversations/0f0e0d0c-0b0a-4908-8706-050403020100/status",
+          "headers": {
+            "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+            "x-synco-timestamp": "1795000400",
+            "x-synco-nonce": "bm5ubm5ubm5ubm5ubm5ubg",
+            "x-synco-auth": "9e8d7c6b-5a49-4382-9170-6f5e4d3c2b1a",
+            "x-synco-signature": "akmK1dL9LqnZYbdrB5fiyieIywjNHsiHcwTniygBH7QvwstZRnEbTDM4b2kkevV6-gROz5Q-kdNk5z9CrPNrCQ"
+          },
+          "bodyB64": "eyJiYXNlUmV2IjoxMiwic3RhdHVzIjoicnVubmluZyJ9",
+          "now": 1795000400,
+          "signedString": "POST\n/api/runtime/v1/conversations/0f0e0d0c-0b0a-4908-8706-050403020100/status\n1795000400\nbm5ubm5ubm5ubm5ubm5ubg\n7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\n9e8d7c6b-5a49-4382-9170-6f5e4d3c2b1a\nUvOjs3du6XMq1sU_UIFE_rVWfOC6WjzKx__91hqbcfw"
+        },
+        {
+          "method": "POST",
+          "path": "/api/runtime/v1/conversations/0f0e0d0c-0b0a-4908-8706-050403020100/status",
+          "headers": {
+            "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+            "x-synco-timestamp": "1795000400",
+            "x-synco-nonce": "bm5ubm5ubm5ubm5ubm5ubg",
+            "x-synco-auth": "9e8d7c6b-5a49-4382-9170-6f5e4d3c2b1a",
+            "x-synco-signature": "akmK1dL9LqnZYbdrB5fiyieIywjNHsiHcwTniygBH7QvwstZRnEbTDM4b2kkevV6-gROz5Q-kdNk5z9CrPNrCQ"
+          },
+          "bodyB64": "eyJiYXNlUmV2IjoxMiwic3RhdHVzIjoicnVubmluZyJ9",
+          "now": 1795000400
+        }
+      ],
+      "expect": "rt_replay"
+    },
+    {
+      "name": "nonce réutilisé sur une autre requête signée",
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/runtime/v1/llm-policy",
+          "headers": {
+            "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+            "x-synco-timestamp": "1795000400",
+            "x-synco-nonce": "b29vb29vb29vb29vb29vbw",
+            "x-synco-signature": "ZPSJpMfICHHWmbtfs3RQ3cNwOFfgVcJq6vZRYR9m3P-22ALzxczsbvSxc5sAEfgcoUDn_jOuQ4N19-lDnJSTCw"
+          },
+          "bodyB64": "",
+          "now": 1795000400,
+          "signedString": "GET\n/api/runtime/v1/llm-policy\n1795000400\nb29vb29vb29vb29vb29vbw\n7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\n-\n47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
+        },
+        {
+          "method": "GET",
+          "path": "/api/runtime/v1/delegations",
+          "headers": {
+            "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+            "x-synco-timestamp": "1795000400",
+            "x-synco-nonce": "b29vb29vb29vb29vb29vbw",
+            "x-synco-signature": "dyKpxK42amPWW8F-OiqyqM9AOA1JsKT47ChXQBIUrSTwSTeJDf3p696fZM07lVkIS3gtBmK3zYbXJHVh1_IVAg"
+          },
+          "bodyB64": "",
+          "now": 1795000400,
+          "signedString": "GET\n/api/runtime/v1/delegations\n1795000400\nb29vb29vb29vb29vb29vbw\n7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\n-\n47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
+        }
+      ],
+      "expect": "rt_replay"
+    },
+    {
+      "name": "en-tête de signature absent",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "cHBwcHBwcHBwcHBwcHBwcA"
+        },
+        "bodyB64": "",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_missing"
+    },
+    {
+      "name": "signature non b64u",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "cXFxcXFxcXFxcXFxcXFxcQ",
+          "x-synco-signature": "gc8bza3dPQSZbm35PP4MTotAHg7rKQWaPS5k18t_x3TmepiEZo-ouLDutvHZUjW2eERDTtBKnKuKP7mURFY7D+"
+        },
+        "bodyB64": "",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_missing"
+    },
+    {
+      "name": "signature de 63 octets",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "cnJycnJycnJycnJycnJycg",
+          "x-synco-signature": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB"
+        },
+        "bodyB64": "",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_missing"
+    },
+    {
+      "name": "nonce de 15 octets",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "AQEBAQEBAQEBAQEBAQEB",
+          "x-synco-signature": "MUtZF7wLjIDQ3S__NoXsnzNb0YXyREoZPPsp19rSwfG__3WHnBEwwbc_qU6LJZuvDw8XqZVh3xzcGOM5Tj4FDw"
+        },
+        "bodyB64": "",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_missing"
+    },
+    {
+      "name": "horodatage non numérique",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400.5",
+          "x-synco-nonce": "dHR0dHR0dHR0dHR0dHR0dA",
+          "x-synco-signature": "e5MaYL6T4cl9yQX6waRydqUrnbe7vjiI2VPa9qe4HO4ZudLmu_mT3HLKn80JivsXgaut649ecgK6JtuCBSHNCw"
+        },
+        "bodyB64": "",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_missing"
+    },
+    {
+      "name": "x-synco-runtime absent",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "dXV1dXV1dXV1dXV1dXV1dQ",
+          "x-synco-signature": "cMkSRsQh-OWcSUU1Q-szH-O1Fq3W6vj4WMDux2jRv3udvQNP7qRmOrsbD7yNVocGChuOr0auQII3C-WrqnIACQ"
+        },
+        "bodyB64": "",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_missing"
+    },
+    {
+      "name": "x-synco-auth non conforme (a|b)",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "dnZ2dnZ2dnZ2dnZ2dnZ2dg",
+          "x-synco-signature": "BOYX0oI-QgwVIMed6AS4hXQBmLpeHV59qXaIpQOc8iaiKeoTtfnOxz3ZmpIsqJNwjOP33HXGLSyTeK2HPfoIBw",
+          "x-synco-auth": "a|b"
+        },
+        "bodyB64": "",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_missing"
+    },
+    {
+      "name": "signature produite sans le préfixe de domaine",
+      "request": {
+        "method": "GET",
+        "path": "/api/runtime/v1/llm-policy",
+        "headers": {
+          "x-synco-runtime": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+          "x-synco-timestamp": "1795000400",
+          "x-synco-nonce": "d3d3d3d3d3d3d3d3d3d3dw",
+          "x-synco-signature": "v6KCPvjLar3Jh206449Me9DVE07juazEcBH1On0rXRqrrSgDw4KuvrQs39EqA5ICYOdBTbyvRhuqXhGSieFqCw"
+        },
+        "bodyB64": "",
+        "now": 1795000400
+      },
+      "expect": "rt_sig_invalid"
+    }
+  ]
+}

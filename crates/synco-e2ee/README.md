@@ -31,6 +31,18 @@ La crate n'a **aucune** fonction pour transmettre AK ou une clé d'identité à 
 scellement d'AK vers un appareil (format v4 existant) n'existe que derrière la fonctionnalité
 `legacy-seal`, réservée aux vecteurs : un runtime ne l'active jamais.
 
+## Points d'attention
+
+- **Malléabilité ECDSA** : comme WebCrypto, la vérification accepte les signatures « S haut » ; pour
+  toute signature valide `(r, s)`, `(r, n − s)` l'est aussi. Ne jamais utiliser une signature comme
+  identifiant, clé de déduplication ou d'anti-rejeu : utiliser le contenu signé (ou son hash).
+- **`legacy-seal` est additive** : dans un graphe Cargo, une seule crate qui l'active l'active pour
+  tous. Le binaire du runtime ne doit jamais l'avoir ; à contrôler en CI (`cargo tree -e features`,
+  lot L09).
+- **Mandat** : le runtime vérifie le mandat sur l'enveloppe de tête qu'il ouvre (`verify_mandate`,
+  ou mieux `accept_delegation`). `verify_mandate_offline_from_wrap_hash` ne sert qu'au contrôle hors
+  ligne des clés `rt1` par un client et ne doit jamais conditionner l'ouverture d'une enveloppe.
+
 ## Importer la crate dans un autre projet
 
 Licence : tous droits réservés (`LICENSE` à la racine du dépôt) ; réutilisable par les projets de

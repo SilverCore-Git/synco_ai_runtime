@@ -9,10 +9,10 @@ description = "Formats E2EE de Synco (v4 et délégation au runtime) : implémen
 readme = "README.md"
 
 [dependencies]
-aes-gcm = { version = "=0.11.1", default-features = false, features = ["aes", "alloc"] }
+aes-gcm = { version = "=0.11.1", default-features = false, features = ["aes", "alloc", "zeroize"] }
 p256 = { version = "=0.14.0", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "std"] }
-sha2 = { version = "=0.11.0", default-features = false }
-hmac = { version = "=0.13.0", default-features = false }
+sha2 = { version = "=0.11.0", default-features = false, features = ["zeroize"] }
+hmac = { version = "=0.13.0", default-features = false, features = ["zeroize"] }
 hkdf = { version = "=0.13.0", default-features = false }
 base64 = { version = "=0.23.1", default-features = false, features = ["alloc"] }
 serde_json = { version = "=1.0.151", default-features = false, features = ["std"] }

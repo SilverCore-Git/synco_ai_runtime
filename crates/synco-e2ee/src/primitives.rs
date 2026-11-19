@@ -44,8 +44,9 @@ pub fn hmac_sha256_verify(key: &[u8], data: &[u8], tag: &[u8]) -> bool {
     mac.verify_slice(tag).is_ok()
 }
 
-/// Chiffre avec un IV donné : `iv ‖ chiffré ‖ tag`.
-pub fn seal_with_iv(key: &[u8; 32], iv: &[u8; IV_LENGTH], aad: &[u8], plain: &[u8]) -> Result<Vec<u8>> {
+/// Chiffre avec un IV donné : `iv ‖ chiffré ‖ tag`. Interne : un IV choisi par l'appelant serait un
+/// risque de réutilisation ; les vecteurs passent par une [`crate::RandomSource`] figée.
+pub(crate) fn seal_with_iv(key: &[u8; 32], iv: &[u8; IV_LENGTH], aad: &[u8], plain: &[u8]) -> Result<Vec<u8>> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| Error::InvalidKey)?;
     let nonce = Nonce::try_from(&iv[..]).map_err(|_| Error::InvalidInput)?;
     let ct = cipher.encrypt(&nonce, Payload { msg: plain, aad }).map_err(|_| Error::InvalidInput)?;

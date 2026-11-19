@@ -196,6 +196,18 @@ sans exiger la signature du propriétaire, risque résiduel documenté ; **Q3**,
 `exp` dans l'enveloppe de tête et le mandat), **Q5**, **Q6**, **Q7**, **Q8**, **Q10** : propositions de
 cette spec acceptées ; **Q9** : les documents du dossier de projet sont corrigés (séparateur `:`).
 
+### Décisions du point d'étape B (tranchées le 2026-11-19)
+
+| # | Décision retenue |
+|---|---|
+| Q11 | **Option B** : la signature `rt1` d'un salon créé par le runtime est posée **après** sa création, par une route dédiée du canal (forme fixée par L03c) ; entre la création et la pose, le salon reste accepté en TOFU par les clients. |
+| Q12 | **Option A** : l'API applique la règle d'URL canonique de la crate (vecteurs partagés) ; `http://localhost\|127.0.0.1:<port>` seulement derrière une variable de développement de l'API. |
+| Q13 | **Option A** : l'API émet `user.revoked` à chaque révocation de toutes les délégations d'un utilisateur. |
+| Q14 | (a) **Option A** : délais `awaiting_*` réglables par l'org dans `aiConfig.runtime.limits` (abaissables seulement). (b) **Option B** : baisser `maxDelegationDays` n'écourte pas les délégations existantes ; elles courent jusqu'à `exp` (≤ 30 j), à documenter dans l'écran admin (L11). |
+| Q15 | **Option A** : champ facultatif `events: [{ type, code? }]` (`tool_unknown_outcome`, `lease_lost`) dans `PUT …/transcript` et `POST …/status`. |
+| Q16 | (a) à (e) **ratifiés** tels que décrits en §6. |
+| Q17 | **Option C** : au bannissement d'un utilisateur, ses délégations sont révoquées (raison `user_banned`) **et** le second verrou refuse tout utilisateur banni (`auth_invalid`). |
+
 ## 5 bis. Analyse des décisions (pour mémoire)
 
 Les décisions D4 et D6 sont traitées dans [09-limites-et-valeurs-par-defaut.md](09-limites-et-valeurs-par-defaut.md).

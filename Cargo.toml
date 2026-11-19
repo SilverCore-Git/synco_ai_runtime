@@ -1,8 +1,57 @@
 [workspace]
 resolver = "3"
-members = ["crates/synco-e2ee"]
+members = ["crates/synco-e2ee", "crates/runtime-protocol", "crates/supervisor", "crates/worker"]
 
 [workspace.package]
 edition = "2024"
 rust-version = "1.98"
 publish = false
+
+# Versions épinglées (`=`) : chaque version a été publiée depuis au moins 7 jours au moment de son
+# ajout (règle maison) ; dates relevées sur crates.io dans docs/journal.md.
+[workspace.dependencies]
+synco-e2ee = { path = "crates/synco-e2ee", default-features = false, features = ["os-rng"] }
+runtime-protocol = { path = "crates/runtime-protocol" }
+synco-ai-runtime-worker = { path = "crates/worker" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.151" }
+zeroize = { version = "=1.9.0", features = ["alloc"] }
+ed25519-dalek = { version = "=3.0.0", default-features = false, features = ["fast", "zeroize"] }
+tokio = { version = "=1.54.1", default-features = false }
+axum = { version = "=0.8.9", default-features = false, features = ["tokio", "http1", "ws", "json", "query"] }
+reqwest = { version = "=0.13.4", default-features = false, features = ["rustls"] }
+tokio-tungstenite = { version = "=0.29.0", default-features = false, features = ["handshake"] }
+tokio-rustls = { version = "=0.26.5", default-features = false }
+rustls = { version = "=0.23.44", default-features = false }
+rustls-platform-verifier = { version = "=0.7.0" }
+futures-util = { version = "=0.3.34", default-features = false, features = ["sink", "std"] }
+toml = { version = "=1.1.6", default-features = false, features = ["parse", "serde", "std"] }
+tracing = { version = "=0.1.44" }
+tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["fmt", "env-filter", "ansi", "std"] }
+argon2 = { version = "=0.6.0", default-features = false, features = ["alloc", "zeroize"] }
+rustix = { version = "=1.1.5", default-features = false, features = ["std", "termios"] }
+tempfile = { version = "=3.27.0" }
+
+# Règles « zéro panique » de synco_cdn, communes aux crates du runtime (synco-e2ee garde sa copie) ;
+# assouplies pour les tests dans clippy.toml.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+as_conversions = "deny"
+string_slice = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+exit = "deny"
+mem_forget = "deny"

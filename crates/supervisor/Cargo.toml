@@ -1,0 +1,45 @@
+[package]
+name = "synco-ai-runtime"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file = "../../LICENSE"
+description = "Superviseur du Synco AI Runtime : clés du runtime, appairage, canal vers l'API, délégations, WebSocket des clients, lancement des workers"
+
+[lib]
+name = "synco_ai_runtime"
+path = "src/lib.rs"
+
+[[bin]]
+name = "synco-ai-runtime"
+path = "src/main.rs"
+
+[dependencies]
+synco-e2ee.workspace = true
+runtime-protocol.workspace = true
+synco-ai-runtime-worker.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zeroize.workspace = true
+ed25519-dalek.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal", "io-util", "process"] }
+axum.workspace = true
+reqwest.workspace = true
+tokio-tungstenite.workspace = true
+tokio-rustls.workspace = true
+rustls.workspace = true
+rustls-platform-verifier.workspace = true
+futures-util.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+argon2.workspace = true
+rustix.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio-tungstenite = { workspace = true, features = ["connect"] }
+
+[lints]
+workspace = true

@@ -93,10 +93,12 @@ fn delegation_aller_retour_et_refus() {
     // Mandat.
     let sig = delegation::sign_mandate(&user, &c, &fpr_hex, &wrap).unwrap();
     let wrap_hash = delegation::wrap_hash(&wrap);
-    delegation::verify_mandate(&user.public_key().unwrap(), &c, &fpr_hex, &wrap_hash, &sig).unwrap();
+    delegation::verify_mandate(&user.public_key().unwrap(), &c, &fpr_hex, &wrap, &sig).unwrap();
+    delegation::verify_mandate_offline_from_wrap_hash(&user.public_key().unwrap(), &c, &fpr_hex, &wrap_hash, &sig)
+        .unwrap();
     let other_user = EcSigningKey::from_scalar(&[0x56; 32]).unwrap().public_key().unwrap();
     assert_eq!(
-        delegation::verify_mandate(&other_user, &c, &fpr_hex, &wrap_hash, &sig).unwrap_err(),
+        delegation::verify_mandate(&other_user, &c, &fpr_hex, &wrap, &sig).unwrap_err(),
         Error::DelegationUnusable
     );
 
@@ -312,4 +314,94 @@ fn code_d_appairage() {
         runtime_cert::parse_pairing_code("ÉÉÉÉ-ÉÉÉÉ-ÉÉÉÉ-ÉÉÉÉ-ÉÉÉÉ-ÉÉÉÉ-ÉÉÉÉ").unwrap_err(),
         Error::PairCodeInvalid
     );
+}
+
+/// Revue L01 : une API malveillante garde le mandat authentique et son `wrapHash`, mais sert une
+/// enveloppe forgée vers `kex` avec une `DK'` qu'elle connaît. L'ancienne composition (hash servi +
+/// ouverture) l'acceptait ; `accept_delegation` vérifie le mandat sur l'enveloppe ouverte.
+#[test]
+fn enveloppe_forgee_avec_mandat_authentique_refusee() {
+    let mut rng = OsRandom;
+    let (kex, _, keys) = runtime_keys();
+    let user = EcSigningKey::from_scalar(&[0x55; 32]).unwrap();
+    let user_pub = user.public_key().unwrap();
+    let c = ctx();
+    let fpr_hex = runtime_cert::fingerprint_hex(&c.runtime_id, &keys).unwrap();
+    let wrap =
+        delegation::seal_delegation(&c, &keys.kex, &DelegationKey::generate(&mut rng).unwrap(), &mut rng).unwrap();
+    let signature = delegation::sign_mandate(&user, &c, &fpr_hex, &wrap).unwrap();
+
+    let api_dk = DelegationKey::from_bytes([0x66; 32]);
+    let forged = delegation::seal_delegation(&c, &keys.kex, &api_dk, &mut rng).unwrap();
+
+    // Composition vulnérable : mandat vérifié sur le hash SERVI, puis ouverture de l'enveloppe forgée.
+    delegation::verify_mandate_offline_from_wrap_hash(
+        &user_pub,
+        &c,
+        &fpr_hex,
+        &delegation::wrap_hash(&wrap),
+        &signature,
+    )
+    .unwrap();
+    assert_eq!(delegation::open_delegation(&c, &kex, &forged).unwrap(), api_dk);
+
+    // Corrigé.
+    assert_eq!(
+        delegation::verify_mandate(&user_pub, &c, &fpr_hex, &forged, &signature).unwrap_err(),
+        Error::DelegationUnusable
+    );
+    let me = delegation::RuntimeSelf {
+        runtime_id: &c.runtime_id,
+        org_id: &c.org_id,
+        fpr_hex: &fpr_hex,
+        kex: &kex,
+        max_lifetime_secs: 7 * 86_400,
+    };
+    let now = c.iat + 10;
+    assert_eq!(
+        delegation::accept_delegation(&me, now, &c, &user_pub, &forged, &signature).unwrap_err(),
+        Error::DelegationUnusable
+    );
+    delegation::accept_delegation(&me, now, &c, &user_pub, &wrap, &signature).unwrap();
+}
+
+#[test]
+fn accept_delegation_controle_tout_le_contexte() {
+    let mut rng = OsRandom;
+    let (kex, _, keys) = runtime_keys();
+    let user = EcSigningKey::from_scalar(&[0x55; 32]).unwrap();
+    let c = ctx();
+    let fpr_hex = runtime_cert::fingerprint_hex(&c.runtime_id, &keys).unwrap();
+    let wrap =
+        delegation::seal_delegation(&c, &keys.kex, &DelegationKey::generate(&mut rng).unwrap(), &mut rng).unwrap();
+    let sig = delegation::sign_mandate(&user, &c, &fpr_hex, &wrap).unwrap();
+    let other_fpr = "0".repeat(64);
+    let base = delegation::RuntimeSelf {
+        runtime_id: &c.runtime_id,
+        org_id: &c.org_id,
+        fpr_hex: &fpr_hex,
+        kex: &kex,
+        max_lifetime_secs: 7 * 86_400,
+    };
+    let now = c.iat + 10;
+    let user_pub = user.public_key().unwrap();
+    delegation::accept_delegation(&base, now, &c, &user_pub, &wrap, &sig).unwrap();
+    let variants = [
+        delegation::RuntimeSelf { runtime_id: "autre-runtime", ..base },
+        delegation::RuntimeSelf { org_id: "autre-org", ..base },
+        delegation::RuntimeSelf { fpr_hex: &other_fpr, ..base },
+        delegation::RuntimeSelf { max_lifetime_secs: 86_400, ..base },
+    ];
+    for me in &variants {
+        assert_eq!(
+            delegation::accept_delegation(me, now, &c, &user_pub, &wrap, &sig).unwrap_err(),
+            Error::DelegationUnusable
+        );
+    }
+    for t in [c.exp, c.iat - 301] {
+        assert_eq!(
+            delegation::accept_delegation(&base, t, &c, &user_pub, &wrap, &sig).unwrap_err(),
+            Error::DelegationUnusable
+        );
+    }
 }

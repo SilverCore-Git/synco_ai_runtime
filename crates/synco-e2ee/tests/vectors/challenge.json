@@ -22,7 +22,7 @@
   "sharedHex": "5238f9f956812e75918895390fa057a2063aa66d4d5eefbe6ecdcf78342d2922",
   "kchHex": "9eaeea97282cb912eb967cd5771284fe6b66a5b70762fbef17cb3623f05a3833",
   "mac": "E_55ulgpiziGl-NFRH2ucQoVkkijIthDy9xh7cXl9rg",
-  "sig": "eNQviF_r4xHQthr81fGX6VeIrmHMNT99JwE5nkDwcDcb6EOMbbxsJVghjGzR6r0hORYtlHZXMMn2WIVW4JctXQ",
+  "sig": "T-CvltN-ujlNezHd1ytO5eHB0DQfO6if_N6tXRPz9m5Trxexu3STyuZAyqcxDhyYHV_9VORHUOW1dP5AWmLUHw",
   "cases": [
     {
       "name": "réponse valide",
@@ -35,7 +35,7 @@
       },
       "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
       "mac": "E_55ulgpiziGl-NFRH2ucQoVkkijIthDy9xh7cXl9rg",
-      "sig": "eNQviF_r4xHQthr81fGX6VeIrmHMNT99JwE5nkDwcDcb6EOMbbxsJVghjGzR6r0hORYtlHZXMMn2WIVW4JctXQ",
+      "sig": "T-CvltN-ujlNezHd1ytO5eHB0DQfO6if_N6tXRPz9m5Trxexu3STyuZAyqcxDhyYHV_9VORHUOW1dP5AWmLUHw",
       "expect": "ok"
     },
     {
@@ -49,7 +49,7 @@
       },
       "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
       "mac": "i5qpd2QM_6-qjDNElX0PITfc9NKBG0AwMN3FL_A9U3s",
-      "sig": "A9Qb0MSL37aT_RMSKM1h9ahcFaSeC2hcTS8DIBL8nDSwbMnw759X6SaylDXOMKX5vnwLt2-Iyy2eRapZlk1SFg",
+      "sig": "OfnKANoKByJq-g8IZKx6Vl_Emi3wlf3MumI5D0s7r4BWUdnKMKWcOuFYRuIp9e1lcLidnDNbqdvMcWTwme3x-Q",
       "expect": "challenge_failed"
     },
     {
@@ -63,7 +63,7 @@
       },
       "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
       "mac": "E_55ulgpiziGl-NFRH2ucQoVkkijIthDy9xh7cXl9rg",
-      "sig": "-Hi7uvfonqXiRB_mcfE6gPRP8Xj7_agINTRWUmMrQgru12GkwaTUlEHZLOfgxuWcx1tCee3NI1d0dvOsWneieA",
+      "sig": "w2foZ-NrNK_oTowy9vn07Y3oLHO39eEGJN-trSdypB9F7CS7rRK317n28U7oms0Onki0cS26XTVbuUtt3TWWGg",
       "expect": "challenge_failed"
     },
     {
@@ -77,7 +77,7 @@
       },
       "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
       "mac": "E_55ulgpiziGl-NFRH2ucQoVkkijIthDy9xh7cXl9rg",
-      "sig": "eNQviF_r4xHQthr81fGX6VeIrmHMNT99JwE5nkDwcDcb6EOMbbxsJVghjGzR6r0hORYtlHZXMMn2WIVW4JctXQ",
+      "sig": "T-CvltN-ujlNezHd1ytO5eHB0DQfO6if_N6tXRPz9m5Trxexu3STyuZAyqcxDhyYHV_9VORHUOW1dP5AWmLUHw",
       "expect": "challenge_failed"
     },
     {
@@ -91,7 +91,7 @@
       },
       "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
       "mac": "E_55ulgpiziGl-NFRH2ucQoVkkijIthDy9xh7cXl9rg",
-      "sig": "eNQviF_r4xHQthr81fGX6VeIrmHMNT99JwE5nkDwcDcb6EOMbbxsJVghjGzR6r0hORYtlHZXMMn2WIVW4JctXQ",
+      "sig": "T-CvltN-ujlNezHd1ytO5eHB0DQfO6if_N6tXRPz9m5Trxexu3STyuZAyqcxDhyYHV_9VORHUOW1dP5AWmLUHw",
       "expect": "challenge_failed"
     },
     {
@@ -105,7 +105,7 @@
       },
       "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
       "mac": "E_55ulgpiziGl-NFRH2ucQoVkkijIthDy9xh7cXl9rg",
-      "sig": "eNQviF_r4xHQthr81fGX6VeIrmHMNT99JwE5nkDwcDcb6EOMbbxsJVghjGzR6r0hORYtlHZXMMn2WIVW4JctXQ",
+      "sig": "T-CvltN-ujlNezHd1ytO5eHB0DQfO6if_N6tXRPz9m5Trxexu3STyuZAyqcxDhyYHV_9VORHUOW1dP5AWmLUHw",
       "expect": "challenge_failed"
     },
     {
@@ -119,7 +119,7 @@
       },
       "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
       "mac": "E_55ulgpiziGl-NFRH2ucQoVkkijIthDy9xh7cXl9rg",
-      "sig": "eNQviF_r4xHQthr81fGX6VeIrmHMNT99JwE5nkDwcDcb6EOMbbxsJVghjGzR6r0hORYtlHZXMMn2WIVW4JctXQ",
+      "sig": "T-CvltN-ujlNezHd1ytO5eHB0DQfO6if_N6tXRPz9m5Trxexu3STyuZAyqcxDhyYHV_9VORHUOW1dP5AWmLUHw",
       "expect": "challenge_failed"
     },
     {
@@ -133,7 +133,7 @@
       },
       "fprHex": "02541b1e826187cea973ee48a890649a7140f69cddf0bd290230b1cf2541f248",
       "mac": "E_55ulgpiziGl-NFRH2ucQoVkkijIthDy9xh7cXl9rg",
-      "sig": "eNQviF_r4xHQthr81fGX6VeIrmHMNT99JwE5nkDwcDcb6EOMbbxsJVghjGzR6r0hORYtlHZXMMn2WIVW4JctXQ",
+      "sig": "T-CvltN-ujlNezHd1ytO5eHB0DQfO6if_N6tXRPz9m5Trxexu3STyuZAyqcxDhyYHV_9VORHUOW1dP5AWmLUHw",
       "expect": "challenge_failed"
     },
     {
@@ -147,7 +147,7 @@
       },
       "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
       "mac": "E_55ulgpiziGl-NFRH2ucQoVkkijIthDy9xh7cXl9",
-      "sig": "eNQviF_r4xHQthr81fGX6VeIrmHMNT99JwE5nkDwcDcb6EOMbbxsJVghjGzR6r0hORYtlHZXMMn2WIVW4JctXQ",
+      "sig": "T-CvltN-ujlNezHd1ytO5eHB0DQfO6if_N6tXRPz9m5Trxexu3STyuZAyqcxDhyYHV_9VORHUOW1dP5AWmLUHw",
       "expect": "challenge_failed"
     }
   ]

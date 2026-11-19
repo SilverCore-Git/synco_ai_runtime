@@ -64,9 +64,15 @@ fn ouvrir(
         iat: 1_795_000_000,
         exp: 1_795_604_800,
     };
-    ctx.check_time(1_795_000_100, 7 * 86_400)?;
-    delegation::verify_mandate(user_sign_key, &ctx, fpr_hex, &delegation::wrap_hash(wrap), mandate_signature)?;
-    let dk = delegation::open_delegation(&ctx, kex, wrap)?;
+    let me = delegation::RuntimeSelf {
+        runtime_id: "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        org_id: "cm3orgexample0000000000001",
+        fpr_hex,
+        kex,
+        max_lifetime_secs: 7 * 86_400,
+    };
+    // Contrôles de 03 §4 (identité, horloge, empreinte, mandat sur CETTE enveloppe) puis ouverture.
+    let dk = delegation::accept_delegation(&me, 1_795_000_100, &ctx, user_sign_key, wrap, mandate_signature)?;
     delegation::open_entry(&dk, &ctx, "thread", "cm3threadexample000000001", 1, entry_ciphertext)
 }
 ```

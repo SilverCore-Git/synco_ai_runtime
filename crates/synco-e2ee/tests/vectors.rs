@@ -275,7 +275,7 @@ fn delegation() {
     assert_eq!(ctx.mandate_bytes(s(&v, "fprHex"), s(&v, "wrapHash")).unwrap(), s(&v, "mandateBytes"));
     assert_eq!(delegation::open_delegation(&ctx, &kex, s(&v, "wrap")).unwrap(), dk);
     let user = EcPublicKey::from_canonical(s(&v, "userSignKey")).unwrap();
-    delegation::verify_mandate(&user, &ctx, s(&v, "fprHex"), s(&v, "wrapHash"), s(&v, "mandateSignature")).unwrap();
+    delegation::verify_mandate(&user, &ctx, s(&v, "fprHex"), s(&v, "wrap"), s(&v, "mandateSignature")).unwrap();
 
     for c in cases(&v, "wrapCases") {
         let got = delegation_context(&c["context"]).and_then(|cc| {
@@ -290,7 +290,7 @@ fn delegation() {
     for c in cases(&v, "mandateCases") {
         let cc = delegation_context(&c["context"]).unwrap();
         let key = EcPublicKey::from_canonical(s(c, "userSignKey")).unwrap();
-        let got = delegation::verify_mandate(&key, &cc, s(c, "fprHex"), s(c, "wrapHash"), s(c, "signature"));
+        let got = delegation::verify_mandate(&key, &cc, s(c, "fprHex"), s(c, "wrap"), s(c, "signature"));
         assert_eq!(outcome(&got), s(c, "expect"), "{}", s(c, "name"));
     }
     for e in cases(&v, "entries") {
@@ -416,9 +416,17 @@ fn enveloppe_rt1() {
     let ctx = delegation_context(&m["context"]).unwrap();
     let user = EcPublicKey::from_canonical(s(m, "userSignKey")).unwrap();
     let other = EcPublicKey::from_canonical(s(m, "otherUserSignKey")).unwrap();
-    delegation::verify_mandate(&user, &ctx, s(m, "fprHex"), s(m, "wrapHash"), s(m, "signature")).unwrap();
+    delegation::verify_mandate_offline_from_wrap_hash(&user, &ctx, s(m, "fprHex"), s(m, "wrapHash"), s(m, "signature"))
+        .unwrap();
     assert_eq!(
-        delegation::verify_mandate(&other, &ctx, s(m, "fprHex"), s(m, "wrapHash"), s(m, "signature")).unwrap_err(),
+        delegation::verify_mandate_offline_from_wrap_hash(
+            &other,
+            &ctx,
+            s(m, "fprHex"),
+            s(m, "wrapHash"),
+            s(m, "signature")
+        )
+        .unwrap_err(),
         Error::DelegationUnusable
     );
     assert_eq!(s(&v["compat"], "result"), "accepted_unverified");

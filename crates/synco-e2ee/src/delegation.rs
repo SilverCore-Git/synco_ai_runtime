@@ -236,10 +236,28 @@ pub fn sign_mandate(
     Ok(b64(&user_sign_key.sign(bytes.as_bytes())))
 }
 
-/// Vérifie le mandat (03 §4 étape 3) : `fpr_hex` = empreinte du runtime (la sienne côté runtime,
-/// recalculée depuis le certificat côté client), `wrap_hash` = [`wrap_hash`] de l'enveloppe de
-/// tête. La clé de l'utilisateur doit venir de l'épinglage TOFU (03 §4 étape 2).
+/// Vérifie le mandat (03 §4 étape 3) sur l'enveloppe de tête **elle-même** : le hash engagé est
+/// recalculé ici à partir de `wrap`, jamais lu d'une valeur servie. C'est la variante à utiliser
+/// avant d'ouvrir `wrap` (de préférence via [`accept_delegation`]). `fpr_hex` = empreinte du runtime ;
+/// la clé de l'utilisateur doit venir de l'épinglage TOFU (03 §4 étape 2).
 pub fn verify_mandate(
+    user_sign_key: &EcPublicKey,
+    ctx: &DelegationContext,
+    fpr_hex: &str,
+    wrap: &str,
+    signature: &str,
+) -> Result<()> {
+    verify_mandate_offline_from_wrap_hash(user_sign_key, ctx, fpr_hex, &wrap_hash(wrap), signature)
+}
+
+/// Vérification **hors ligne** du mandat à partir d'un `wrapHash` servi (client à jour qui vérifie
+/// une enveloppe `rt1`, 03 §10 étape 3 : l'API sert le hash, pas l'enveloppe).
+///
+/// Ne prouve rien sur une enveloppe de tête particulière : ne **jamais** l'utiliser pour décider
+/// d'ouvrir une enveloppe (une API malveillante peut garder le mandat authentique et son hash, et
+/// servir une autre enveloppe scellée vers `kex` avec une `DK` qu'elle connaît). Le runtime utilise
+/// [`verify_mandate`] ou [`accept_delegation`].
+pub fn verify_mandate_offline_from_wrap_hash(
     user_sign_key: &EcPublicKey,
     ctx: &DelegationContext,
     fpr_hex: &str,
@@ -249,6 +267,46 @@ pub fn verify_mandate(
     let bytes = ctx.mandate_bytes(fpr_hex, wrap_hash).map_err(|_| Error::DelegationUnusable)?;
     let sig = from_b64(signature).map_err(|_| Error::DelegationUnusable)?;
     if user_sign_key.verify(bytes.as_bytes(), &sig) { Ok(()) } else { Err(Error::DelegationUnusable) }
+}
+
+/// Identité et politique du runtime qui reçoit une délégation.
+#[derive(Debug)]
+pub struct RuntimeSelf<'a> {
+    /// Son `runtimeId`.
+    pub runtime_id: &'a str,
+    /// L'org à laquelle il est appairé.
+    pub org_id: &'a str,
+    /// Sa propre empreinte `fprHex` (calculée depuis ses clés, jamais reçue).
+    pub fpr_hex: &'a str,
+    /// Sa clé privée `kex`.
+    pub kex: &'a EcdhSecret,
+    /// Durée maximale d'une délégation selon sa configuration (09 §1).
+    pub max_lifetime_secs: u64,
+}
+
+/// Chemin complet côté runtime (03 §4 étapes 1 à 3, puis 03 §3) :
+/// 1. `runtimeId` = le sien, `orgId` = son org, `scope` connu, champs valides, horloge
+///    (`iat ≤ now + 300`, `now < exp`, `exp − iat ≤ max_lifetime_secs`), `fprHex` = la sienne ;
+/// 2. (l'appelant fournit la clé de signature de l'utilisateur issue de son épinglage TOFU) ;
+/// 3. mandat vérifié sur le hash de **l'enveloppe effectivement ouverte** ;
+///
+/// puis ouverture de l'enveloppe de tête. Tout refus : [`Error::DelegationUnusable`].
+pub fn accept_delegation(
+    me: &RuntimeSelf<'_>,
+    now: u64,
+    ctx: &DelegationContext,
+    user_sign_key: &EcPublicKey,
+    wrap: &str,
+    mandate_signature: &str,
+) -> Result<DelegationKey> {
+    let fail = Error::DelegationUnusable;
+    ctx.validate().map_err(|_| fail)?;
+    if ctx.runtime_id != me.runtime_id || ctx.org_id != me.org_id || ctx.scope != Scope::Org {
+        return Err(fail);
+    }
+    ctx.check_time(now, me.max_lifetime_secs)?;
+    verify_mandate(user_sign_key, ctx, me.fpr_hex, wrap, mandate_signature)?;
+    open_delegation(ctx, me.kex, wrap)
 }
 
 /// Type de clé délégable (03 §2). Toute autre valeur (`dm`, `support`, `ai`, `org`, `account`,

@@ -161,6 +161,23 @@ model AiConversationKey {
 `AiRuntimeDelegation.mandateSignature` et `wrapHash` ne sont pas chiffrés en base : ils sont servis à
 tout membre de l'org pour vérifier les clés créées par le runtime (03 §10).
 
+Valeurs réelles (révisé après la vague B, 2026-11-19 ; le schéma appliqué,
+`synco_api/prisma/schema.prisma:1634` et suivants, est identique aux modèles ci-dessus, seuls les
+commentaires d'énumération sont complétés ici) :
+
+- `AiRuntimeDelegation.revokedReason` : `user_revoked`, `admin_revoked`, `runtime_unpaired`,
+  `member_left`, `superseded`, **`org_banned`, `ai_disabled`, `runtime_disabled`,
+  `member_not_allowed`** (03 §8.1) ; `null` pour une délégation `expired`
+  (`synco_api/src/services/aiRuntime/delegationService.ts:345-347`, `:396-406`).
+- `AiSessionAuthorization.revokedReason` : `switched_to_local`, `delegation_revoked`,
+  **`delegation_expired`**, `runtime_unpaired`, `member_left`, **`session_deleted`**
+  (`synco_api/src/services/aiRuntime/conversationLifecycle.ts:26-32`).
+- Une délégation `superseded`, `revoked` ou `expired` n'a **plus aucune entrée** : elles sont
+  supprimées au changement de statut (03 §8.1) ; le désappairage supprime toutes les entrées du
+  runtime (01 §9).
+- `AiConversationKey.creatorId` = l'utilisateur, posé par l'API à la bascule ; `commitment` et
+  `signature` facultatifs (03 §6.2).
+
 ## 4. Extension de `AiChatSession` et bail
 
 ```prisma
@@ -244,6 +261,22 @@ await prisma.$transaction(async (tx) => {
 Un worker dont le bail a expiré (ou qui a été remplacé : `leaseEpoch` plus grand) ne peut plus rien
 écrire : c'est l'invariant « deux workers n'écrivent jamais la même conversation ».
 
+### 4.4 Réalisation (révisé après la vague B, 2026-11-19)
+
+`synco_api/src/services/aiRuntime/conversationLease.ts:128-166`, `:275-350` :
+
+- prise et renouvellement passent par la **même** route (`POST …/lease`) : corps vide = prise,
+  `{ leaseEpoch }` = renouvellement ; le renouvellement exige en plus `regime = 'runtime'` et
+  `runtimeId` ; la prise journalise `lease_taken` (code = nouvel `leaseEpoch`) ;
+- l'écriture d'historique ou de statut exige le bail courant (`leaseHolder`, `leaseEpoch`,
+  `leaseExpiresAt > maintenant`) ; un conflit est ensuite classé : bail toujours détenu →
+  `rev_conflict`, sinon `lease_conflict` ;
+- les actions d'outils pour le runtime (`tools/:name/execute`, `POST /e2ee/threads`,
+  `POST /e2ee/cdn/uploads`) exigent elles aussi le bail courant (04 §5) ;
+- `leaseEpoch` est incrémenté à chaque prise, à la **bascule** vers le runtime et à chaque sortie
+  du régime runtime par `exitRuntimeRegime` ; le désappairage (01 §9) clôt le bail sans l'incrémenter ;
+- le `PATCH` historique (03 §6.2) est lui aussi un `updateMany` conditionné et incrémente `rev`.
+
 ## 5. Boîte de réception et journal
 
 ```prisma
@@ -268,7 +301,7 @@ model AiChatSessionEvent {
   id        String   @id @default(cuid())
   sessionId String
   session   AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  type      String   // 'switch_to_runtime' | 'switch_to_local' | 'status' | 'lease_taken' | 'lease_lost' | 'tool_unknown_outcome'
+  type      String   // 'switch_to_runtime' | 'switch_to_local' | 'status' | 'lease_taken' | 'lease_lost' | 'tool_unknown_outcome' (les deux derniers : 00 §6 Q15)
   actor     String   // 'user' | 'runtime' | 'api'
   fromState String?
   toState   String?
@@ -281,6 +314,13 @@ model AiChatSessionEvent {
 ```
 
 Dépôt idempotent : `createMany({ data: [...], skipDuplicates: true })` sur la clé `(sessionId, id)`.
+
+Précisions (révisé après la vague B, 2026-11-19) : `payload` = trame sans `v` ni `t` ; le plafond de
+100 éléments non consommés est vérifié avant l'insertion (`429 inbox_full`) ; un doublon ne change
+ni l'état ni le réveil (`conversationLifecycle.ts:398-460`). Journal : l'API écrit `switch_to_runtime`,
+`switch_to_local` (code = raison de sortie), `status` (code = `lastErrorCode` ou `null`, acteur `user`,
+`runtime` ou `api`) et `lease_taken`. Aucune route du canal ne permet au runtime d'écrire
+`lease_lost` ni `tool_unknown_outcome` (00 §6 Q15).
 
 ## 6. Politique runtime de l'org
 
@@ -332,3 +372,22 @@ conversation. Aucun contenu.
 Tâche périodique (L03, comme `cdnMaintenance.ts`) : délégations `active` expirées → `expired`
 (`activeKey = null`) et autorisations associées révoquées ; éléments de boîte consommés de plus de
 7 jours supprimés ; journaux de conversation conservés tant que la conversation existe.
+
+Passes réelles (révisé après la vague B, 2026-11-19 ; `runAiRuntimeMaintenance`,
+`synco_api/src/services/aiRuntime/runtimeMaintenance.ts:68-87`), toutes les **60 s**, idempotentes
+(plusieurs instances peuvent la lancer), dans cet ordre :
+
+1. `expireDelegations` : délégations actives dont `expiresAt ≤ maintenant` → `expired`, avec les
+   effets de 03 §8.1 (entrées supprimées, conversations repassées en local, `delegation.revoked`
+   `reason: "expired"`) ;
+2. `sweepOrphanDelegations` : délégations actives d'un utilisateur qui n'est plus membre →
+   `member_left` (filet de `revokeOrgMembership`) ;
+3. `sweepPolicyViolations` : délégations que l'état IA de l'org ne permet plus (03 §8.1 : org
+   bannie, module IA ou mode runtime coupé, membre non autorisé) ;
+4. `sweepOrphanAuthorizations` : autorisations actives dont la délégation n'est plus active ou a
+   expiré (révocation interrompue, course bascule / révocation) → conversations repassées en local ;
+5. `failTimedOutWaits` : `awaiting_confirmation` / `awaiting_user` depuis plus de 7 jours →
+   `failed` `confirmation_timeout` ; `awaiting_key` depuis plus de 7 jours → `failed` `key_timeout`
+   (comparaison sur `statusChangedAt`), journal et push `AI_FAILED` ; délai **fixe** en v1, non
+   réglable par l'org (00 §6 Q14) ;
+6. `purgeConsumedInbox` : éléments consommés depuis plus de 7 jours supprimés.

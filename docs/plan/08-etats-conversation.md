@@ -80,12 +80,53 @@ Règles communes :
 `AiChatSession.awaitingKey` (07 §4) vaut `"<kind>:<ref>"` tant que l'état est `awaiting_key`, sinon
 `null` ; c'est lui que l'API compare aux entrées ajoutées.
 
+### 2.1 Réalisation par l'API (révisé après la vague B, 2026-11-19)
+
+- **`awaitingKey` transmis par le runtime** : le worker l'envoie dans `PUT …/transcript` ou
+  `POST …/status` (`"thread:<id>"` ou `"space:<id>"`), obligatoire avec `awaiting_key`, interdit
+  sinon (04 §4.2). L'API le remet à `null` à toute autre transition. La sortie de `awaiting_key` est
+  faite par l'API à l'ajout de l'entrée attendue, que ce soit par un **dépôt** de délégation ou par
+  un **ajout** d'entrées (client ou runtime), puis `conversation.wake` `reason: "keys"`
+  (`wakeAwaitingKey`, `synco_api/src/services/aiRuntime/delegationService.ts:307-343`).
+- **Transitions au dépôt** (`inboxTransition`, `synco_api/src/services/aiRuntime/conversationState.ts:49-63`) :
+  `message` depuis `idle`, `failed`, `cancelled`, `awaiting_confirmation`, `awaiting_user`,
+  `awaiting_key` → `queued` ; `confirm` depuis `awaiting_confirmation` → `queued` ; `answer` /
+  `upload` depuis `awaiting_user` → `queued` ; `cancel` depuis `queued` ou `awaiting_*` →
+  `cancelled`. Tout autre cas : aucun changement (le worker en cours, ou le suivant, consomme
+  l'élément ; hors d'état → `stale_decision`). Écriture par `updateMany` conditionné au statut lu,
+  trois essais ; `lastErrorCode` et `awaitingKey` remis à `null`.
+- **Transitions après l'écriture du worker** (`afterWorkerWrite`,
+  `synco_api/src/services/aiRuntime/conversationLease.ts:228-273`) : un élément déposé pendant
+  `running` ne peut pas faire changer l'état au dépôt. Après chaque `PUT …/transcript` ou
+  `POST …/status`, l'API journalise la transition du worker, puis applique la même table aux
+  éléments **restés non consommés**, à partir du **nouvel** état, dans l'ordre de dépôt : le premier
+  qui produit une transition l'emporte. Ainsi une fin de tour `idle` avec un message non consommé
+  repasse aussitôt `queued`, une attente avec sa décision déjà déposée aussi, et le runtime est
+  réveillé (`inbox` ou `decision`).
+- **Filet** : `GET /conversations?state=pending` liste aussi les conversations `idle` qui ont un
+  élément `message` non consommé (04 §4.1).
+- **Bascule** : `switch-to-runtime` aboutit toujours à `idle` (la requête n'apporte pas de message ;
+  le premier message passe par la boîte).
+- **Push** : pour les transitions qu'il écrit, le runtime décide lui-même et appelle
+  `POST …/push` (04 §4.2) ; l'API n'envoie elle-même que les push des transitions qu'elle écrit
+  (délais dépassés : `AI_FAILED`). Correspondance de l'API (`pushForStatus`,
+  `conversationState.ts:70-87`) : `idle` → `AI_TURN_DONE` si `lastErrorCode` est `null` ou
+  `step_limit` ; `awaiting_confirmation`, `awaiting_user`, `awaiting_key`, `failed` → le type
+  correspondant.
+- **Socket** : chaque transition écrite par l'API ou par le worker émet `ai:session-status` vers le
+  propriétaire.
+
 ## 3. Sortie du mode runtime
 
 `switch-to-local` (utilisateur) et révocations (délégation, désappairage, départ) :
 
-1. régime `client`, statut `idle`, `runtimeId = null`, bail clos (§2) ;
-2. autorisation révoquée, entrée `conv` supprimée de la délégation ;
+1. régime `client`, statut `idle`, `runtimeId = null`, bail clos (§2) ; l'API vide aussi
+   `pendingToolCall` et `awaitingKey`, et pose `lastErrorCode = "revoked"` sauf pour une sortie
+   demandée par l'utilisateur (`switched_to_local`) ou une suppression (`session_deleted`)
+   (révisé après la vague B, 2026-11-19 ; `exitRuntimeRegime`,
+   `synco_api/src/services/aiRuntime/conversationLifecycle.ts:83-150`) ;
+2. autorisation révoquée, entrée `conv` supprimée de la délégation (`delegation.entries_removed`
+   au runtime, après `conversation.revoked`) ;
 3. le schéma reste `conv-gcm1-v1` : la conversation se poursuit en local avec la même `CK`
    (fournisseur piloté par le navigateur ; pas de régime `server`, 03 §6.3) ;
 4. les éléments non consommés de la boîte restent visibles dans l'historique comme « non traités »
@@ -103,6 +144,13 @@ Règles communes :
   résultat est enregistré.
 - **Attentes** : le worker enregistre l'état puis **quitte** (P3) ; la décision relancera un worker
   (`queued`). D'où le changement d'`epoch` dans l'exemple de 05 §10.
+- **Annulation hors tour** (révisé après la vague B, 2026-11-19) : un `cancel` déposé sur une
+  conversation `queued` ou `awaiting_*` la fait passer `cancelled` **au dépôt**, sans consommer les
+  éléments de la boîte : c'est le worker suivant qui les consomme (et décide de leur sort) ; un dépôt
+  par l'API ne réveille pas le runtime quand la conversation est désormais `cancelled`. Un `cancel`
+  déposé pendant `running` ne change rien au dépôt : le worker le lit dans la boîte (règle
+  ci-dessus) ; s'il reste non consommé quand le worker écrit une attente, l'API applique
+  `cancelled` après cette écriture (§2.1).
 
 ## 5. Plantage et reprise
 
@@ -126,7 +174,11 @@ l'outil qu'après la confirmation de cette écriture. Après l'exécution, il en
 
 Qui relance : le superviseur, au démarrage et après chaque reconnexion du flux de notifications,
 interroge `GET /api/runtime/v1/conversations?state=pending` (04 §4.1), qui inclut les conversations
-`running` dont le bail a expiré ; il prend le bail (`queued` implicite) puis lance le worker.
+`running` dont le bail a expiré (et, depuis la vague B, les `idle` avec un message non consommé) ;
+il prend le bail (`queued` implicite) puis lance le worker.
+
+Journal : aucune route du canal ne permet aujourd'hui au worker d'écrire l'`AiChatSessionEvent`
+`tool_unknown_outcome` de l'étape 2 (00 §6 Q15).
 
 ## 6. Codes d'erreur (`lastErrorCode`, évènement `error`)
 

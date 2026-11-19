@@ -1,0 +1,55 @@
+[package]
+name = "synco-e2ee"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file = "../../LICENSE"
+description = "Formats E2EE de Synco (v4 et délégation au runtime) : implémentation Rust pure, compatible octet pour octet avec le client TypeScript"
+readme = "README.md"
+
+[dependencies]
+aes-gcm = { version = "=0.11.1", default-features = false, features = ["aes", "alloc", "zeroize"] }
+p256 = { version = "=0.14.0", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "std"] }
+sha2 = { version = "=0.11.0", default-features = false, features = ["zeroize"] }
+hmac = { version = "=0.13.0", default-features = false, features = ["zeroize"] }
+hkdf = { version = "=0.13.0", default-features = false }
+base64 = { version = "=0.23.1", default-features = false, features = ["alloc"] }
+serde_json = { version = "=1.0.151", default-features = false, features = ["std"] }
+zeroize = { version = "=1.9.0", default-features = false, features = ["alloc"] }
+getrandom = { version = "=0.4.3", optional = true }
+
+[features]
+default = ["os-rng"]
+# Générateur aléatoire du système (`OsRandom`).
+os-rng = ["dep:getrandom"]
+# Scellement d'AK vers un appareil et d'une clé d'identité sous AK : formats v4 existants, pour les
+# vecteurs de compatibilité uniquement. Le runtime ne doit jamais l'activer.
+legacy-seal = []
+
+[[example]]
+name = "emit_ts_vectors"
+required-features = ["legacy-seal"]
+
+# Règles « zéro panique », comme synco_cdn ; assouplies pour les tests dans clippy.toml.
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unused_must_use = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+as_conversions = "deny"
+string_slice = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+exit = "deny"
+mem_forget = "deny"

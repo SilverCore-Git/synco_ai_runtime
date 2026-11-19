@@ -1,0 +1,298 @@
+{
+  "description": "Formats E2EE v4 existants rejoués par la crate (P8) : clé d'identité scellée par AK, enveloppe et certificat d'appareil (ordre JSON historique {kty,crv,x,y}), enveloppes FC4, chaîne de transitions. Signatures : vérification seulement.",
+  "userId": "user-v4-0000000000000001",
+  "deviceId": "0b7a2d8e-5b1f-4f55-8a33-2e4f5a6b7c8d",
+  "identity": {
+    "akHex": "4242424242424242424242424242424242424242424242424242424242424242",
+    "pkcs8Hex": "308187020100301306072a8648ce3d020106082a8648ce3d030107046d306b02010104205555555555555555555555555555555555555555555555555555555555555555a1440342000457e977f6db7e33c3fe7acf2842ed987009caf56d458682fca447b7d3d762ab34c5ab3770ba573bdff5414065640ffb5b346dfa84dec4db4d68e5f59cc471c2ec",
+    "sealed": {
+      "ciphertext": "27tSjI2iMWgkUhWe7//nEoBoMTuvZkHPeQbyE/9aEAFo1bk+Y3RzRvxTsb5tcYQPy5rI0OzPnwKLeE9MAAK1uX9rNh0ly9bjtVFxgRYLdLXo6cvHitLBpoNwLkd0ZOSKrBdcY10ro+dH05CthwSpEFAWoWKPBIyDR+PpwePkhoQ7dIdnl07JPqhK5c9r5UNQ2r+QRHQ2qhoKHA==",
+      "iv": "MTExMTExMTExMTEx"
+    },
+    "cases": [
+      {
+        "name": "clé de signature scellée",
+        "purpose": "sign",
+        "userId": "user-v4-0000000000000001",
+        "akHex": "4242424242424242424242424242424242424242424242424242424242424242",
+        "expect": "ok"
+      },
+      {
+        "name": "autre usage (rsa)",
+        "purpose": "rsa",
+        "userId": "user-v4-0000000000000001",
+        "akHex": "4242424242424242424242424242424242424242424242424242424242424242",
+        "expect": "envelope_unusable"
+      },
+      {
+        "name": "autre utilisateur",
+        "purpose": "sign",
+        "userId": "user-v4-0000000000000002",
+        "akHex": "4242424242424242424242424242424242424242424242424242424242424242",
+        "expect": "envelope_unusable"
+      },
+      {
+        "name": "autre AK",
+        "purpose": "sign",
+        "userId": "user-v4-0000000000000001",
+        "akHex": "4343434343434343434343434343434343434343434343434343434343434343",
+        "expect": "envelope_unusable"
+      }
+    ]
+  },
+  "deviceEnvelope": {
+    "deviceScalarHex": "6161616161616161616161616161616161616161616161616161616161616161",
+    "devicePublic": "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"mi-feZen-rJFPAAri9wI_kyLYiHOaJ93HA7pBn4OA5M\",\"y\":\"JvWqGL4-c2W41cwAMUxo2JiS6l7KgeVv7-DFmqLxMm4\"}",
+    "ephScalarHex": "6262626262626262626262626262626262626262626262626262626262626262",
+    "ivHex": "323232323232323232323232",
+    "akHex": "4242424242424242424242424242424242424242424242424242424242424242",
+    "envelope": "eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6Ii1jNDNlNFpYVl83d29CU0dvc24tUnlXdzJLUmhuc1IwRzZTQUdwSGdzQmsiLCJ5IjoiV3dEUnRnYzJLekdLcmlrRS1sRFNJa3NOcTJkZGxLVE1fUFBMZlBjdzhSYyJ9.MjIyMjIyMjIyMjIyKXxwT9L6k2MIGbnFmm/2HxUgKt5vq61R7yh+HpNTijRBJnXf57fmsm0G/Xm7O2HP",
+    "cases": [
+      {
+        "name": "enveloppe valide",
+        "deviceScalarHex": "6161616161616161616161616161616161616161616161616161616161616161",
+        "userId": "user-v4-0000000000000001",
+        "deviceId": "0b7a2d8e-5b1f-4f55-8a33-2e4f5a6b7c8d",
+        "envelope": "eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6Ii1jNDNlNFpYVl83d29CU0dvc24tUnlXdzJLUmhuc1IwRzZTQUdwSGdzQmsiLCJ5IjoiV3dEUnRnYzJLekdLcmlrRS1sRFNJa3NOcTJkZGxLVE1fUFBMZlBjdzhSYyJ9.MjIyMjIyMjIyMjIyKXxwT9L6k2MIGbnFmm/2HxUgKt5vq61R7yh+HpNTijRBJnXf57fmsm0G/Xm7O2HP",
+        "expect": "ok"
+      },
+      {
+        "name": "autre utilisateur",
+        "deviceScalarHex": "6161616161616161616161616161616161616161616161616161616161616161",
+        "userId": "user-v4-0000000000000002",
+        "deviceId": "0b7a2d8e-5b1f-4f55-8a33-2e4f5a6b7c8d",
+        "envelope": "eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6Ii1jNDNlNFpYVl83d29CU0dvc24tUnlXdzJLUmhuc1IwRzZTQUdwSGdzQmsiLCJ5IjoiV3dEUnRnYzJLekdLcmlrRS1sRFNJa3NOcTJkZGxLVE1fUFBMZlBjdzhSYyJ9.MjIyMjIyMjIyMjIyKXxwT9L6k2MIGbnFmm/2HxUgKt5vq61R7yh+HpNTijRBJnXf57fmsm0G/Xm7O2HP",
+        "expect": "envelope_unusable"
+      },
+      {
+        "name": "autre appareil",
+        "deviceScalarHex": "6161616161616161616161616161616161616161616161616161616161616161",
+        "userId": "user-v4-0000000000000001",
+        "deviceId": "0b7a2d8e-5b1f-4f55-8a33-2e4f5a6b7c8e",
+        "envelope": "eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6Ii1jNDNlNFpYVl83d29CU0dvc24tUnlXdzJLUmhuc1IwRzZTQUdwSGdzQmsiLCJ5IjoiV3dEUnRnYzJLekdLcmlrRS1sRFNJa3NOcTJkZGxLVE1fUFBMZlBjdzhSYyJ9.MjIyMjIyMjIyMjIyKXxwT9L6k2MIGbnFmm/2HxUgKt5vq61R7yh+HpNTijRBJnXf57fmsm0G/Xm7O2HP",
+        "expect": "envelope_unusable"
+      },
+      {
+        "name": "mauvais destinataire (autre clé d’appareil)",
+        "deviceScalarHex": "6363636363636363636363636363636363636363636363636363636363636363",
+        "userId": "user-v4-0000000000000001",
+        "deviceId": "0b7a2d8e-5b1f-4f55-8a33-2e4f5a6b7c8d",
+        "envelope": "eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6Ii1jNDNlNFpYVl83d29CU0dvc24tUnlXdzJLUmhuc1IwRzZTQUdwSGdzQmsiLCJ5IjoiV3dEUnRnYzJLekdLcmlrRS1sRFNJa3NOcTJkZGxLVE1fUFBMZlBjdzhSYyJ9.MjIyMjIyMjIyMjIyKXxwT9L6k2MIGbnFmm/2HxUgKt5vq61R7yh+HpNTijRBJnXf57fmsm0G/Xm7O2HP",
+        "expect": "envelope_unusable"
+      },
+      {
+        "name": "enveloppe tronquée",
+        "deviceScalarHex": "6161616161616161616161616161616161616161616161616161616161616161",
+        "userId": "user-v4-0000000000000001",
+        "deviceId": "0b7a2d8e-5b1f-4f55-8a33-2e4f5a6b7c8d",
+        "envelope": "eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6Ii1jNDNlNFpYVl83d29CU0dvc24tUnlXdzJLUmhuc1IwRzZTQUdwSGdzQmsiLCJ5IjoiV3dEUnRnYzJLekdLcmlrRS1sRFNJa3NOcTJkZGxLVE1fUFBMZlBjdzhSYyJ9.MjIyMjIyMjIyMjIyKXxwT9L6k2MIGbnFmm/2HxUgKt5vq61R7yh+HpNTijRBJnXf57fmsm0G====",
+        "expect": "envelope_unusable"
+      },
+      {
+        "name": "trois parties",
+        "deviceScalarHex": "6161616161616161616161616161616161616161616161616161616161616161",
+        "userId": "user-v4-0000000000000001",
+        "deviceId": "0b7a2d8e-5b1f-4f55-8a33-2e4f5a6b7c8d",
+        "envelope": "eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6Ii1jNDNlNFpYVl83d29CU0dvc24tUnlXdzJLUmhuc1IwRzZTQUdwSGdzQmsiLCJ5IjoiV3dEUnRnYzJLekdLcmlrRS1sRFNJa3NOcTJkZGxLVE1fUFBMZlBjdzhSYyJ9.MjIyMjIyMjIyMjIyKXxwT9L6k2MIGbnFmm/2HxUgKt5vq61R7yh+HpNTijRBJnXf57fmsm0G/Xm7O2HP.AAAA",
+        "expect": "envelope_unusable"
+      }
+    ]
+  },
+  "deviceCertificate": {
+    "devicePublic": "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"mi-feZen-rJFPAAri9wI_kyLYiHOaJ93HA7pBn4OA5M\",\"y\":\"JvWqGL4-c2W41cwAMUxo2JiS6l7KgeVv7-DFmqLxMm4\"}",
+    "certBytes": "synco-e4-device-cert|user-v4-0000000000000001|0b7a2d8e-5b1f-4f55-8a33-2e4f5a6b7c8d|web|{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"mi-feZen-rJFPAAri9wI_kyLYiHOaJ93HA7pBn4OA5M\",\"y\":\"JvWqGL4-c2W41cwAMUxo2JiS6l7KgeVv7-DFmqLxMm4\"}",
+    "cases": [
+      {
+        "name": "certificat valide",
+        "platform": "web",
+        "signKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+        "certificate": "D/EqWoVgAYd9r7qNC52qOUrtr26aQ6iK5OT40DQ/JKMA4/UUwzgDh/6RkH3ewbtF7YsqeMz4OlJJIanaKTnsvg==",
+        "expect": "ok"
+      },
+      {
+        "name": "autre plateforme",
+        "platform": "ios",
+        "signKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+        "certificate": "D/EqWoVgAYd9r7qNC52qOUrtr26aQ6iK5OT40DQ/JKMA4/UUwzgDh/6RkH3ewbtF7YsqeMz4OlJJIanaKTnsvg==",
+        "expect": "bad_signature"
+      },
+      {
+        "name": "autre clé d’identité",
+        "platform": "web",
+        "signKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"CwrrGiGPSzUoD0efBYeUE9Ep3YYeiqhA_98S6JgaJgE\",\"y\":\"0BJBhkNxFxUJkXz8Z3_0z01S6TUryQ8uc-nBi68pxpg\"}",
+        "certificate": "D/EqWoVgAYd9r7qNC52qOUrtr26aQ6iK5OT40DQ/JKMA4/UUwzgDh/6RkH3ewbtF7YsqeMz4OlJJIanaKTnsvg==",
+        "expect": "bad_signature"
+      },
+      {
+        "name": "signature DER",
+        "platform": "web",
+        "signKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+        "certificate": "MEQCIA/xKlqFYAGHfa+6jQudqjlK7a9umkOoiuTk+NA0PySjAiAA4/UUwzgDh/6RkH3ewbtF7YsqeMz4OlJJIanaKTnsvg==",
+        "expect": "bad_signature"
+      }
+    ]
+  },
+  "keyEnvelopes": [
+    {
+      "name": "salon",
+      "ctx": "thread:cm3threadexample000000001",
+      "version": 1,
+      "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "tWKkZJGO75+zv9ISr+Y6nfqTvK7QnQwnB6hBozn97+xgi6wmtC4vC5h3S/JftBnB8diyMw85v0Pl9MIYmObVQg==",
+      "creatorSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+      "expect": "ok"
+    },
+    {
+      "name": "espace v3",
+      "ctx": "space:cm3spaceexample0000000001",
+      "version": 3,
+      "keyHex": "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
+      "commitment": "4MlMtIFDfS6JoNKogLyqeT0Afmw0aE0T7Y6sJ2jjlEU=",
+      "signature": "lwAeNIzQwAUdH9xgB2a/UxeJE3FYi3iq5uJqdBUzlu979g72K6ViwicluehCdWRk9XwDptF6Z3ta2DF5JZOLMg==",
+      "creatorSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+      "expect": "ok"
+    },
+    {
+      "name": "session IA",
+      "ctx": "ai:cm3orgexample0000000000001",
+      "version": 1,
+      "keyHex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
+      "commitment": "L3rtQCnE8316J7EbikxxGbg/IvGDxNVlYgFwLzJCWl8=",
+      "signature": "RoPBMZuHTJ9gyk/oHV1KVbXspy4fqw1sTujtOpOHsfTqAQIxPC5/CLnWqxwmZdsEEJr+HlBNLbPcdDfEmSyDgA==",
+      "creatorSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+      "expect": "ok"
+    },
+    {
+      "name": "DM",
+      "ctx": "dm:cm3dmexample0000000000001",
+      "version": 1,
+      "keyHex": "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
+      "commitment": "dR0qIBHdKkPFVAM9KfSqBEkmptCQ5ZwyACDf2XAhCYo=",
+      "signature": "g2WFydQ1FYJqJTH3EoIXJOJxPAaxgt1KubWhNmpUhZJMmROLGAt0b1uNG3Exk154AMKYPHtmYqloN8DX4+4t8w==",
+      "creatorSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+      "expect": "ok"
+    },
+    {
+      "name": "clé différente du commitment",
+      "ctx": "thread:cm3threadexample000000001",
+      "version": 1,
+      "keyHex": "bdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbd",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "tWKkZJGO75+zv9ISr+Y6nfqTvK7QnQwnB6hBozn97+xgi6wmtC4vC5h3S/JftBnB8diyMw85v0Pl9MIYmObVQg==",
+      "creatorSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+      "expect": "key_commitment_mismatch"
+    },
+    {
+      "name": "contexte différent",
+      "ctx": "thread:cm3threadexample000000002",
+      "version": 1,
+      "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "tWKkZJGO75+zv9ISr+Y6nfqTvK7QnQwnB6hBozn97+xgi6wmtC4vC5h3S/JftBnB8diyMw85v0Pl9MIYmObVQg==",
+      "creatorSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+      "expect": "key_commitment_mismatch"
+    },
+    {
+      "name": "autre clé de créateur",
+      "ctx": "thread:cm3threadexample000000001",
+      "version": 1,
+      "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "tWKkZJGO75+zv9ISr+Y6nfqTvK7QnQwnB6hBozn97+xgi6wmtC4vC5h3S/JftBnB8diyMw85v0Pl9MIYmObVQg==",
+      "creatorSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"CwrrGiGPSzUoD0efBYeUE9Ep3YYeiqhA_98S6JgaJgE\",\"y\":\"0BJBhkNxFxUJkXz8Z3_0z01S6TUryQ8uc-nBi68pxpg\"}",
+      "expect": "key_bad_signature"
+    },
+    {
+      "name": "signature altérée",
+      "ctx": "thread:cm3threadexample000000001",
+      "version": 1,
+      "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "tWKkZJGP75+zv9ISr+Y6nfqTvK7QnQwnB6hBozn97+xgi6wmtC4vC5h3S/JftBnB8diyMw85v0Pl9MIYmObVQg==",
+      "creatorSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+      "expect": "key_bad_signature"
+    }
+  ],
+  "identityChain": {
+    "chain": [
+      {
+        "seq": 5,
+        "oldPublicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"FYxuhc0ZoIrbBL7xjcStkdpZb7KFMp6mygKo6mLEUt0\",\"y\":\"LxN8poMoN4Evh6I1wYd1IY5EjyRMW6Y8RScKI9-3trk\"}",
+        "newPublicKey": "{\"e\":\"AQAB\",\"kty\":\"RSA\",\"n\":\"bkIII\"}",
+        "newPublicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"hI7s1L4xmsP-0YdofHVlRvKi4UjB318P5CtnOLVX37o\",\"y\":\"VC-14mmIdtmofiG3ZeIgQHLTJSQ7KYjY0pqMgrcVpEA\"}",
+        "signature": "rPchhy5iw/kpMtjXYPknhafySCTP545CwFs51/MfkCsf0gOyBpcwLzc7NlJWVSaSxQ4S+pHAZPHigc2lsKV9jA=="
+      },
+      {
+        "seq": 4,
+        "oldPublicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"JNg5yXrDdMi01QGzAkwE4oZqWokFRImVUi8oXTf78b4\",\"y\":\"cMajIYLlm5TxkDBgfM1Wbh9f1KK4LRC0Jimuz7mUO1Q\"}",
+        "newPublicKey": "{\"e\":\"AQAB\",\"kty\":\"RSA\",\"n\":\"bkY\"}",
+        "newPublicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"df-9hhqvKOFIZBWLitfpZ0t0j7gnG_aasZQD0e1fUa4\",\"y\":\"dPn98pyttTOWUvDmNMXlHlR9YyEKiGfizRWWGxk474g\"}",
+        "signature": "kpmuZ8244QN7n9VjF1BQY5oXz1/OJ/0F1ESgnxD19RoZwh55jyrSvAHlz3TJ5FWh+HtBcO8Kczn4RlDxZHd9rw=="
+      },
+      {
+        "seq": 3,
+        "oldPublicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"FYxuhc0ZoIrbBL7xjcStkdpZb7KFMp6mygKo6mLEUt0\",\"y\":\"LxN8poMoN4Evh6I1wYd1IY5EjyRMW6Y8RScKI9-3trk\"}",
+        "newPublicKey": "{\"e\":\"AQAB\",\"kty\":\"RSA\",\"n\":\"bkX\"}",
+        "newPublicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1m7hCqyMA8v_MATxHw1FBqcRaH6isHSCvWAKzZ9NPYQ\",\"y\":\"alhGi1Ux_F9p3q--yW4bNaOkZbhv8mj3GSJswjJa00I\"}",
+        "signature": "01imgyUcTlkc3ImeoYkbUdz6I7N8xtlENa1Sw0bB2lQnbqSEoSTljWKxsE7HIsupESnKNfh1zTZXTISMzRx9DA=="
+      },
+      {
+        "seq": 2,
+        "oldPublicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UVoBUFI0qF6l9XelXsPvOA8cH_aDGl-bKGWinUECnc4\",\"y\":\"-QBf-c2jMe7E1KFB3Ft75yFpgCacV7ntg8_KFxj-IgM\"}",
+        "newPublicKey": "{\"e\":\"AQAB\",\"kty\":\"RSA\",\"n\":\"bkII\"}",
+        "newPublicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"FYxuhc0ZoIrbBL7xjcStkdpZb7KFMp6mygKo6mLEUt0\",\"y\":\"LxN8poMoN4Evh6I1wYd1IY5EjyRMW6Y8RScKI9-3trk\"}",
+        "signature": "kQxCJRh/wOLHxT6VFslEXzgNGWBRpHA/E0XOqHmCZ5x2OvmD160WxpaQIq/Pwyf/yBvE8u7v4xfuDHzRkh5mUQ=="
+      },
+      {
+        "seq": 1,
+        "oldPublicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"JNg5yXrDdMi01QGzAkwE4oZqWokFRImVUi8oXTf78b4\",\"y\":\"cMajIYLlm5TxkDBgfM1Wbh9f1KK4LRC0Jimuz7mUO1Q\"}",
+        "newPublicKey": "{\"e\":\"AQAB\",\"kty\":\"RSA\",\"n\":\"bkI\"}",
+        "newPublicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UVoBUFI0qF6l9XelXsPvOA8cH_aDGl-bKGWinUECnc4\",\"y\":\"-QBf-c2jMe7E1KFB3Ft75yFpgCacV7ntg8_KFxj-IgM\"}",
+        "signature": "FHZtnsSPwSmwLKWwrfkJarnKB0bLglnktUr3JEePaXdSAL/nP8Jm06aPE4qhOoR1+eE9+hnorvWuc+Qo3O51ZA=="
+      }
+    ],
+    "paths": [
+      {
+        "name": "depuis la clé épinglée A (maillon falsifié et branche ignorés)",
+        "userId": "user-v4-0000000000000001",
+        "pinned": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"JNg5yXrDdMi01QGzAkwE4oZqWokFRImVUi8oXTf78b4\",\"y\":\"cMajIYLlm5TxkDBgfM1Wbh9f1KK4LRC0Jimuz7mUO1Q\"}",
+        "path": [
+          {
+            "publicKey": "{\"e\":\"AQAB\",\"kty\":\"RSA\",\"n\":\"bkI\"}",
+            "publicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UVoBUFI0qF6l9XelXsPvOA8cH_aDGl-bKGWinUECnc4\",\"y\":\"-QBf-c2jMe7E1KFB3Ft75yFpgCacV7ntg8_KFxj-IgM\"}"
+          },
+          {
+            "publicKey": "{\"e\":\"AQAB\",\"kty\":\"RSA\",\"n\":\"bkII\"}",
+            "publicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"FYxuhc0ZoIrbBL7xjcStkdpZb7KFMp6mygKo6mLEUt0\",\"y\":\"LxN8poMoN4Evh6I1wYd1IY5EjyRMW6Y8RScKI9-3trk\"}"
+          },
+          {
+            "publicKey": "{\"e\":\"AQAB\",\"kty\":\"RSA\",\"n\":\"bkIII\"}",
+            "publicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"hI7s1L4xmsP-0YdofHVlRvKi4UjB318P5CtnOLVX37o\",\"y\":\"VC-14mmIdtmofiG3ZeIgQHLTJSQ7KYjY0pqMgrcVpEA\"}"
+          }
+        ]
+      },
+      {
+        "name": "depuis B, épinglée sous la forme historique",
+        "userId": "user-v4-0000000000000001",
+        "pinned": "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"UVoBUFI0qF6l9XelXsPvOA8cH_aDGl-bKGWinUECnc4\",\"y\":\"-QBf-c2jMe7E1KFB3Ft75yFpgCacV7ntg8_KFxj-IgM\"}",
+        "path": [
+          {
+            "publicKey": "{\"e\":\"AQAB\",\"kty\":\"RSA\",\"n\":\"bkII\"}",
+            "publicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"FYxuhc0ZoIrbBL7xjcStkdpZb7KFMp6mygKo6mLEUt0\",\"y\":\"LxN8poMoN4Evh6I1wYd1IY5EjyRMW6Y8RScKI9-3trk\"}"
+          },
+          {
+            "publicKey": "{\"e\":\"AQAB\",\"kty\":\"RSA\",\"n\":\"bkIII\"}",
+            "publicSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"hI7s1L4xmsP-0YdofHVlRvKi4UjB318P5CtnOLVX37o\",\"y\":\"VC-14mmIdtmofiG3ZeIgQHLTJSQ7KYjY0pqMgrcVpEA\"}"
+          }
+        ]
+      },
+      {
+        "name": "autre utilisateur : aucune transition valide",
+        "userId": "user-v4-0000000000000002",
+        "pinned": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"JNg5yXrDdMi01QGzAkwE4oZqWokFRImVUi8oXTf78b4\",\"y\":\"cMajIYLlm5TxkDBgfM1Wbh9f1KK4LRC0Jimuz7mUO1Q\"}",
+        "path": []
+      }
+    ]
+  }
+}

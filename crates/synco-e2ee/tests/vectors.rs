@@ -316,6 +316,15 @@ fn delegation() {
         let got =
             delegation::open_entry(&entry_dk, &cc, s(c, "kind"), s(c, "ref"), u(c, "version"), s(c, "ciphertext"));
         assert_eq!(outcome(&got), s(c, "expect"), "{}", s(c, "name"));
+        if let Some(aad) = c["forgedAad"].as_str() {
+            // L'entrée se déchiffre bien avec cette AAD : son refus vient du contrôle du kind.
+            let blob = from_b64u(s(c, "ciphertext").strip_prefix("sre1.").unwrap()).unwrap();
+            assert!(
+                synco_e2ee::primitives::open(entry_dk.as_bytes(), aad.as_bytes(), &blob).is_some(),
+                "{}",
+                s(c, "name")
+            );
+        }
     }
 }
 

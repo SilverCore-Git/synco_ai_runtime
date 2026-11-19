@@ -1,0 +1,310 @@
+{
+  "description": "Certificat de runtime signé par la clé de signature d'identité d'un admin (01 §6). Signatures ECDSA : vérification seulement.",
+  "adminSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"WzaJDay9fJqWu3Sh7iiz0tdbcuCaIO8lz45v2KnwNQ0\",\"y\":\"DhS-2NRoKjTYNTi9_1uW6JpmZuwNtXRdAvoSEAct91o\"}",
+  "certificate": {
+    "orgId": "cm3orgexample0000000000001",
+    "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+    "url": "https://runtime.example.com",
+    "keys": {
+      "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+      "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+    },
+    "adminId": "11111111-2222-4333-8444-555555555555",
+    "issuedAt": 1795000000,
+    "serial": 1
+  },
+  "certBytes": "synco-rt-cert-v1|cm3orgexample0000000000001|7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f|https://runtime.example.com|0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc|{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}|{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}|11111111-2222-4333-8444-555555555555|1795000000|1",
+  "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+  "storedJson": "{\"v\":1,\"orgId\":\"cm3orgexample0000000000001\",\"runtimeId\":\"7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f\",\"url\":\"https://runtime.example.com\",\"keys\":{\"sig\":\"0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc\",\"kex\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"},\"csk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}},\"adminId\":\"11111111-2222-4333-8444-555555555555\",\"issuedAt\":1795000000,\"serial\":1,\"signature\":\"zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==\"}",
+  "cases": [
+    {
+      "name": "certificat valide",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+      "expect": "ok"
+    },
+    {
+      "name": "orgId modifié",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000002",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+      "expect": "cert_bad_signature"
+    },
+    {
+      "name": "runtimeId modifié",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e70",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+      "expect": "cert_bad_signature"
+    },
+    {
+      "name": "url modifié",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime2.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+      "expect": "cert_bad_signature"
+    },
+    {
+      "name": "sig modifié",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "IEBA42TBDyvsnB_lAKHNTCR8idZQoB7X6CyrqGeHfCE",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+      "expect": "cert_bad_signature"
+    },
+    {
+      "name": "kex modifié",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"JGSi-IE-AHKZucC-75yNbY0XRwsyu6AynBRfDPxgtoM\",\"y\":\"-DGjUgWGjbmE2nKKag4RKeiUDotzV5jmU2Da2pNFdkU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+      "expect": "cert_bad_signature"
+    },
+    {
+      "name": "csk modifié",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"EATE5hPGcyUW0XfSJu1zgtYWf3at-gckNqcrZSBkzrU\",\"y\":\"cukFvLyw50nE1l0xPIHPdzVcMAEe_wlEewONNSLOtz0\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+      "expect": "cert_bad_signature"
+    },
+    {
+      "name": "adminId modifié",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555556",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+      "expect": "cert_bad_signature"
+    },
+    {
+      "name": "issuedAt modifié",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000001,
+        "serial": 1
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+      "expect": "cert_bad_signature"
+    },
+    {
+      "name": "serial modifié",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 2
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+      "expect": "cert_bad_signature"
+    },
+    {
+      "name": "signé par une autre clé",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "ZigV9qIT3P7g6SsllDh250R9C92n9iZcNw+cn5zqnixMQh3FnmDjOosjFDZPLjQni634PhduZKfdcYGAfgDyyg==",
+      "expect": "cert_bad_signature"
+    },
+    {
+      "name": "signature DER au lieu de P1363",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "MEUCIQDOqXRD89AyFaghG/8O00+NvdO+VofwuZq63rhN0tWw9wIgF6E66C/fUGNnonsqt0PTF34+r2IHPp4phyT3jezPQUw=",
+      "expect": "cert_bad_signature"
+    },
+    {
+      "name": "signature tronquée",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9B",
+      "expect": "cert_bad_signature"
+    },
+    {
+      "name": "URL non canonique",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://Runtime.example.com/",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+      "expect": "cert_invalid"
+    },
+    {
+      "name": "serial 0",
+      "certificate": {
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 0
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+      "expect": "cert_invalid"
+    },
+    {
+      "name": "orgId avec |",
+      "certificate": {
+        "orgId": "a|b",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "url": "https://runtime.example.com",
+        "keys": {
+          "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+          "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+          "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+        },
+        "adminId": "11111111-2222-4333-8444-555555555555",
+        "issuedAt": 1795000000,
+        "serial": 1
+      },
+      "signature": "zql0Q/PQMhWoIRv/DtNPjb3TvlaH8Lmaut64TdLVsPcXoTroL99QY2eieyq3Q9MXfj6vYgc+nimHJPeN7M9BTA==",
+      "expect": "cert_invalid"
+    }
+  ]
+}

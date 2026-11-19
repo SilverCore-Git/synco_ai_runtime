@@ -1,0 +1,347 @@
+{
+  "description": "Empreinte, code d'appairage, URL canonique et JWK canonique du runtime (01 §1-§3). Produit par synco_app/scripts/e2ee-vectors/generate.ts.",
+  "fingerprint": {
+    "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+    "keys": {
+      "sig": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+      "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}"
+    },
+    "ed25519SeedHex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+    "cskScalarHex": "3333333333333333333333333333333333333333333333333333333333333333",
+    "fprInput": "synco-rt-fpr-v1|7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f|0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc|{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}|{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}",
+    "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+    "display": "F605 B872 8814 87A9 B37F 903D 997F F879 B94C 5718 856A 5E72 9587 B0E3 9F8F AF2B",
+    "code": "YR2V-GWM8-2J3T-KCVZ-J0YS-JZZR-F459"
+  },
+  "pairingCases": [
+    {
+      "name": "code exact",
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "input": "YR2V-GWM8-2J3T-KCVZ-J0YS-JZZR-F459",
+      "expect": "ok"
+    },
+    {
+      "name": "minuscules et espaces au lieu des tirets",
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "input": "yr2v gwm8 2j3t kcvz j0ys jzzr f459",
+      "expect": "ok"
+    },
+    {
+      "name": "sans séparateur",
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "input": "YR2VGWM82J3TKCVZJ0YSJZZRF459",
+      "expect": "ok"
+    },
+    {
+      "name": "O pour 0 et I pour 1",
+      "fprHex": "02541b1e826187cea973ee48a890649a7140f69cddf0bd290230b1cf2541f248",
+      "input": "O9AI-P7M2-C63W-XABK-XS4A-H434-K8SR",
+      "expect": "ok"
+    },
+    {
+      "name": "L minuscule pour 1",
+      "fprHex": "02541b1e826187cea973ee48a890649a7140f69cddf0bd290230b1cf2541f248",
+      "input": "09Al-P7M2-C63W-XABK-XS4A-H434-K8SR",
+      "expect": "ok"
+    },
+    {
+      "name": "somme de contrôle fausse",
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "input": "YR2V-GWM8-2J3T-KCVZ-J0YS-JZZR-F450",
+      "expect": "pair_code_invalid"
+    },
+    {
+      "name": "un caractère de moins",
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "input": "YR2V-GWM8-2J3T-KCVZ-J0YS-JZZR-F45",
+      "expect": "pair_code_invalid"
+    },
+    {
+      "name": "un caractère de plus",
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "input": "YR2V-GWM8-2J3T-KCVZ-J0YS-JZZR-F4590",
+      "expect": "pair_code_invalid"
+    },
+    {
+      "name": "caractère hors alphabet (U)",
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "input": "UR2V-GWM8-2J3T-KCVZ-J0YS-JZZR-F459",
+      "expect": "pair_code_invalid"
+    },
+    {
+      "name": "vide",
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "input": "",
+      "expect": "pair_code_invalid"
+    },
+    {
+      "name": "code valide d'une autre empreinte",
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "input": "09A1-P7M2-C63W-XABK-XS4A-H434-K8SR",
+      "expect": "pair_code_mismatch"
+    }
+  ],
+  "urlCases": [
+    {
+      "name": "majuscules, port 443 et / final",
+      "input": "HTTPS://Runtime.Example.com:443/",
+      "allowDevHttp": false,
+      "expect": "ok",
+      "canonical": "https://runtime.example.com"
+    },
+    {
+      "name": "déjà canonique",
+      "input": "https://runtime.example.com",
+      "allowDevHttp": false,
+      "expect": "ok",
+      "canonical": "https://runtime.example.com"
+    },
+    {
+      "name": "port et chemin",
+      "input": "https://runtime.example.com:8443/synco/",
+      "allowDevHttp": false,
+      "expect": "ok",
+      "canonical": "https://runtime.example.com:8443/synco"
+    },
+    {
+      "name": "255 caractères",
+      "input": "https://runtime.example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "allowDevHttp": false,
+      "expect": "ok",
+      "canonical": "https://runtime.example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "256 caractères",
+      "input": "https://runtime.example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "http hors drapeau de développement",
+      "input": "http://runtime.example.com",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "http://localhost sans drapeau",
+      "input": "http://localhost:8080",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "http://localhost avec drapeau",
+      "input": "http://LOCALHOST:8080/",
+      "allowDevHttp": true,
+      "expect": "ok",
+      "canonical": "http://localhost:8080"
+    },
+    {
+      "name": "http://127.0.0.1 avec drapeau",
+      "input": "http://127.0.0.1:8080",
+      "allowDevHttp": true,
+      "expect": "ok",
+      "canonical": "http://127.0.0.1:8080"
+    },
+    {
+      "name": "http://localhost sans port avec drapeau",
+      "input": "http://localhost",
+      "allowDevHttp": true,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "http vers un autre hôte avec drapeau",
+      "input": "http://runtime.example.com:8080",
+      "allowDevHttp": true,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "identifiants",
+      "input": "https://user:pw@runtime.example.com",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "requête",
+      "input": "https://runtime.example.com/?a=1",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "fragment",
+      "input": "https://runtime.example.com/#x",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "| dans le chemin",
+      "input": "https://runtime.example.com/a|b",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "% dans le chemin",
+      "input": "https://runtime.example.com/a%20b",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "espace dans le chemin",
+      "input": "https://runtime.example.com/a b",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "// dans le chemin",
+      "input": "https://runtime.example.com//x",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "deux / finaux",
+      "input": "https://runtime.example.com/x//",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "schéma ftp",
+      "input": "ftp://runtime.example.com",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "sans schéma",
+      "input": "runtime.example.com",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "label vide",
+      "input": "https://runtime..example.com",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "label commençant par -",
+      "input": "https://-runtime.example.com",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "port 0",
+      "input": "https://runtime.example.com:0",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "port 65536",
+      "input": "https://runtime.example.com:65536",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "port vide",
+      "input": "https://runtime.example.com:",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "hôte vide",
+      "input": "https://:443",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "IPv6",
+      "input": "https://[::1]:443",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    },
+    {
+      "name": "hôte non ASCII (signe kelvin)",
+      "input": "https://Kelvin.example.com",
+      "allowDevHttp": false,
+      "expect": "url_invalid",
+      "canonical": null
+    }
+  ],
+  "jwkCases": [
+    {
+      "name": "forme canonique",
+      "jwk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+      "expect": "ok",
+      "canonical": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}"
+    },
+    {
+      "name": "ordre historique {kty,crv,x,y}",
+      "jwk": "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+      "expect": "ok",
+      "canonical": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}"
+    },
+    {
+      "name": "champs en plus (d, ext, key_ops)",
+      "jwk": "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\",\"d\":\"IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI\",\"ext\":true,\"key_ops\":[\"deriveBits\"]}",
+      "expect": "ok",
+      "canonical": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}"
+    },
+    {
+      "name": "point hors courbe",
+      "jwk": "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoQ\"}",
+      "expect": "key_invalid",
+      "canonical": null
+    },
+    {
+      "name": "x de 31 octets",
+      "jwk": "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+      "expect": "key_invalid",
+      "canonical": null
+    },
+    {
+      "name": "x avec remplissage",
+      "jwk": "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM=\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+      "expect": "key_invalid",
+      "canonical": null
+    },
+    {
+      "name": "courbe P-384",
+      "jwk": "{\"kty\":\"EC\",\"crv\":\"P-384\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+      "expect": "key_invalid",
+      "canonical": null
+    },
+    {
+      "name": "kty RSA",
+      "jwk": "{\"kty\":\"RSA\",\"crv\":\"P-256\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+      "expect": "key_invalid",
+      "canonical": null
+    },
+    {
+      "name": "pas du JSON",
+      "jwk": "pas du json",
+      "expect": "key_invalid",
+      "canonical": null
+    }
+  ]
+}

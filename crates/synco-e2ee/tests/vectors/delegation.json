@@ -1,0 +1,798 @@
+{
+  "description": "Délégation (03 §3-§5) : enveloppe de tête srd1, mandat, entrées sre1. Valeurs exactes sauf signatures ECDSA (vérification seulement).",
+  "context": {
+    "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+    "orgId": "cm3orgexample0000000000001",
+    "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+    "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    "scope": "org",
+    "iat": 1795000000,
+    "exp": 1795604800
+  },
+  "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+  "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+  "epkScalarHex": "9999999999999999999999999999999999999999999999999999999999999999",
+  "epk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"3cJ11iMBtzQ0-6-d7zxCxP1Yz59pEcHf8zVXZ0ug2UY\",\"y\":\"IzRpRFb-uA8-ZZVcyqDuXs8pjShHQkpgg7AS5oFqKac\"}",
+  "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+  "ivHex": "aaaaaaaaaaaaaaaaaaaaaaaa",
+  "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+  "userSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+  "ctx": "synco-rt-delegation-v1|66666666-7777-4888-9999-aaaaaaaaaaaa|cm3orgexample0000000000001|7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f|a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d|org|1795000000|1795604800|{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}|{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"3cJ11iMBtzQ0-6-d7zxCxP1Yz59pEcHf8zVXZ0ug2UY\",\"y\":\"IzRpRFb-uA8-ZZVcyqDuXs8pjShHQkpgg7AS5oFqKac\"}",
+  "sharedHex": "5ecbab6938300dc063928de2514cc43869db37eb29225c1603b6280de2ad8597",
+  "kekHex": "4dd1d7892a2e12cd4df4d7c7be87af3505a38ca39d8c94a7a31016745727e8ad",
+  "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqzDr7_Z6KQv9PsHxFxSeZg6mHTfkMLim3ongsZxyfPQJG_ZsPjHxpnoKtZFmNynO8",
+  "wrapHash": "AhmVSSsEBVdTz0jXtoGJN5FPPNe6C60IuU-L8SVONBk",
+  "mandateBytes": "synco-rt-mandate-v1|66666666-7777-4888-9999-aaaaaaaaaaaa|cm3orgexample0000000000001|7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f|a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d|org|1795000000|1795604800|f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b|AhmVSSsEBVdTz0jXtoGJN5FPPNe6C60IuU-L8SVONBk",
+  "mandateSignature": "wSiJ1JIMIxh2mglJOjt/rwFNzoCECz1P8W73qPCQhIGbQ6cmEVW4tlLkbM27Ahmv6t/fHyyuarUaCwH0QljKtw==",
+  "wrapCases": [
+    {
+      "name": "enveloppe valide",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqzDr7_Z6KQv9PsHxFxSeZg6mHTfkMLim3ongsZxyfPQJG_ZsPjHxpnoKtZFmNynO8",
+      "expect": "ok"
+    },
+    {
+      "name": "ouverte par un autre runtime (autre kex_priv)",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2323232323232323232323232323232323232323232323232323232323232323",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqzDr7_Z6KQv9PsHxFxSeZg6mHTfkMLim3ongsZxyfPQJG_ZsPjHxpnoKtZFmNynO8",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "scellée pour la kex d'un autre runtime",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqMoJs5_hi0lHFDaPH21jCCsloqpCCidDdijAC1dSXmszj9EzBJUdD8xZ08XPrNzBn",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "userId différent à l'ouverture",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaab",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqzDr7_Z6KQv9PsHxFxSeZg6mHTfkMLim3ongsZxyfPQJG_ZsPjHxpnoKtZFmNynO8",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "orgId différent à l'ouverture",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000002",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqzDr7_Z6KQv9PsHxFxSeZg6mHTfkMLim3ongsZxyfPQJG_ZsPjHxpnoKtZFmNynO8",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "runtimeId différent à l'ouverture",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e70",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqzDr7_Z6KQv9PsHxFxSeZg6mHTfkMLim3ongsZxyfPQJG_ZsPjHxpnoKtZFmNynO8",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "delegationId différent à l'ouverture",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5e",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqzDr7_Z6KQv9PsHxFxSeZg6mHTfkMLim3ongsZxyfPQJG_ZsPjHxpnoKtZFmNynO8",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "scope différent à l'ouverture",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "all",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqzDr7_Z6KQv9PsHxFxSeZg6mHTfkMLim3ongsZxyfPQJG_ZsPjHxpnoKtZFmNynO8",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "iat différent à l'ouverture",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000001,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqzDr7_Z6KQv9PsHxFxSeZg6mHTfkMLim3ongsZxyfPQJG_ZsPjHxpnoKtZFmNynO8",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "exp différent à l'ouverture",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604801
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqzDr7_Z6KQv9PsHxFxSeZg6mHTfkMLim3ongsZxyfPQJG_ZsPjHxpnoKtZFmNynO8",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "enveloppe tronquée",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqzDr7_Z6KQv9PsHxFxSeZg6mHTfkMLim3ongsZxyfPQJG_ZsPjHxpnoKtZFmN",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "préfixe srd2",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd2.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqzDr7_Z6KQv9PsHxFxSeZg6mHTfkMLim3ongsZxyfPQJG_ZsPjHxpnoKtZFmNynO8",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "quatre parties",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.qqqqqqqqqqqqqqqqzDr7_Z6KQv9PsHxFxSeZg6mHTfkMLim3ongsZxyfPQJG_ZsPjHxpnoKtZFmNynO8.AAAA",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "blob vide",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "epk hors courbe",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiVUJoZWlWTnkzMkloNmpvVGRWZmtjXzNiWjFYd1c5VUh3OFV6X09uSkVvVSJ9.q6urq6urq6urq6urw42XOHD-jhGq0qnySjeK7JN83Qh3ikD-q7IeLSTEFSQa2M2djgb-KUGAtuwaBv2X",
+      "expect": "delegation_unusable",
+      "forged": true
+    },
+    {
+      "name": "epk non canonique (ordre historique)",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.q6urq6urq6urq6urw42XOHD-jhGq0qnySjeK7JN83Qh3ikD-q7IeLSTEFSQa2M2djgb-KUGAtuwaBv2X",
+      "expect": "delegation_unusable",
+      "forged": true
+    },
+    {
+      "name": "epk canonique refabriquée (témoin)",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.q6urq6urq6urq6urw42XOHD-jhGq0qnySjeK7JN83Qh3ikD-q7IeLSTEFSQa2M2djgb-KUGAtuwaBv2X",
+      "expect": "ok",
+      "forged": true
+    },
+    {
+      "name": "clair de 31 octets",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.q6urq6urq6urq6urw42XOHD-jhGq0qnySjeK7JN83Qh3ikD-q7IeLSTEFZsS2i9FigvgFWVl4MLgHCs",
+      "expect": "delegation_unusable",
+      "forged": true
+    },
+    {
+      "name": "clair de 33 octets",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kexScalarHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "wrap": "srd1.eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6IjNjSjExaU1CdHpRMC02LWQ3enhDeFAxWXo1OXBFY0hmOHpWWFowdWcyVVkiLCJ5IjoiSXpScFJGYi11QTgtWlpWY3lxRHVYczhwalNoSFFrcGdnN0FTNW9GcUthYyJ9.q6urq6urq6urq6urw42XOHD-jhGq0qnySjeK7JN83Qh3ikD-q7IeLSTEFSQKP8mnye7qpw3_jysuVQp5vw",
+      "expect": "delegation_unusable",
+      "forged": true
+    }
+  ],
+  "mandateCases": [
+    {
+      "name": "mandat valide",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "wrapHash": "AhmVSSsEBVdTz0jXtoGJN5FPPNe6C60IuU-L8SVONBk",
+      "signature": "wSiJ1JIMIxh2mglJOjt/rwFNzoCECz1P8W73qPCQhIGbQ6cmEVW4tlLkbM27Ahmv6t/fHyyuarUaCwH0QljKtw==",
+      "userSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+      "expect": "ok"
+    },
+    {
+      "name": "wrap d'une autre délégation",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "wrapHash": "CNJx2sggLKdO4eXr1E1AetZ1L1LELSpQHzKENYtS4VQ",
+      "signature": "wSiJ1JIMIxh2mglJOjt/rwFNzoCECz1P8W73qPCQhIGbQ6cmEVW4tlLkbM27Ahmv6t/fHyyuarUaCwH0QljKtw==",
+      "userSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "fprHex d'un autre runtime",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "fprHex": "02541b1e826187cea973ee48a890649a7140f69cddf0bd290230b1cf2541f248",
+      "wrapHash": "AhmVSSsEBVdTz0jXtoGJN5FPPNe6C60IuU-L8SVONBk",
+      "signature": "wSiJ1JIMIxh2mglJOjt/rwFNzoCECz1P8W73qPCQhIGbQ6cmEVW4tlLkbM27Ahmv6t/fHyyuarUaCwH0QljKtw==",
+      "userSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "signé par une autre clé",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "wrapHash": "AhmVSSsEBVdTz0jXtoGJN5FPPNe6C60IuU-L8SVONBk",
+      "signature": "Np3/qKFIbj2zRL24pR7yJjpDls9zChb5Wjdu0Ap0J/oJMZO9WdopJEpxApsxbZZdSHjN9rJ9RFtuHYLOtMgLKA==",
+      "userSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "vérifié avec une autre clé utilisateur",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "wrapHash": "AhmVSSsEBVdTz0jXtoGJN5FPPNe6C60IuU-L8SVONBk",
+      "signature": "wSiJ1JIMIxh2mglJOjt/rwFNzoCECz1P8W73qPCQhIGbQ6cmEVW4tlLkbM27Ahmv6t/fHyyuarUaCwH0QljKtw==",
+      "userSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"CwrrGiGPSzUoD0efBYeUE9Ep3YYeiqhA_98S6JgaJgE\",\"y\":\"0BJBhkNxFxUJkXz8Z3_0z01S6TUryQ8uc-nBi68pxpg\"}",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "exp prolongée",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795691200
+      },
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "wrapHash": "AhmVSSsEBVdTz0jXtoGJN5FPPNe6C60IuU-L8SVONBk",
+      "signature": "wSiJ1JIMIxh2mglJOjt/rwFNzoCECz1P8W73qPCQhIGbQ6cmEVW4tlLkbM27Ahmv6t/fHyyuarUaCwH0QljKtw==",
+      "userSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+      "expect": "delegation_unusable"
+    },
+    {
+      "name": "signature DER",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+      "wrapHash": "AhmVSSsEBVdTz0jXtoGJN5FPPNe6C60IuU-L8SVONBk",
+      "signature": "MEYCIQDBKInUkgwjGHaaCUk6O3+vAU3OgIQLPU/xbveo8JCEgQIhAJtDpyYRVbi2UuRszbsCGa/q398fLK5qtRoLAfRCWMq3",
+      "userSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+      "expect": "delegation_unusable"
+    }
+  ],
+  "entries": [
+    {
+      "name": "clé de salon",
+      "kind": "thread",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "ivHex": "cccccccccccccccccccccccc",
+      "aad": "synco-rt-entry-v1|a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d|66666666-7777-4888-9999-aaaaaaaaaaaa|cm3orgexample0000000000001|7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f|thread|cm3threadexample000000001|1",
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX"
+    },
+    {
+      "name": "clé d'espace version 3",
+      "kind": "space",
+      "ref": "cm3spaceexample0000000001",
+      "version": 3,
+      "keyHex": "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
+      "ivHex": "cdcdcdcdcdcdcdcdcdcdcdcd",
+      "aad": "synco-rt-entry-v1|a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d|66666666-7777-4888-9999-aaaaaaaaaaaa|cm3orgexample0000000000001|7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f|space|cm3spaceexample0000000001|3",
+      "ciphertext": "sre1.zc3Nzc3Nzc3Nzc3NqddbTN7OL-Pm5MhY5mlqPnXrTGvGp-XiSepnGRZVJ31A08GX_4lwsmwkHPoX16_7"
+    },
+    {
+      "name": "clé de conversation",
+      "kind": "conv",
+      "ref": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "version": 1,
+      "keyHex": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "ivHex": "cececececececececececece",
+      "aad": "synco-rt-entry-v1|a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d|66666666-7777-4888-9999-aaaaaaaaaaaa|cm3orgexample0000000000001|7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f|conv|0f0e0d0c-0b0a-4908-8706-050403020100|1",
+      "ciphertext": "sre1.zs7Ozs7Ozs7Ozs7O8IIJvJu_OapkI8At7kvr7JkygT-iIypy-m-G1sq_V1kXvsFfnY-NsOGjc5zHxvW2"
+    }
+  ],
+  "entryCases": [
+    {
+      "name": "clé de salon valide",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "thread",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "ok"
+    },
+    {
+      "name": "clé d'espace version 3 valide",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "space",
+      "ref": "cm3spaceexample0000000001",
+      "version": 3,
+      "ciphertext": "sre1.zc3Nzc3Nzc3Nzc3NqddbTN7OL-Pm5MhY5mlqPnXrTGvGp-XiSepnGRZVJ31A08GX_4lwsmwkHPoX16_7",
+      "expect": "ok"
+    },
+    {
+      "name": "clé de conversation valide",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "conv",
+      "ref": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "version": 1,
+      "ciphertext": "sre1.zs7Ozs7Ozs7Ozs7O8IIJvJu_OapkI8At7kvr7JkygT-iIypy-m-G1sq_V1kXvsFfnY-NsOGjc5zHxvW2",
+      "expect": "ok"
+    },
+    {
+      "name": "entrée d'une autre délégation (autre DK)",
+      "dkHex": "8787878787878787878787878787878787878787878787878787878787878787",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "thread",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "kind changé",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "space",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "ref changée",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "thread",
+      "ref": "cm3threadexample000000002",
+      "version": 1,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "version changée",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "thread",
+      "ref": "cm3threadexample000000001",
+      "version": 2,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "AAD avec un autre userId",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaab",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "thread",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "AAD d'une autre délégation (même DK)",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5e",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "thread",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "kind dm refusé",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "dm",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "kind support refusé",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "support",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "kind ai refusé",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "ai",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "kind org refusé",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "org",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "kind account refusé",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "account",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "kind identity refusé",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "identity",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "version 0",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "thread",
+      "ref": "cm3threadexample000000001",
+      "version": 0,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "préfixe sre2",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "thread",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "ciphertext": "sre2.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3Xd21OX",
+      "expect": "entry_unusable"
+    },
+    {
+      "name": "entrée tronquée",
+      "dkHex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "context": {
+        "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+        "orgId": "cm3orgexample0000000000001",
+        "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+        "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+        "scope": "org",
+        "iat": 1795000000,
+        "exp": 1795604800
+      },
+      "kind": "thread",
+      "ref": "cm3threadexample000000001",
+      "version": 1,
+      "ciphertext": "sre1.zMzMzMzMzMzMzMzMct41NxlNMdx0P1wYKg4xPQP0ww2YrjkRT_thUzsofrcl7XtxD5j8XMqpb3",
+      "expect": "entry_unusable"
+    }
+  ]
+}

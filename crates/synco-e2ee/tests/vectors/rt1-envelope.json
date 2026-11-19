@@ -1,0 +1,135 @@
+{
+  "description": "Enveloppe FC4 rt1 d'une clé créée par le runtime (03 §10). commitment et octets exacts ; signature : vérification seulement.",
+  "csk": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}",
+  "kex": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+  "threadKeyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "ctx": "thread:cm3threadexample000000001",
+  "version": 1,
+  "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+  "creatorId": "rt1:a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+  "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+  "bytes": "synco-key-envelope-rt-v1|thread:cm3threadexample000000001|1|LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=|a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+  "signature": "dYtytX38Ls087rAvI+Os/hGQD8w88FHMx/9TUsAcPocqQW7q8o4PbTYM9jyT4n+Ja3i8Vb5YoxuhQ4QqZ1Glvw==",
+  "mandate": {
+    "context": {
+      "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+      "orgId": "cm3orgexample0000000000001",
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "scope": "org",
+      "iat": 1795000000,
+      "exp": 1795604800
+    },
+    "fprHex": "f605b872881487a9b37f903d997ff879b94c5718856a5e729587b0e39f8faf2b",
+    "wrapHash": "AhmVSSsEBVdTz0jXtoGJN5FPPNe6C60IuU-L8SVONBk",
+    "signature": "wSiJ1JIMIxh2mglJOjt/rwFNzoCECz1P8W73qPCQhIGbQ6cmEVW4tlLkbM27Ahmv6t/fHyyuarUaCwH0QljKtw==",
+    "userSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"V-l39tt-M8P-es8oQu2YcAnK9W1FhoL8pEe309diqzQ\",\"y\":\"xas3cLpXO9_1QUBlZA_7WzRt-oTexNtNaOX1nMRxwuw\"}",
+    "otherUserSignKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"CwrrGiGPSzUoD0efBYeUE9Ep3YYeiqhA_98S6JgaJgE\",\"y\":\"0BJBhkNxFxUJkXz8Z3_0z01S6TUryQ8uc-nBi68pxpg\"}"
+  },
+  "cases": [
+    {
+      "name": "enveloppe valide",
+      "ctx": "thread:cm3threadexample000000001",
+      "version": 1,
+      "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "dYtytX38Ls087rAvI+Os/hGQD8w88FHMx/9TUsAcPocqQW7q8o4PbTYM9jyT4n+Ja3i8Vb5YoxuhQ4QqZ1Glvw==",
+      "verifyKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}",
+      "expect": "ok"
+    },
+    {
+      "name": "ctx différent",
+      "ctx": "thread:cm3threadexample000000002",
+      "version": 1,
+      "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "dYtytX38Ls087rAvI+Os/hGQD8w88FHMx/9TUsAcPocqQW7q8o4PbTYM9jyT4n+Ja3i8Vb5YoxuhQ4QqZ1Glvw==",
+      "verifyKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}",
+      "expect": "key_commitment_mismatch"
+    },
+    {
+      "name": "version différente",
+      "ctx": "thread:cm3threadexample000000001",
+      "version": 2,
+      "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "dYtytX38Ls087rAvI+Os/hGQD8w88FHMx/9TUsAcPocqQW7q8o4PbTYM9jyT4n+Ja3i8Vb5YoxuhQ4QqZ1Glvw==",
+      "verifyKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}",
+      "expect": "key_commitment_mismatch"
+    },
+    {
+      "name": "delegationId différent",
+      "ctx": "thread:cm3threadexample000000001",
+      "version": 1,
+      "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5e",
+      "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "dYtytX38Ls087rAvI+Os/hGQD8w88FHMx/9TUsAcPocqQW7q8o4PbTYM9jyT4n+Ja3i8Vb5YoxuhQ4QqZ1Glvw==",
+      "verifyKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}",
+      "expect": "key_bad_signature"
+    },
+    {
+      "name": "commitment d'une autre clé",
+      "ctx": "thread:cm3threadexample000000001",
+      "version": 1,
+      "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "keyHex": "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "dYtytX38Ls087rAvI+Os/hGQD8w88FHMx/9TUsAcPocqQW7q8o4PbTYM9jyT4n+Ja3i8Vb5YoxuhQ4QqZ1Glvw==",
+      "verifyKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}",
+      "expect": "key_commitment_mismatch"
+    },
+    {
+      "name": "vérifiée avec kex (mauvaise clé)",
+      "ctx": "thread:cm3threadexample000000001",
+      "version": 1,
+      "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "dYtytX38Ls087rAvI+Os/hGQD8w88FHMx/9TUsAcPocqQW7q8o4PbTYM9jyT4n+Ja3i8Vb5YoxuhQ4QqZ1Glvw==",
+      "verifyKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"1lqTl3yqPRsIGFL_V6eeRl8WYFdzBLrq1QXdOkhYnPM\",\"y\":\"UBheiVNy32Ih6joTdVfkc_3bZ1XwW9UHw8Uz_OnJEoU\"}",
+      "expect": "key_bad_signature"
+    },
+    {
+      "name": "signée par une autre csk",
+      "ctx": "thread:cm3threadexample000000001",
+      "version": 1,
+      "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "f5OeYJ/WimXdAf8yoMya/Xau7djd7Oxm0LG+1883IAnPIws3PxiztNebZw9Wp0ddAm3ZtGCPSdkaDurEMjetpQ==",
+      "verifyKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}",
+      "expect": "key_bad_signature"
+    },
+    {
+      "name": "signature FC4 v1 présentée comme rt1",
+      "ctx": "thread:cm3threadexample000000001",
+      "version": 1,
+      "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "w9+rZK2CaEYQs3DHSmPE6chX7NuD42mMfhV/6kvMuGS10w9zkZgAOWQozlbmdwjkJ9gxaS+PIA/VA7hwiZI5SQ==",
+      "verifyKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}",
+      "expect": "key_bad_signature"
+    },
+    {
+      "name": "contexte dm refusé",
+      "ctx": "dm:cm3dmexample0000000000001",
+      "version": 1,
+      "delegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+      "signature": "dYtytX38Ls087rAvI+Os/hGQD8w88FHMx/9TUsAcPocqQW7q8o4PbTYM9jyT4n+Ja3i8Vb5YoxuhQ4QqZ1Glvw==",
+      "verifyKey": "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"UadYCDOJjqGxg8vXNQpAmQeMbvHB4Y6XDNdoMDXyXn0\",\"y\":\"ARBSJxKwtafP8IFoVIaYSpTmgx7axG5zYPqdg0p6gaE\"}",
+      "expect": "key_bad_signature"
+    }
+  ],
+  "compat": {
+    "description": "verifyKeyEnvelopeIfPresent (clients actuels) avec un annuaire qui ne connaît pas le créateur rt1:…",
+    "creatorId": "rt1:a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    "result": "accepted_unverified"
+  }
+}

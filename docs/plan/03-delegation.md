@@ -80,7 +80,8 @@ Vérification par le runtime (L05), avant toute ouverture :
 
 1. `runtimeId` = le sien, `orgId` = son org, `scope` connu, `iat ≤ maintenant + 300`,
    `maintenant < exp`, `exp − iat ≤` durée maximale de sa configuration (09 §1) ; `fprHex` = sa propre
-   empreinte.
+   empreinte. La crate exige aussi `iat < exp` et des champs conformes à 00 §3.2
+   (`DelegationContext::validate`, `crates/synco-e2ee/src/delegation.rs:73-80`, `check_time`, `:84-89`).
 2. Clé de signature de l'utilisateur : le runtime tient un **épinglage TOFU** par utilisateur (fichier
    d'état, données publiques) :
    - première vue : `GET /api/runtime/v1/users/:userId/sign-key` (04 §4) → épinglée ;
@@ -90,6 +91,17 @@ Vérification par le runtime (L05), avant toute ouverture :
 3. Signature valide → sinon `delegation_unusable`.
 
 Limite assumée (00 §6 Q3) : au tout premier contact, la clé de l'utilisateur vient de l'API.
+
+**Chemin imposé côté runtime (révisé après la vague B, 2026-11-19).** Le mandat est vérifié sur
+l'enveloppe de tête **réellement ouverte** : le hash engagé est recalculé à partir de `wrap`, jamais
+lu d'une valeur servie (`verify_mandate`, `crates/synco-e2ee/src/delegation.rs:243-252`). Le runtime
+n'emploie qu'**un** chemin, `accept_delegation` (`:294-310`), qui enchaîne dans l'ordre les étapes 1
+et 3 ci-dessus (la clé de l'étape 2 est fournie par l'appelant depuis son épinglage) puis
+l'ouverture de §3 ; tout refus y est `delegation_unusable`. La variante
+`verify_mandate_offline_from_wrap_hash` (`:254-268`), qui prend un `wrapHash` servi, est **réservée**
+à la vérification hors ligne des clés `rt1` par un client (§10 étape 3) et ne conditionne jamais
+l'ouverture d'une enveloppe : une API malveillante peut garder le mandat authentique et son hash,
+et servir une autre enveloppe scellée vers `kex` avec une `DK` qu'elle connaît.
 
 ## 5. Entrées
 
@@ -136,6 +148,29 @@ Lecture : `GET /api/orgs/:orgId/ai/sessions/:sessionId/key` (propriétaire seule
 Tant qu'une conversation est en régime `runtime`, seul le runtime écrit son historique : la route
 existante `PATCH /api/orgs/:orgId/ai/sessions/:sessionId` (`aiSessions.ts:136`) refuse alors
 `messages`, `status` et `pendingToolCall` (`409 runtime_owned`) ; le titre reste modifiable (chiffré).
+
+Précisions (révisé après la vague B, 2026-11-19) :
+
+- Le `PATCH` historique écrit par `updateMany` **conditionné** à l'état lu (schéma inchangé ;
+  régime non `runtime` dès qu'il touche `messages`, `status` ou `pendingToolCall`) et incrémente
+  `rev` sur toute écriture d'état ; le perdant d'une course (bascule concurrente) reçoit
+  `409 runtime_owned` si la conversation est passée en régime `runtime`, sinon
+  `409 session_conflict` (`synco_api/src/services/aiRuntime/conversationLegacyPatch.ts:21-57`,
+  appelé par `aiSessions.ts:187`).
+- Une conversation `conv-gcm1-v1` refuse le clair (`messages` non chiffrés, `title` hors `gcm1:`) au
+  `POST` comme au `PATCH`, quel que soit son régime (`checkConvContent`,
+  `conversationState.ts:140-152` ; `400`).
+- `POST /ai/chat` et `POST /ai/chat/:id/tool-result` (régime `server`) répondent `409 runtime_owned`
+  pour une conversation en régime `runtime` **ou** `conv-gcm1-v1` (l'API ne peut pas la lire ;
+  `serverRegimeRefusal`, `conversationState.ts:131-138`, `aiChat.ts:144`, `:202`).
+- `DELETE /api/orgs/:orgId/ai/sessions/:sessionId` d'une conversation en régime `runtime` la fait
+  d'abord sortir du régime (raison `session_deleted`, 08 §3) : autorisation révoquée, bail clos,
+  runtime notifié (`aiSessions.ts:221`).
+- La `CK` est déposée avec `creatorId` = l'utilisateur, posé par l'API (jamais lu du corps) ;
+  `commitment` et `signature` FC4 sont facultatifs au dépôt (`switchToRuntimeSchema`,
+  `conversationLifecycle.ts:156-176`, `:244-249`, `:290-302`). Au retour au runtime d'une conversation qui a
+  déjà une `CK`, `convKey` peut être omis (la clé existante est conservée) ; sinon il est
+  obligatoire (`400 invalid_body`).
 
 ### 6.3 Format des champs chiffrés (inchangé)
 
@@ -220,6 +255,20 @@ précédente de (utilisateur, runtime) (statut `superseded`) et notifie le runti
 au verrouillage via `registerKeyCache`, `keyCaches.ts:15`) pour ajouter des entrées pendant la
 session de l'app.
 
+Comportement réel (révisé après la vague B, 2026-11-19 ; `depositDelegation`,
+`synco_api/src/services/aiRuntime/delegationService.ts:120-206`) :
+
+- `1 h ≤ exp − iat ≤ maxDelegationDays` de l'org → sinon `400 delegation_invalid` ; un
+  `delegationId` déjà utilisé → `400 delegation_invalid` ; au plus 10 dépôts par heure et par
+  utilisateur → `429 rate_limited` (`aiRuntimeDelegations.ts:65`).
+- Dans la transaction : appartenance revérifiée (`403 forbidden` sinon) ; délégations précédentes
+  `superseded` **et leurs entrées supprimées** ; les autorisations de session actives de
+  l'utilisateur sur ce runtime suivent la nouvelle délégation (`delegationId`, `expiresAt`).
+- Après : `delegation.updated` au runtime, puis réveil des conversations `awaiting_key` dont la clé
+  attendue figure dans les nouvelles entrées (08 §2).
+- Réponse `201 DelegationView` = `{ delegationId, runtimeId, scope, iat, exp, status, runtimeStatus,
+  entryCount }`. `GET …/delegations/current` → `{ "delegation": DelegationView | null }`.
+
 ### 7.2 Synchro des clés manquantes (P11)
 
 `GET /api/orgs/:orgId/ai/runtime/delegations/current/missing` → `[{ kind, ref, version }]` : clés du
@@ -239,11 +288,21 @@ session de l'app.
 - Jamais de boucle : un échec est retenté avec backoff exponentiel (30 s → 30 min), au plus 5 fois par
   session.
 
+Formes réelles (révisé après la vague B, 2026-11-19 ; `synco_api/src/routes/aiRuntimeDelegations.ts`) :
+`GET …/current/missing` → `200 [{ kind, ref, version }]` (au plus 5 000), ou `404 not_found` s'il n'y a
+pas de délégation active (en créer une) ; `POST …/:delegationId/entries` corps `{ entries }` (1 à 500)
+→ `201 { added }`, doublons exacts `(kind, ref, version)` ignorés, au plus 3 requêtes par 15 s et par
+utilisateur (`429 rate_limited`), délégation d'un autre ou absente → `404 not_found`, inactive →
+`403 delegation_expired` / `delegation_revoked`. Un ajout par le client notifie
+`delegation.entries_added` (`after` = dernier curseur **avant** l'ajout) ; un ajout par le runtime
+(§10) ne notifie pas (`delegationService.ts:264-282`).
+
 ### 7.3 Révocation par l'utilisateur
 
 `DELETE /api/orgs/:orgId/ai/runtime/delegations/current` → délégation `revoked`
 (`user_revoked`), autorisations associées révoquées, conversations runtime de l'utilisateur
 repassées en local (08 §3), notification `delegation.revoked` au runtime. Le client efface `DK`.
+Réponse : `{ "revoked": [<delegationId>…] }` (révisé après la vague B, 2026-11-19).
 
 ## 8. Expiration et révocation (mesure 6, double verrou)
 
@@ -256,6 +315,44 @@ Causes de révocation : utilisateur (§7.3), admin (révocation d'un membre ou d
 `DELETE /api/orgs/:orgId/ai/runtime/delegations/:delegationId`), désappairage (01 §9), départ de
 l'org (`revokeOrgMembership`, `synco_api/src/services/membershipRevocation.ts:75`, à compléter par L03),
 remplacement par une nouvelle délégation (`superseded`).
+
+### 8.1 Causes et raisons réelles (révisé après la vague B, 2026-11-19)
+
+| Cause | Déclencheur | `status` / `revokedReason` (= `delegation.revoked.reason`) |
+|---|---|---|
+| Utilisateur | `DELETE …/delegations/current` | `revoked` / `user_revoked` |
+| Admin, une délégation | `DELETE …/delegations/:delegationId` (propriétaire ou `ORG_AI`) → `{ revoked: boolean }`, `404 not_found` | `revoked` / `admin_revoked` |
+| Admin, **toutes** les délégations actives de l'org | `DELETE /api/orgs/:orgId/ai/runtime/delegations` (propriétaire ou `ORG_AI`) → `{ revoked: [<delegationId>…] }` (`aiRuntimeDelegations.ts:75-85`) | `revoked` / `admin_revoked` |
+| Désappairage | 01 §9 | `revoked` / `runtime_unpaired` |
+| Départ de l'org | `revokeOrgMembership`, et filet de maintenance (`sweepOrphanDelegations`) | `revoked` / `member_left` |
+| Org bannie | changement d'état IA (ci-dessous) | `revoked` / `org_banned` |
+| Module IA coupé (`features` sans `ai` ou `activeModules.ai !== true`) | idem | `revoked` / `ai_disabled` |
+| Mode runtime désactivé (`aiConfig.runtime` absent ou `enabled: false`) | idem | `revoked` / `runtime_disabled` |
+| Membre retiré des membres autorisés (`members: "list"`) | idem, ses délégations seulement | `revoked` / `member_not_allowed` |
+| Expiration | maintenance (07 §9) | `expired` / `revokedReason = null` ; `delegation.revoked.reason = "expired"` |
+| Remplacement | nouveau dépôt (§7.1) | `superseded` / `superseded` (pas de `delegation.revoked` : `delegation.updated`) |
+
+Effets communs (`revokeDelegations`, `delegationService.ts:366-439`) : statut changé par `updateMany`
+conditionné (`status = active`), `activeKey = null` ; chaque conversation autorisée par la
+délégation sort du régime runtime (08 §3) ; autorisations closes ; **toutes les entrées de la
+délégation supprimées** (une délégation remplacée, révoquée ou expirée ne garde aucune entrée) ;
+`delegation.revoked` au runtime. Raison posée sur les autorisations (`AiSessionAuthorization.revokedReason`
+et `conversation.revoked.reason`) : `delegation_revoked` (utilisateur, admin, org bannie, IA ou
+runtime coupés, membre non autorisé), `delegation_expired`, `runtime_unpaired`, `member_left` ; plus,
+hors délégation, `switched_to_local` et `session_deleted` (`conversationLifecycle.ts:26-32`,
+`delegationService.ts:349-358`).
+
+**Révocation automatique sur changement d'état IA de l'org** (`enforceOrgRuntimePolicy`,
+`delegationService.ts:497-519`, idempotente) : appelée par `onOrgAiStateChanged(orgId)`
+(`synco_api/src/services/aiRuntime/runtimePolicyEnforcement.ts`), qui invalide d'abord le cache de
+5 s de l'état IA lu par le second verrou (04 §3.2). Points d'appel : `PATCH /api/orgs/:orgId` quand
+`activeModules` est envoyé (`synco_api/src/routes/orgs.ts:304`) ; `PATCH /api/admin/organizations/:id`
+quand `features` change ; bannissement et levée (`synco_api/src/routes/admin.ts:677`, `:735`, `:783`) —
+la levée n'est qu'une invalidation de cache, rien n'est restauré. Filet : `sweepPolicyViolations` à
+chaque passe de maintenance (07 §9). L'ordre de priorité est `org_banned` > `ai_disabled` >
+`runtime_disabled` > `member_not_allowed`. Non traités en v1 (00 §6 Q14, Q17) : baisse de
+`maxDelegationDays` sous la durée d'une délégation existante (elle court jusqu'à son `exp`),
+bannissement d'un **utilisateur**.
 
 Perte d'accès à un salon ou un espace (`revokeSpaceMembership`, `membershipRevocation.ts:25`) :
 l'API supprime les entrées concernées et notifie `delegation.entries_removed` ; de toute façon elle
@@ -276,6 +373,13 @@ Ce que le runtime a déjà vu reste vu (risque assumé, `03_securite.md §2`).
 - Échec d'ouverture : alerte dans le dashboard ; l'API reçoit seulement
   `POST /api/runtime/v1/delegations/:delegationId/status { "status": "unusable" }`, **sans la cause**
   (§12).
+- Formes réelles (révisé après la vague B, 2026-11-19 ; `synco_api/src/routes/runtimeInternal/delegations.ts`) :
+  `GET /delegations` → tableau `[{ delegationId, userId, scope, iat, exp, wrap, mandateSignature }]`
+  (actives **et** non expirées, ordre de création) ; `GET /delegations/:delegationId/entries` →
+  `{ "entries": [{ id, kind, ref, version, ciphertext }], "next": <id> | null }` (`limit` 1 à 500,
+  500 par défaut ; `next` non nul quand la page est pleine ; curseur inconnu → `400 invalid_body` ;
+  délégation absente, d'un autre runtime ou inactive → `404 not_found`) ; `POST …/status` →
+  `204`, `404 not_found`.
 
 ## 10. Clés créées par le runtime (signature FC4)
 
@@ -318,6 +422,25 @@ Le runtime ajoute aussi la clé créée à la délégation de l'utilisateur (il 
 `POST /api/runtime/v1/delegations/:delegationId/entries` ; l'API n'accepte de lui que des entrées
 dont la clé porte `creatorId = "rt1:<cette délégation>"` ou la `CK` d'une conversation de
 l'utilisateur.
+
+Règles réelles (révisé après la vague B, 2026-11-19 ; `synco_api/src/routes/runtimeInternal/delegations.ts:126-173`) :
+route **S+A** ; `:delegationId` = délégation de l'autorisation, sinon `403 out_of_scope` ; corps
+`{ entries }` (1 à 500) ; par entrée : `thread` → salon de l'org de l'autorisation
+(`out_of_scope`), auquel l'utilisateur a accès **maintenant**, et `ThreadKey` de l'utilisateur dont
+`creatorId = rt1:<cette délégation>` (sinon `403 forbidden`) ; `conv` → uniquement la `CK` de **la**
+conversation de l'autorisation (`out_of_scope` sinon, `forbidden` si la clé n'existe pas) ; `space`
+ou tout autre `kind` → `403 forbidden`. Succès `201 { added }`.
+
+Mandat servi (`GET …/delegations/:delegationId/mandate`, tout membre ; `getMandate`,
+`delegationService.ts:543-566`) : exactement la forme de l'étape 1 ci-dessus, `certificate` étant
+celui du runtime de la délégation (`null` si la ligne n'existe plus) ; `404 not_found`.
+
+**Question ouverte (00 §6 Q11)** : l'enveloppe `rt1` signe `ctx = thread:<threadId>`, or l'id du
+salon est tiré par l'API **à la création** (`POST /e2ee/threads`, 04 §4.3) : le runtime ne peut pas
+le signer d'avance. Aujourd'hui, la route accepte `commitment` et `signature` (ensemble ou absents)
+mais le runtime ne peut pas les produire pour le bon `ctx` ; le salon créé par le runtime est donc
+accepté en **TOFU** par les clients, comme les salons créés par l'IA dans l'app aujourd'hui
+(`CreateNewThread.vue`, `OrgAI.vue` n'envoient pas de `commitment`).
 
 ## 11. Salon créé par un autre membre en l'absence de l'utilisateur
 
@@ -391,3 +514,8 @@ vérifient mais ne se reproduisent pas à l'octet près.
 | `runtime_unavailable` | API 409 | Pas de runtime actif dans l'org |
 | `delegation_expired` / `delegation_revoked` | API 403 (canal interne) | Second verrou (§8) |
 | `delegation_unusable` | runtime (interne) | Mandat, enveloppe ou entrée refusés ; la cause n'est jamais transmise |
+| `entry_unusable` | runtime (interne) | Entrée refusée (`kind` hors liste, AAD, clair ≠ 32 octets) ; comptée, jamais transmise |
+| `rate_limited` | API 429 | Dépôt (10 / h) ou ajout d'entrées (3 / 15 s) trop fréquent (révisé après la vague B) |
+| `not_found` | API 404 | Délégation absente ou d'un autre ; pas de délégation active (`…/missing`) |
+| `forbidden` | API 403 | Non membre, appartenance perdue pendant le dépôt, non admin (révocations admin) |
+| `ai_disabled` | API 403 | Module IA coupé ou org bannie |

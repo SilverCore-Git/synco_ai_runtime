@@ -114,7 +114,10 @@ Correspondance avec l'affichage existant (`WireEvent`, `synco_api/src/services/a
 ### 5.4 Accusés et maintien
 
 - `queued` : `{ "v": 1, "t": "queued", "id": "<id de l'élément>" }`, envoyé **après** que l'élément
-  a été rendu durable dans l'API (`POST /api/runtime/v1/conversations/:id/inbox`, 04 §4.2).
+  a été rendu durable dans l'API (`POST /api/runtime/v1/conversations/:id/inbox`, 04 §4.2). Le
+  runtime y dépose la trame reçue **sans son champ `v`** (`{ t, … }` : le schéma de l'API est strict,
+  révisé après la vague B, 2026-11-19 ; `synco_api/src/services/aiRuntime/conversationValidation.ts:217-223`).
+  Un doublon (`200`) donne lieu au même `queued`.
 - `pong` : réponse à `ping`.
 
 ## 6. Client → runtime
@@ -145,6 +148,23 @@ runtime (`conversation.wake`). Ids idempotents :
 
 Un élément qui ne correspond pas à l'état (décision pour un outil qui n'attend rien, double réponse)
 est consommé et ignoré, avec un évènement `error { code: "stale_decision" }`.
+
+Dépôt par l'API (révisé après la vague B, 2026-11-19 ; `synco_api/src/routes/aiRuntimeSessions.ts:85-103`,
+`depositInboxItem`, `synco_api/src/services/aiRuntime/conversationLifecycle.ts:398-460`) :
+
+- corps = la trame **sans `v`** : `{ "t": "message", "id", "content", "createdAt" }`,
+  `{ "t": "confirm", "toolCallId", "decision" }`, `{ "t": "answer", "toolCallId", "value" }`,
+  `{ "t": "upload", "toolCallId", "ref" }` (`ref` ≤ 512), `{ "t": "cancel", "id" }` ; strict,
+  identifiants conformes à 00 §3.2, `content` / `value` en `gcm1:` ;
+- réponse `201 { id, status }` pour un nouvel élément, `200 { id, status }` pour un doublon (même
+  `id`, rien n'est rejoué) ; `status` = statut de la conversation **après** la transition éventuelle
+  de 08 §2 ;
+- refus : `400 invalid_body`, `404 not_found` (conversation absente ou d'un autre), `409 not_runtime`,
+  `429 inbox_full` (100 éléments non consommés), `429 rate_limited` (20 dépôts / 10 s par
+  conversation ; compteur distinct de celui du runtime) ;
+- un nouvel élément déposé par l'API **réveille toujours** le runtime (`conversation.wake`), sauf si
+  la conversation est désormais `cancelled` ; un élément déposé par le runtime (`source = "ws"`) ne
+  le réveille pas (le runtime le sait déjà).
 
 ### 6.3 `ping`
 
@@ -183,7 +203,10 @@ type de trame, taille, code de fermeture.
 Si le client ne joint pas le runtime (hors réseau de l'entreprise, runtime arrêté) :
 
 - historique en lecture seule par l'API (`GET /api/orgs/:orgId/ai/sessions/:id`, déchiffré avec `CK`),
-  statut à jour (écrit par le worker) ;
+  statut à jour (écrit par le worker) ; la réponse porte aussi `regime`, `status`, `runtimeId`, `rev`,
+  `lastErrorCode`, `awaitingKey`, `statusChangedAt` (révisé après la vague B, 2026-11-19), et l'API
+  émet `ai:session-status` `{ orgId, sessionId, status, lastErrorCode, regime? }` sur le socket du
+  propriétaire à chaque transition ;
 - les messages et décisions passent par la boîte de réception de l'API (§6.2) ; ils seront traités
   quand le runtime les verra ;
 - pas de flux en direct ; indicateur « runtime injoignable ».

@@ -71,20 +71,43 @@ vérifiée avant toute comparaison (comme `parseLinkSecret`, `e2eeV4.ts:310-318`
 
 Exemple : `YR2V-GWM8-2J3T-KCVZ-J0YS-JZZR-F459` (empreinte ci-dessus).
 
-## 3. URL canonique du runtime
+## 3. URL canonique du runtime (révisé après la vague B, 2026-11-19)
 
 L'URL entre dans le certificat. Forme canonique (même esprit que `canonicalGatewayUrl`,
-`synco_api/src/services/ai/orgAiConfig.ts:43-50`) :
+`synco_api/src/services/ai/orgAiConfig.ts:43-50`), fixée par L01 dans
+`canonical_runtime_url` (`crates/synco-e2ee/src/runtime_cert.rs:224-274`), qui fait foi :
 
-- schéma `https` uniquement ; aucune exception en production. Une build de développement de l'app
-  peut accepter `http://localhost:<port>` et `http://127.0.0.1:<port>` derrière un drapeau explicite ;
-- ni identifiants, ni requête, ni fragment ;
-- hôte en minuscules, port par défaut (443) omis ;
-- chemin sans `/` final (`""` si racine) ; pas de `|`, d'espace ni de `%` dans le chemin ;
-- longueur ≤ 255.
+- entrée de 2 048 caractères au plus, sans `?`, `#`, `@`, `\` ni blanc (donc ni identifiants, ni
+  requête, ni fragment) ;
+- schéma `https` (insensible à la casse en entrée, écrit en minuscules) ; aucune exception en
+  production. `http` n'est admis que pour `http://localhost:<port>` et `http://127.0.0.1:<port>`,
+  **port explicite obligatoire**, et seulement si l'appelant le demande par un drapeau de
+  développement (`UrlPolicy::DevelopmentHttp`, `runtime_cert.rs:276-285` ; défaut `Production`) ;
+- hôte en minuscules, ≤ 253 caractères, labels de 1 à 63 caractères `[a-z0-9-]` sans `-` en tête ni
+  en fin (pas de `_`, pas d'IDN non encodé, pas de point final) ; **IPv6 refusé** (crochets) ;
+- dernier label numérique (`2130706433`, `1.2.3.4.5`) ou hexadécimal (`0x…`) refusé, sauf IPv4
+  décimal pointé canonique (quatre octets sans zéro de tête) : un navigateur lirait ces formes comme
+  une adresse IPv4 sous plusieurs écritures (`is_unambiguous_host`, `runtime_cert.rs:209-217`) ;
+- port de 1 à 5 chiffres, non nul ; 443 omis en `https` ;
+- chemin limité à `[A-Za-z0-9-._~/]` (donc ni `%`, ni `|`, ni espace), un seul `/` final retiré,
+  ni `//`, ni segment `.` ou `..` ;
+- longueur du résultat ≤ 255.
+
+Une URL est **canonique** si `canonical_runtime_url(url) == url` (`check_canonical_url`,
+`runtime_cert.rs:287-290`) ; le certificat n'accepte que des URL canoniques (`cert_invalid` sinon).
+Code de refus côté client : `url_invalid`.
 
 Exemple : `https://runtime.example.com`. Toutes les routes publiques du runtime sont relatives à
 cette URL (`<url>/v1/identity`, etc.).
+
+**Écart connu (00 §6 Q12)** : l'API valide l'URL du certificat avec sa propre règle,
+`canonicalRuntimeUrl` (`synco_api/src/services/aiRuntime/runtimeFormats.ts:41-54`, appelée par
+`runtimeRegistry.ts:58`), plus permissive (analyse WHATWG) : elle accepte des URL que la crate
+refuse (hôte IPv6 `https://[::1]`, `_` dans l'hôte, `//` dans le chemin, caractères `!$&'()*+,;=:@`
+dans le chemin) et refuse tout `http`, même sous drapeau de développement. Un tel certificat serait
+déposé par l'API puis refusé par chaque client. Les formes ambiguës (numériques, `.`/`..`, `%`) sont
+en revanche refusées par l'API aussi, car l'analyse WHATWG les normalise et la forme reçue doit
+être déjà canonique.
 
 ## 4. Fiche publique du runtime
 
@@ -197,6 +220,16 @@ L'API valide la forme (types, contraintes 00 §3.2, `orgId` = org de la route, `
 mais ne vérifie pas la signature comme une preuve : elle n'a pas d'autorité sur la clé de l'admin.
 Elle peut la vérifier pour rejeter tôt une erreur de bonne foi.
 
+Contrôles de forme réels de l'API (révisé après la vague B, 2026-11-19 ;
+`validateRuntimeCertificate`, `synco_api/src/services/aiRuntime/runtimeRegistry.ts:48-78`) :
+exactement les neuf champs ci-dessus et exactement `sig`, `kex`, `csk` dans `keys` ; `v = 1` ;
+`runtimeId` UUID en minuscules ; URL canonique (§3, règle de l'API) ; `issuedAt ≤ maintenant + 300`
+(`CERT_MAX_FUTURE_SECS`, `:40`) ; `1 ≤ serial ≤ 2³¹ − 1` (colonne `Int`) ; `signature` `b64` canonique
+de 64 octets ; `sig` `b64u` canonique de 32 octets ; `kex` et `csk` JWK-EC valides (point sur la
+courbe) et **différentes** (une clé, une primitive). Échec : `400 cert_invalid`. La crate applique
+les mêmes contraintes côté client (`RuntimeCertificate::validate` et `from_json`,
+`crates/synco-e2ee/src/runtime_cert.rs:326-335`, `:382-411`), avec `serial ≤ 2⁵³ − 1`.
+
 Il n'y a pas d'expiration : un certificat vaut jusqu'au désappairage ou au certificat suivant
 (`serial` plus grand, mêmes clés).
 
@@ -227,16 +260,52 @@ Dans l'ordre, chaque échec arrête la délégation avec le code indiqué :
 4. Défi de possession (§5) avec `purpose = "pair"`.
 5. Le client signe le certificat (§6.1) avec la clé de signature d'identité déverrouillée et le dépose :
    `POST /api/orgs/:orgId/ai/runtime` (L02, garde : propriétaire ou `ORG_AI`). L'API refuse s'il
-   existe déjà un runtime actif pour l'org (`runtime_exists`, 409 ; v1 : un runtime par org).
+   existe déjà un runtime actif pour l'org (`runtime_exists`, 409 ; v1 : un runtime par org). Règles
+   exactes de l'API au §7.1.
 6. Le client épingle l'empreinte (§8) : l'admin est le premier « témoin ».
 7. Le runtime, tant qu'il n'est pas appairé, appelle toutes les 15 s la route signée
    `POST /api/runtime/v1/register` (04 §4). L'API répond `404 rt_unknown` tant qu'aucun certificat ne
    le désigne, puis renvoie `{ orgId, certificate }`. Le runtime vérifie que le certificat porte
    **ses** clés, son `runtimeId` et son URL configurée (sinon il refuse et l'affiche dans le
-   dashboard), enregistre l'org, et ouvre son flux de notifications (04 §6).
+   dashboard), enregistre l'org, et ouvre son flux de notifications (04 §6). L'API ne compare
+   **pas** l'`url` du corps au certificat : c'est le runtime qui le fait
+   (`synco_api/src/routes/runtimeInternal/runtime.ts:43-64`).
 8. Le runtime récupère la clé publique des tickets (02 §7).
 
 Le runtime refuse un second appairage tant qu'il est appairé (v1 : une seule org).
+
+### 7.1 Registre côté API (révisé après la vague B, 2026-11-19)
+
+Routes utilisateur (`synco_api/src/routes/aiRuntimeAdmin.ts:24-29`), réponses d'erreur
+`{ "error": "<code>" }`, toutes `503 runtime_disabled` si les clés de tickets IA ne sont pas
+configurées (02 §2) :
+
+| Route | Garde | Succès | Erreurs |
+|---|---|---|---|
+| `GET /api/orgs/:orgId/ai/runtime` | membre | `{ runtime: null \| RuntimeView, policy, allowedForMe }` | `403 forbidden` |
+| `POST /api/orgs/:orgId/ai/runtime` corps `{ certificate }` | propriétaire ou `ORG_AI` | `201 { runtime, recertified: false }` ; `200 { runtime, recertified: true }` | `400 cert_invalid`, `403 forbidden`, `403 ai_disabled`, `409 runtime_exists`, `409 runtime_already_paired`, `409 runtime_id_conflict` |
+| `DELETE /api/orgs/:orgId/ai/runtime` | propriétaire ou `ORG_AI` | `{ ok: true, runtimeId, sessions: <nombre de conversations repassées en local> }` | `403 forbidden`, `404 runtime_not_found` |
+
+`RuntimeView` (`aiRuntimeAdmin.ts:37-60`) : `{ runtimeId, url, fingerprint, certificate, certSerial,
+online, lastSeenAt, registeredAt, pairedAt, pairedById, softwareVersion, signer: { adminId, isAdmin },
+workers, metrics }`. `signer.isAdmin` dit si le signataire du certificat est **actuellement**
+propriétaire ou détient `ORG_AI` : c'est la réponse de l'API à l'étape 2 de §6.3 (parole de l'API,
+00 §6 Q2). `allowedForMe` = module IA actif et politique runtime de l'org qui autorise l'appelant
+(07 §6).
+
+Règles du dépôt (`pairRuntimeUncached`, `synco_api/src/services/aiRuntime/runtimeStore.ts:255-307`) :
+
+| Situation | Résultat |
+|---|---|
+| L'org a un runtime actif, même `runtimeId`, mêmes trois clés, `serial` **plus grand** | **Recertification** : URL, certificat et `serial` remplacés → `200`, `recertified: true` (`:266-275`). Le changement d'URL passe donc par un `POST`, pas par une route dédiée. |
+| L'org a un runtime actif, autre runtime, autres clés ou `serial` non supérieur | `409 runtime_exists` (`:270`) |
+| Le `runtimeId` est actif dans une **autre** org | `409 runtime_already_paired` (`:279`) |
+| Le `runtimeId` existe désappairé (`revoked`), même org **et** mêmes trois clés | Ligne réutilisée et réactivée (nouveau `pairedById`, `pairedAt`, présence remise à zéro) ; ses anciennes délégations et autorisations **restent révoquées** (`:286-299`) |
+| Le `runtimeId` existe désappairé, mais autre org ou autres clés | `409 runtime_id_conflict` : un nouveau `runtimeId` est obligatoire (`reset-keys`, §9) ; une ligne n'est jamais rattachée à une autre org ni à une autre identité (`:280-285`) |
+| Sinon | Nouvelle ligne → `201` |
+
+Évènement socket `ai:runtime-changed` `{ orgId, runtimeId, change, online }` vers l'org, `change` ∈
+`paired` | `recertified` | `unpaired` | `presence` (`runtimeRegistry.ts:123-141`).
 
 ## 8. Épinglage TOFU côté client (mesure 3)
 
@@ -274,6 +343,24 @@ Côté API (L02/L03), dans une même transaction :
 3. Évènement `runtime.unpaired` sur le flux du runtime (04 §6) et évènement socket `ai:runtime-changed`
    vers les membres de l'org.
 
+Précisions (révisé après la vague B, 2026-11-19 ; `unpairRuntimeUncached`,
+`synco_api/src/services/aiRuntime/runtimeStore.ts:310-355`, `unpairAndNotify`,
+`runtimeRegistry.ts:123-137`) :
+
+- **toutes** les entrées (`thread`, `space`, `conv`) de **toutes** les délégations du runtime sont
+  supprimées dans la transaction (`:335`) : rien de chiffré pour ce runtime ne survit au
+  désappairage ;
+- chaque conversation repassée en local reçoit un `AiChatSessionEvent` `switch_to_local` (code
+  `runtime_unpaired`) et son propriétaire l'évènement socket `ai:session-status` ;
+- le bail est clos par `leaseHolder = null`, `leaseExpiresAt = null` et le passage en régime
+  `client` (`:345`), **sans** incrément de `leaseEpoch`, contrairement à la règle commune de 08 §2 :
+  aucune écriture n'est plus possible (elles exigent le régime `runtime` et `leaseHolder` = runtime,
+  07 §4.3) et le runtime révoqué est refusé dès l'étape 3 de 04 §2.3 ; une bascule ultérieure
+  incrémente `leaseEpoch` (04 §5) ;
+- le flux reçoit `runtime.unpaired` puis est fermé (`4401 rt_revoked`) ;
+- réponses : route admin, §7.1 ; route du runtime `POST /api/runtime/v1/unpair` → `{ ok: true }`,
+  ou `401 rt_revoked` si plus rien à désappairer (`runtime.ts:66-79`).
+
 Côté runtime (L05) : à réception de `runtime.unpaired`, ou si l'API répond `rt_revoked` : arrêt des
 workers de l'org (sans attendre la fin de l'étape), effacement en mémoire de toutes les clés
 déléguées, oubli de l'org ; il redevient « non appairé » avec les **mêmes** clés. Pour changer de
@@ -281,14 +368,20 @@ clés : commande explicite `synco-ai-runtime reset-keys` (nouvel appairage oblig
 
 Côté client : §8 (épingle archivée, jamais effacée silencieusement).
 
-## 10. Codes d'erreur de ce document
+## 10. Codes d'erreur de ce document (révisé après la vague B, 2026-11-19)
 
 | Code | Où | Sens |
 |---|---|---|
+| `url_invalid` | client | URL non canonisable (§3 ; `Error::UrlInvalid`, `crates/synco-e2ee/src/error.rs:85`) |
 | `pair_code_invalid` | client | Code saisi illisible (longueur, caractère, somme de contrôle) |
 | `pair_code_mismatch` | client | L'empreinte des clés servies par l'URL ne correspond pas au code saisi |
-| `runtime_already_paired` | client | Le runtime est déjà appairé à une autre org |
-| `runtime_exists` | API 409 | L'org a déjà un runtime actif |
+| `runtime_already_paired` | client, API 409 | Le runtime est déjà appairé à une autre org (côté API : `runtimeId` actif ailleurs, §7.1) |
+| `runtime_exists` | API 409 | L'org a déjà un runtime actif (ou recertification sans clés identiques ni `serial` plus grand) |
+| `runtime_id_conflict` | API 409 | `runtimeId` désappairé présenté avec une autre org ou d'autres clés (§7.1) |
+| `runtime_not_found` | API 404 | Désappairage demandé sans runtime actif |
+| `runtime_disabled` | API 503 | Module runtime de l'API non configuré (clés de tickets IA absentes, 02 §2) |
+| `ai_disabled` | API 403 | Module IA désactivé ou org bannie (dépôt du certificat) |
+| `forbidden` | API 403 | Appelant non membre, ou non admin pour `POST`/`DELETE` |
 | `cert_invalid` | client, API 400 | Forme ou contrainte invalide |
 | `cert_signer_not_admin` | client | Le signataire n'est pas (ou plus) admin selon l'API |
 | `cert_bad_signature` | client | Signature non vérifiée par une clé de confiance de l'admin |
@@ -297,3 +390,21 @@ Côté client : §8 (épingle archivée, jamais effacée silencieusement).
 | `challenge_invalid` / `challenge_rate_limited` | runtime 400 / 429 | Défi mal formé / trop de défis |
 | `challenge_failed` | client | `mac` ou `sig` invalide |
 | `rt_unknown` / `rt_revoked` | API 404 / 401 | Runtime inconnu / désappairé (04 §8) |
+
+## 11. Risques connus, non corrigés en v1 (révisé après la vague B, 2026-11-19)
+
+Relevés à la relecture de L02 (`synco_api/vibe/features/SYNCOAI_REFONTE_FEATURE.md` §10.4) et acceptés :
+
+- **État d'un `runtimeId` révélé** : `409 runtime_already_paired` / `runtime_id_conflict` dit à un
+  admin d'une org quelconque qu'un `runtimeId` est (ou a été) appairé ailleurs. Le `runtimeId` n'est
+  pas secret (servi aux membres de son org, publié par `GET <url>/v1/identity`) ; l'information est
+  jugée faible.
+- **Pas de preuve de possession de `sig` à l'appairage** : le défi (§5) porte sur `kex` et `csk` et
+  c'est le client de l'admin qui le vérifie ; l'API ne reçoit aucune preuve que le runtime détient
+  la clé privée `sig` du certificat. Un certificat portant la clé `sig` d'un autre runtime ne donne
+  rien sans sa clé privée (aucune requête signée possible, 04 §2), mais il occupe l'emplacement
+  « runtime actif » de l'org jusqu'au désappairage par un admin (déni de service par un admin de
+  l'org, qui peut de toute façon désappairer).
+- **État propre à l'instance** : cache anti-rejeu (04 §2.3), présence et métriques (04 §6), cache de
+  `findRuntime` et de l'état IA de l'org (5 s, `synco_api/src/services/aiRuntime/runtimeStore.ts:135-148`)
+  ne sont pas partagés : un déploiement multi-instance de l'API devra les partager.

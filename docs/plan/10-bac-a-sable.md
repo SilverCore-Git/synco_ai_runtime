@@ -98,28 +98,74 @@ Le mandataire (`sandbox/proxy.rs`) :
 
 - un socket `<run_dir>/w-<n>-<pid>/llm.sock` (répertoire `0700`, socket `0600`) servi par une tâche
   du superviseur tant que le worker vit, monté en lecture seule dans le bac à sable sous
-  `/run/synco/llm.sock` ; pas de route LLM (URL de base vide) → pas de socket ;
-- le worker parle HTTP/1.1 **clair** (`crates/worker/src/llm.rs`, client `hyper` prêt pour L07) ;
-  chemin = suffixe de l'URL de base (`/chat/completions`, `/models`), `GET`/`POST` seulement, sans
-  `..`, `//`, `%`, `#`, `\` (sinon `400 proxy_path`, `405 proxy_method`) ;
-- le superviseur relaie en TLS (`reqwest`, rustls) vers `base_url` de **cette** conversation
-  (`https://…`, ou `http://` boucle locale ; sans identifiants ni requête), **sans suivre de
-  redirection** (une redirection emporterait la clé vers un autre hôte), réponse en flux (SSE) ;
-- **clés (D1, 06 §3.1)** : pour `openai`, `mistral`, `gemini`, `custom`, l'`authorization` du worker
-  est retiré et remplacé par `Bearer <clé>` lue dans la configuration du runtime ; la clé **ne passe
-  plus par le pipe** (`WorkerLauncher::injects_llm_credentials`, aucune trame `llm_credential`) ;
-  pour `gateway`, l'`authorization` du worker (ticket `sgt1` obtenu par `signed_request` vers
-  `POST /api/runtime/v1/tickets/llm`) est relayé tel quel ;
-- en-têtes relayés : `content-type`, `accept` (requête) ; `content-type`, `retry-after` (réponse) ;
-- bornes : corps ≤ 32 Mio, 4 requêtes simultanées par worker (`429 proxy_busy`), 120 s sans octet,
-  10 min au total (09 §2) ; échec amont → `502 proxy_upstream_unreachable` / `_timeout` ;
-- aucun corps ni en-tête journalisé.
+  `/run/synco/llm.sock` ;
+- le worker parle HTTP/1.1 **clair** (`crates/worker/src/llm.rs`, client `hyper` prêt pour L07).
 
-Risque résiduel : un worker compromis peut utiliser la clé **via** le mandataire (appels au même
-fournisseur, facturés), jamais l'exfiltrer ni joindre un autre hôte. La passerelle et son URL
-viennent de la politique de l'org (API) : un serveur Synco malveillant pourrait y désigner un autre
-hôte ; il ne recevrait que le ticket `sgt1` (déjà émis par lui) et le contenu, que le fournisseur
-voit de toute façon (risque assumé, 03 §2).
+**Destination et clé (B1, révisé après relecture)** — `Runtime::build_init` :
+
+- l'identifiant du fournisseur vient de la politique de l'org (`defaultProvider`) ; l'**URL** et la
+  **clé** viennent de la **configuration du runtime**, cherchées avec ce **même** identifiant
+  (`[llm.providers.<id>]`, `base_url` obligatoire pour tout fournisseur sauf `gateway`, contrôlé par
+  `validate`). Aucune URL fournie par l'API ne reçoit jamais une clé du runtime ;
+- `gatewayUrl` de la politique ne sert qu'au fournisseur `gateway`, qui n'injecte aucune clé (le
+  worker y passe son ticket `sgt1`) ; elle doit être en `https` (port 443), sans identifiants ni
+  requête, vers un nom public (ni `localhost`, `.local`, `.internal`, `.lan`, `.home.arpa`, ni IP
+  privée, de lien local, CGNAT, de métadonnées, ULA…, `gateway_url_allowed`) ; à la connexion, un
+  résolveur écarte toute adresse non publique (`PublicOnlyResolver`, pas de mandataire HTTP
+  système). Une `base_url` configurée pour `gateway` dans le runtime l'emporte ;
+- fournisseur inconnu ou absent de la configuration, ou URL de passerelle refusée : **aucun worker**
+  n'est lancé, la conversation passe en `failed` avec `provider_error` (code le plus proche accepté
+  par l'API, 08 §6 ; la cause exacte, `llm_provider_not_configured` ou `llm_gateway_url_refused`, est
+  au journal du runtime) et le bail est rendu ;
+- pour `openai`, `mistral`, `gemini`, `custom` : l'`authorization` du worker est retiré et remplacé
+  par `Bearer <clé>` ; la clé **ne passe plus par le pipe** (`WorkerLauncher::injects_llm_credentials`,
+  aucune trame `llm_credential`).
+
+**Requêtes admises (I2)** : exactement deux couples (méthode, chemin relatif à l'URL de base), sans
+chaîne de requête — API compatibles OpenAI : `POST /chat/completions`, `GET /models` ; passerelle
+Synco : `POST /v1/chat/completions`, `GET /models` (routes de `Synco_AI_Gateway`). Tout le reste
+(`/files`, `/files/<id>/content`, `/organization/users`, `/./files`, `GET /chat/completions?…`) →
+`404 proxy_path` (`405 proxy_method` hors `GET`/`POST`), sans appel au fournisseur.
+
+**Mémoire du superviseur (I1)** : un worker hostile ne peut pas la saturer :
+
+| Borne | Valeur | Justification |
+|---|---|---|
+| Connexions par socket de worker | 4 (les suivantes attendent dans la file du noyau) | une requête à la fois par connexion HTTP/1.1 |
+| Corps de requête | **8 Mio** (`413 proxy_body_too_large`, y compris `Content-Length` annoncé) | l'historique d'une conversation est plafonné à 8 Mio (09 §4) ; une requête de chat (historique, outils, résultats ≤ 256 Kio) n'a pas de raison de le dépasser ; la passerelle accepte 1 Mio |
+| Lecture du corps | 30 s (`408 proxy_body_timeout`) | client lent |
+| Octets de corps en tampon | 16 Mio par worker, 64 Mio pour le runtime, réservés **pendant** la lecture (`429`/`503 proxy_busy`) | 2 corps maximaux par worker ; 8 workers ne dépassent pas 64 Mio |
+
+La place de connexion est prise à l'acceptation, donc **avant** toute lecture ; les octets sont
+rendus dès que le corps est parti vers le fournisseur.
+
+**Quotas (I3, application de D6)**, comptés par le mandataire, refus `429` avec code machine sans
+appel au fournisseur (le worker le reçoit comme réponse HTTP) :
+
+| Quota | Valeur | Code |
+|---|---|---|
+| Appels par tour | `maxStepsPerTurn` par fenêtre fixe de `maxTurnDurationSecs`, remise à zéro à son terme (le mandataire ne voit pas les tours) | `proxy_call_budget` |
+| Tokens par tour | `maxTokensPerTurn` sur la même fenêtre | `proxy_token_budget` |
+| Tokens par conversation | `maxTokensPerConversation` sur la vie du worker | `proxy_token_budget` |
+| Débit par worker | 2 appels / s, rafale 5 | `proxy_rate_limited` |
+| Débit du runtime | 20 appels / s, rafale 40 | `proxy_runtime_rate_limited` |
+| Tokens du runtime | `max_workers × maxTokensPerTurn × tours par heure` par heure (8 × 300 000 × 2 par défaut) | `proxy_runtime_token_budget` |
+| Durée d'un appel | min(`maxTurnDurationSecs`, 10 min) ; 120 s sans octet | `502 proxy_upstream_timeout` |
+
+Avant l'appel, la réservation estimée vaut `octets de la requête / 4 + maxOutputTokensPerCall` ; après,
+le mandataire facture `usage.total_tokens` (ou `prompt + completion`) lu dans la réponse (JSON
+≤ 1 Mio, ou lignes SSE `data: {…}` ≤ 256 Kio), sinon l'estimation bornée `(requête + réponse) / 4`
+(flux interrompu compris). Les tokens consommés au-delà de la conversation précédente (autre worker)
+restent du ressort du worker (L07) : le compteur du mandataire repart à zéro à chaque worker.
+
+En-têtes relayés : `content-type`, `accept` (requête) ; `content-type`, `retry-after` (réponse).
+Aucun corps ni en-tête journalisé.
+
+Risque résiduel : un worker compromis peut **utiliser** la clé via le mandataire, dans ses quotas,
+pour le chat ou la liste des modèles du fournisseur de sa conversation ; jamais l'exfiltrer, joindre
+un autre hôte ni appeler une autre route de l'API du fournisseur. Pour `gateway`, un serveur Synco
+malveillant peut désigner un autre hôte public : il n'en reçoit que le ticket `sgt1` (émis par lui)
+et le contenu, que le fournisseur voit de toute façon (risque assumé, 03 §2).
 
 ## 5. cgroups v2 (D6)
 
@@ -129,14 +175,17 @@ service (`Delegate=yes`) ou `[sandbox] cgroup_root`. Contrôleurs `memory pids c
 `<base>/cgroup.subtree_control`. Par worker : `memory.max` = `worker_memory_max_mib`,
 `memory.swap.max = 0` (les pages du worker, donc ses clés, ne vont jamais sur disque),
 `memory.oom.group = 1` (l'assistant et le worker meurent ensemble), `pids.max`, `cpu.max`
-(`worker_cpu_percent × 1000` sur 100 000 µs). Arrêt : `cgroup.kill`, puis suppression quand le
+(`worker_cpu_percent × 1000` sur 100 000 µs). Si le noyau n'expose pas `memory.swap.max`, le
+démarrage est **refusé** (`cgroup_swap_uncontrolled`) sauf si aucun espace d'échange n'est actif
+(`/proc/swaps` vide). Arrêt : `cgroup.kill`, puis suppression quand le
 cgroup est vide. Métriques (06 §5, L08) : `WorkerProcess::usage()` lit `memory.current`,
 `memory.peak`, `cpu.stat usage_usec`.
 
 **Écart avec 09 §2 : `memory.high` n'est pas appliqué** (écrit `max`). Sans espace d'échange, la
 mémoire anonyme n'est pas récupérable : sous `memory.high` = 448 Mio, le worker de test était encore
 vivant après 120 s, ralenti indéfiniment (5 141 évènements `high`, aucun OOM), au lieu d'être tué à
-`memory.max`. `worker_memory_high_mib` reste lu mais ignoré. Question remontée à l'utilisateur.
+`memory.max`. `worker_memory_high_mib` reste lu mais ignoré, et `--check-config` avertit s'il est présent.
+Décision de l'utilisateur en attente.
 
 ## 6. Repli si une fonction noyau manque
 
@@ -187,7 +236,11 @@ Chaque binaire de test tourne seul dans `systemd-run --user --scope -p Delegate=
 | Pendant OOM, boucle et appel fatal d'autres workers | un worker témoin répond toujours, sa mémoire reste < 64 Mio |
 | Couches retirées une à une (`--without`, tests seulement) | chaque couche réseau suffit seule ; sans aucune, le test constate l'évasion (`tcp_ok`) |
 | Mutation : `memory.max` et `pids.max` non écrits | `sandbox-check` échoue (`oom`, `threads` « escaped ») |
-| Mandataire | clé ajoutée, clé forgée par le worker retirée ; ticket relayé pour la passerelle ; `..` refusé ; `DELETE` refusé |
+| Mandataire (worker isolé) | clé ajoutée, clé forgée par le worker retirée ; ticket relayé pour la passerelle ; `/files`, `/files/<id>/content`, `GET /chat/completions?limit=100`, `/organization/users`, `/./files`, `..`, `POST /models` → 404 ; `DELETE` → 405 ; aucun appel au fournisseur |
+| Mandataire attaqué directement (`tests/proxy.rs`, partout) | corps de 31 Mio annoncé ou envoyé en morceaux → 413 ; 5ᵉ connexion en attente ; 4 corps de 7 Mio → au moins un `429 proxy_busy` ; quotas d'appels, de tokens (`usage` et estimation), du runtime et de débit |
+| Fournisseur non configuré (`integration.rs`, `fournisseur_non_configure_refuse`) | `mistral` non configuré, identifiant inconnu, passerelle vers 169.254.169.254 : `failed` / `provider_error`, aucun worker, bail rendu |
+| Descripteur hérité sans `O_CLOEXEC` | lancement refusé (`inherited_fd`) |
+| Lancement refusé après création du répertoire du worker | aucun reste |
 | Aller-retour client → superviseur → worker isolé → API simulée (`aller_retour_avec_bac_a_sable`) | identique au bouchon en processus |
 | Refus de démarrer (cgroup absent) avant toute clé ; `--insecure-no-sandbox` démarre | vérifié (aussi dans le flatpak) |
 
@@ -244,3 +297,8 @@ root sur l'hôte.
   `baseUrl` reste l'URL réelle (information) : le worker ne s'y connecte jamais.
 - Pas de fichier, pas de DNS, pas de TLS dans le worker ; pas de `std::process::Command`.
 - Un appel système manquant se voit comme `ENOSYS` (§3).
+- Seuls `POST /chat/completions` (`/v1/chat/completions` pour la passerelle) et `GET /models`
+  passent ; les refus du mandataire sont des `4xx`/`5xx` avec `{"error":"proxy_<code>"}` : traiter
+  `proxy_call_budget`, `proxy_token_budget` (fin du tour : `budget_exceeded` / `step_limit`) et
+  `proxy_*rate_limited` (attendre, `retry-after` absent). Demander `usage` dans le flux
+  (`stream_options.include_usage`) pour un décompte exact.

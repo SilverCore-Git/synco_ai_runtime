@@ -205,7 +205,7 @@ pub(crate) enum Sent {
     Answered(crate::api::ApiResponse),
     /// Refus **local** du relais, avant tout envoi à l'API (`relay_busy`, `relay_rate_limited`,
     /// `relay_refused`, `relay_bad_part`) : l'action n'a pas eu lieu.
-    NotSent,
+    LocallyRefused,
     /// Envoyée, sans réponse exploitable (délai, pipe fermé, `relay_network`, réponse illisible ou
     /// trop grande, `5xx`) : l'action a pu avoir lieu.
     Unknown,
@@ -215,7 +215,7 @@ pub(crate) fn sent(r: Result<crate::api::ApiResponse, crate::link::LinkError>) -
     match r {
         Err(_) => Sent::Unknown,
         Ok(r) if r.status == 0 => match r.relay_error.as_deref() {
-            Some("relay_busy" | "relay_rate_limited" | "relay_refused" | "relay_bad_part") => Sent::NotSent,
+            Some("relay_busy" | "relay_rate_limited" | "relay_refused" | "relay_bad_part") => Sent::LocallyRefused,
             _ => Sent::Unknown,
         },
         Ok(r) if r.status >= 500 => Sent::Unknown,
@@ -234,7 +234,7 @@ async fn execute_server(ctx: &ToolCtx<'_>, name: &str, mutating: bool, args: &Va
     let body = json!({ "leaseEpoch": ctx.lease_epoch, "args": args });
     let r = match sent(ctx.api.conv(HttpMethod::Post, &format!("/tools/{name}/execute"), Some(&body)).await) {
         Sent::Answered(r) => r,
-        Sent::NotSent => return error("tool_failed"),
+        Sent::LocallyRefused => return error("tool_failed"),
         Sent::Unknown => return transport_failure(mutating),
     };
     if r.ok() {

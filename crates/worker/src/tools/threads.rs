@@ -166,8 +166,8 @@ pub async fn run(ctx: &ToolCtx<'_>, args: &Value) -> Outcome {
         let r = match super::sent(ctx.api.call(HttpMethod::Post, &format!("{PREFIX}/e2ee/threads"), Some(&body)).await)
         {
             super::Sent::Answered(r) => r,
-            super::Sent::NotSent if created.is_empty() => return error("tool_failed"),
-            super::Sent::NotSent => {
+            super::Sent::LocallyRefused if created.is_empty() => return error("tool_failed"),
+            super::Sent::LocallyRefused => {
                 return Outcome::Failed(json!({ "error": "tool_failed", "threads": created }));
             }
             // Le salon a pu être créé : issue inconnue (08 §5), jamais « échec ».

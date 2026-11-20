@@ -435,3 +435,58 @@ système ajouté au filtre seccomp (le vrai worker passe le test hôte sans chan
 **Non vérifié (recette manuelle)** : vraie API (L03) et vrai fournisseur (OpenAI, passerelle avec
 un vrai `sgt1`) ; affichage dans OrgAI.vue du flux en direct (L12 adapte la source d'évènements) ;
 `create_thread` réel (bloqué par l'écart 2) ; push reçus sur mobile ; métriques au dashboard (L08).
+
+### 2026-11-20 — L07, corrections après relecture indépendante
+
+**Corrigé** (un commit par point, chacun avec un test qui échoue sans la protection) :
+
+- **I1** (`2cec9ec`) : historique `conv-gcm1-v1` lu **strictement** (`transcript::Read::Strict`,
+  seul mode de la boucle) : un champ de contenu qui n'est pas `gcm1:` est illisible (jamais repris
+  en clair), un appel aux arguments illisibles passe en `error`, un `pendingToolCall` aux arguments
+  en clair est ignoré. Reprise : mutant d'après le **manifeste** (pas le drapeau en clair) ; un appel
+  mutant `accepted` n'est relancé que s'il correspond au `pendingToolCall` déchiffré, sinon clos
+  (`tool_call_unverified`). Test `crash.rs::historique_en_clair_jamais_repris_ni_execute`
+  (mutation « lecture tolérante » → l'outil forgé s'exécute).
+- **I2** (`d5ef171`, `65f8901`) : après l'envoi d'une action mutante (`tools/:name/execute`,
+  `POST /e2ee/threads`), délai, pipe fermé, `relay_network`, réponse illisible ou trop grande, `5xx`
+  → `unknown_outcome` + `tool_unknown_outcome` ; erreur explicite de l'API → échec ; refus **local**
+  du relais (`relay_busy`, `relay_rate_limited`, `relay_refused`, `relay_bad_part` : rien n'est parti)
+  → échec. Un 2xx de création de salon sans id lisible → issue inconnue. (`65f8901` : correctif
+  clippy, le commit I2 avait été fait sans que clippy passe.)
+- **I3** (`62cac36`, `2fdb5a4`) : `created_key` réservé aux salons dont le superviseur a lui-même
+  relayé la création réussie pour **ce** worker (réponse 2xx, id lu dans la réponse, noté avant que
+  le worker la voie), une clé par salon (`created_key_unknown_thread`), plafond de 32 sur les clés
+  signées. Coffre : une seconde entrée ne remplace jamais une clé différente déjà ouverte (la
+  première est gardée, rejet compté). Délégation : le superviseur ne connaît que la délégation
+  courante du propriétaire, pas le `delegationId` de l'autorisation ; un écart échoue **fermé** côté
+  API (signature vérifiée avec la délégation de l'autorisation → `400` ; entrée → `out_of_scope`),
+  aucune enveloppe fausse n'est posée (documenté dans `workers.rs`).
+- **I4** (`2fdb5a4`, `42e6d14`) : test `integration.rs::created_key_reserve_aux_salons_crees_par_ce_worker`
+  avec le **vrai** code du superviseur et un worker scripté (salon inconnu, signature `rt1` vérifiée
+  avec la `csk` du runtime, seconde clé, plafond 32, délégation retirée, trame `0x02` interdite qui
+  tue le worker) ; tests `stale_decision` pour une confirmation d'un autre appel et `deny` revérifié
+  à l'exécution. Correctif trouvé par ces tests : une décision périmée était consommée en mémoire
+  mais jamais écrite (le worker quittait l'attente sans écrire) ; l'état d'attente est réécrit.
+- **I5** (`986ea65`) : clés RSA de membre < 2048 bits écartées et membres écartés signalés au modèle
+  (`skippedRecipients`) ; plus de 300 destinataires → `too_many_recipients`, aucun salon créé.
+- **M1** (`22db38d`) : un délai du renouvellement de bail ne l'arrête plus. **M3/M5** (`4d87c6c`) :
+  identifiant d'appel toujours tiré par le worker ; arguments illisibles (dont `finish_reason:
+  length`) → `invalid_tool_arguments`, sans exécution. **M4** (`cd339e9`) : texte (4 Mio) et
+  arguments d'outils (1 Mio) d'une réponse bornés, `LlmError::TooLarge` (nouvelle variante de
+  l'interface, sans nouvel essai). Remarques (`068a839`) : identifiants de boîte validés en entier
+  (`<id>` ou `confirm|answer|upload|cancel:<id>`), donc sûrs dans `?after=` (un encodage pourcent
+  est impossible : le relais refuse `%`) ; `upload.ref` recopié seulement si c'est un identifiant.
+- Fixture croisé régénéré (`test(runtime)` suivant) ; test TS : 11/11.
+
+**Vérifié** : `cargo test --workspace`, clippy `-D warnings`, `cargo fmt --check`, check-secrets
+(flatpak) ; hôte (`sandbox-host.sh`, cible `~/.cache/synco-l07-host-target` supprimée ensuite) :
+10/10 + aller-retour avec le vrai worker isolé ; test croisé TS 11/11. Aucune dépendance nouvelle.
+
+**Écarts déclarés (à reporter, décisions remontées)** : épinglage TOFU des clés RSA des membres
+toujours absent (le worker n'a pas de disque ; à confier au superviseur comme `pins.rs`, décision à
+prendre) ; `LlmError::TooLarge` ajouté à l'interface L07b ; codes `created_key_unknown_thread`,
+`tool_call_unverified`, `invalid_tool_arguments`, `invalid_upload_ref`, `too_many_recipients`.
+
+**Non vérifié** : renouvellement du bail après un vrai délai de 150 s (seule la décision est testée,
+`agent::tests::renouvellement_du_bail`) ; délégation **expirée** (et non retirée) au moment de
+`created_key` (même branche que la délégation retirée).

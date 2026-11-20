@@ -83,6 +83,19 @@ pub fn parse_oom_kills(events: &str) -> u64 {
         .fold(0, u64::saturating_add)
 }
 
+/// Un espace d'échange est-il actif (`/proc/swaps` a une ligne après l'en-tête) ? Illisible :
+/// supposé actif.
+#[must_use]
+pub fn system_swap_active() -> bool {
+    fs::read_to_string("/proc/swaps").map_or(true, |s| swaps_active(&s))
+}
+
+/// Contenu de `/proc/swaps` : au moins une ligne après l'en-tête ?
+#[must_use]
+pub fn swaps_active(proc_swaps: &str) -> bool {
+    proc_swaps.lines().skip(1).any(|l| !l.trim().is_empty())
+}
+
 /// Lit `populated` dans le contenu de `cgroup.events`.
 #[must_use]
 pub fn parse_populated(events: &str) -> Option<bool> {
@@ -182,11 +195,13 @@ impl CgroupTree {
             }
         }
         // Pas d'espace d'échange : un worker ne contourne pas memory.max en écrivant ses pages (et ses
-        // clés) sur le disque. Fichier absent si le noyau n'a pas de swap configuré.
+        // clés) sur le disque. `memory.swap.max` absent (noyau sans comptage du swap) : refus, sauf
+        // si aucun espace d'échange n'est actif sur la machine (`/proc/swaps` vide, vérifiable).
         let swap = cg.path.join("memory.swap.max");
-        if swap.exists() && write(&swap, "0").is_err() {
+        let swap_ok = if swap.exists() { write(&swap, "0").is_ok() } else { !system_swap_active() };
+        if !swap_ok {
             let _ = cg.try_remove();
-            return Err("cgroup_limits_failed");
+            return Err("cgroup_swap_uncontrolled");
         }
         Ok(cg)
     }
@@ -278,6 +293,8 @@ mod tests {
         assert_eq!(parse_cpu_usage("usage_usec 1234\nuser_usec 1\n"), Some(1234));
         assert_eq!(parse_populated("populated 0\nfrozen 0\n"), Some(false));
         assert_eq!(parse_populated("populated 1\n"), Some(true));
+        assert!(!swaps_active("Filename\tType\tSize\tUsed\tPriority\n"));
+        assert!(swaps_active("Filename\tType\n/dev/zram0 partition 8388604 0 100\n"));
         assert_eq!(parse_oom_kills("low 0\noom 1\noom_kill 1\noom_group_kill 1\n"), 2);
     }
 

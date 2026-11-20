@@ -89,6 +89,9 @@ pub fn explain(code: &str) -> &'static str {
         "cgroup_not_delegated" | "cgroup_join" => {
             "cgroup non délégué au superviseur (systemd : Delegate=yes ; conteneur : cgroup en écriture)"
         }
+        "cgroup_swap_uncontrolled" => {
+            "memory.swap.max absent (noyau sans comptage du swap) alors qu'un espace d'échange est actif : désactiver le swap (swapoff -a) ou activer le comptage"
+        }
         "cgroup_base_has_processes" => {
             "le cgroup du superviseur contient d'autres processus (lancer seul dans son cgroup)"
         }

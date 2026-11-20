@@ -43,15 +43,20 @@ jobs:
           persist-credentials: false
       - name: Installer cargo-audit (version épinglée)
         run: cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked
-      # Échoue sur toute vulnérabilité connue (RustSec) et sur toute version retirée de crates.io ;
-      # les autres avertissements (crates non maintenues, `unsound`) sont affichés sans échec.
+      # Échoue sur toute vulnérabilité connue (RustSec), tout `unsound` non listé et toute version retirée de
+      # crates.io : un NOUVEL avis fait donc échouer l'étape. Les six avis ci-dessous sont connus et ignorés
+      # TEMPORAIREMENT : rustls 0.23.44 (RUSTSEC-2026-0285, -0346, -0347, -0348, -0349 ; corrigés en >= 0.23.46)
+      # et rustix 1.1.5 (RUSTSEC-2026-0486, unsound ; corrigé en 1.1.6). RETIRER ces `--ignore` après la montée
+      # de rustls >= 0.23.46 et rustix 1.1.6 (modification de dépendances hors du lot L09, docs/journal.md).
       - name: Audit
-        # TEMPORAIRE : rustls 0.23.44 est touché par 5 avis (RUSTSEC-2026-0285, -0346 à -0349 : corrigés
-        # en >= 0.23.46) et rustix 1.1.5 par un avis `unsound` (RUSTSEC-2026-0486). La montée de version
-        # est une modification de dépendances hors du lot L09 (voir docs/journal.md) : en attendant,
-        # l'étape signale sans bloquer les autres contrôles. RETIRER `continue-on-error` après la montée.
-        continue-on-error: true
-        run: cargo audit --deny yanked
+        run: >-
+          cargo audit --deny yanked --deny unsound
+          --ignore RUSTSEC-2026-0285
+          --ignore RUSTSEC-2026-0346
+          --ignore RUSTSEC-2026-0347
+          --ignore RUSTSEC-2026-0348
+          --ignore RUSTSEC-2026-0349
+          --ignore RUSTSEC-2026-0486
 
   secrets:
     name: contrôle des secrets

@@ -22,6 +22,7 @@ services:
     build: .
     image: localhost/synco-ai-runtime:latest
     restart: unless-stopped
+    networks: [runtime_net]       # réseau propre : le runtime n'est pas sur celui de la passerelle / d'Ollama
     # Le superviseur doit être le processus 1 ET seul dans son cgroup : PAS de `init: true`, pas de
     # `command:` qui lance un shell. Le service est lancé tel que l'image le définit.
     user: "10001:10001"
@@ -71,6 +72,9 @@ services:
     image: docker.io/ollama/ollama@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592
     restart: unless-stopped
     # Ne JAMAIS publier 11434 : Ollama n'a aucune authentification, c'est le rôle de la passerelle.
+    networks: [gateway_net]       # joignable par la passerelle seulement (pas par le runtime)
+    security_opt: ["no-new-privileges:true"]
+    # (Ollama tourne en root pour son volume /root/.ollama : pas de cap_drop ici, non testé.)
     volumes:
       - ollama_data:/root/.ollama
     # GPU NVIDIA (NVIDIA Container Toolkit ; Podman : `devices: [nvidia.com/gpu=all]` via CDI) :
@@ -90,6 +94,12 @@ services:
       dockerfile: Dockerfile.gateway-only
     restart: unless-stopped
     depends_on: [ollama]
+    networks: [gateway_net]
+    # Durcissement vérifié avec l'image de la passerelle (Dockerfile.gateway-only, utilisateur sans privilèges) :
+    # elle démarre et répond /health en lecture seule et sans aucune capacité.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     ports:
       - "127.0.0.1:8787:8787"     # derrière le mandataire TLS (vhost distinct)
     environment:
@@ -102,6 +112,10 @@ services:
       SYNCO_ALLOWED_ORGS: "identifiant-de-votre-organisation"
       SYNCO_ALLOWED_MODELS: "llama3.1:8b"
       RUST_LOG: info
+
+networks:
+  runtime_net: {}
+  gateway_net: {}
 
 volumes:
   runtime_state:

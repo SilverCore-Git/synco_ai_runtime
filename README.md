@@ -30,7 +30,8 @@ Prérequis : Linux ≥ 5.14, cgroups v2 (`cpu`, `memory`, `pids`), espaces de no
 podman build --format docker -t localhost/synco-ai-runtime:latest .
 mkdir -p ~/.config/synco-ai-runtime ~/.config/containers/systemd
 cp deploy/config.container.example.toml ~/.config/synco-ai-runtime/config.toml      # à adapter
-head -c 32 /dev/urandom | base64 | tr -d '\n' | podman secret create synco-ai-runtime-passphrase -   # noter la phrase !
+PP=$(head -c 32 /dev/urandom | base64 | tr -d '\n'); echo "À noter dans un coffre : $PP"
+printf '%s' "$PP" | podman secret create synco-ai-runtime-passphrase - ; unset PP      # modèle de menace : docs/deploiement.md §2.2
 cp deploy/podman/synco-ai-runtime.container deploy/podman/synco-ai-runtime-state.volume ~/.config/containers/systemd/
 systemctl --user daemon-reload && systemctl --user start synco-ai-runtime.service && loginctl enable-linger "$USER"
 

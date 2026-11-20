@@ -4,7 +4,9 @@
 #   cp synco-ai-runtime.container ~/.config/containers/systemd/
 #   cp config.container.example.toml ~/.config/synco-ai-runtime/config.toml   # puis l'éditer
 #   podman build -t localhost/synco-ai-runtime:latest .
-#   (umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' | podman secret create synco-ai-runtime-passphrase -)
+#   PP=$(head -c 32 /dev/urandom | base64 | tr -d '\n'); echo "à noter dans un coffre : $PP"
+#   printf '%s' "$PP" | podman secret create synco-ai-runtime-passphrase - ; unset PP
+#   (pilote `file` : la phrase est en base64 dans ~/.local/share/containers/storage/secrets : voir docs/deploiement.md §2.2)
 #   systemctl --user daemon-reload && systemctl --user start synco-ai-runtime.service
 #   loginctl enable-linger "$USER"      # le service survit à la déconnexion et démarre au boot
 #
@@ -41,7 +43,8 @@ PublishPort=127.0.0.1:8791:8791
 Volume=synco-ai-runtime-state.volume:/var/lib/synco-ai-runtime
 Volume=%h/.config/synco-ai-runtime/config.toml:/etc/synco-ai-runtime/config.toml:ro
 
-# Phrase de passe de scellement de la clé (secret Podman, jamais dans ce fichier).
+# Phrase de passe de scellement de la clé (secret Podman, jamais dans ce fichier ; stockée non chiffrée
+# par le pilote `file` par défaut : modèle de menace dans docs/deploiement.md §2.2).
 Secret=synco-ai-runtime-passphrase,type=mount,target=synco-ai-runtime-passphrase,uid=10001,gid=10001,mode=0400
 # Clé d'un fournisseur LLM (config.toml : api_key_file = "/run/secrets/openai-api-key") :
 # Secret=openai-api-key,type=mount,target=openai-api-key,uid=10001,gid=10001,mode=0400

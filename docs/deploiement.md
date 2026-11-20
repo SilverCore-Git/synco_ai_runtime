@@ -79,8 +79,12 @@ mkdir -p ~/.config/synco-ai-runtime ~/.config/containers/systemd
 cp deploy/config.container.example.toml ~/.config/synco-ai-runtime/config.toml
 $EDITOR ~/.config/synco-ai-runtime/config.toml
 
-# 3. Phrase de passe qui scelle la clé du runtime (secret Podman, jamais sur disque en clair)
-head -c 32 /dev/urandom | base64 | tr -d '\n' | podman secret create synco-ai-runtime-passphrase -
+# 3. Phrase de passe qui scelle la clé du runtime. Elle est AFFICHÉE UNE FOIS : la noter dans un coffre
+#    (sans elle, la sauvegarde de keys.sealed est inutilisable). Lire le modèle de menace juste après.
+PP=$(head -c 32 /dev/urandom | base64 | tr -d '\n')
+printf 'Phrase de passe à noter dans un coffre : %s\n' "$PP"
+printf '%s' "$PP" | podman secret create synco-ai-runtime-passphrase -
+unset PP
 
 # 4. Service
 cp deploy/podman/synco-ai-runtime.container deploy/podman/synco-ai-runtime-state.volume ~/.config/containers/systemd/
@@ -90,6 +94,22 @@ loginctl enable-linger "$USER"            # démarre au boot, survit à la déco
 systemctl --user status synco-ai-runtime.service
 podman ps                                  # « healthy » après ~20 s
 ```
+
+> **Modèle de menace de la phrase de passe (à lire).** Le pilote de secrets Podman par défaut est `file` : la phrase est
+> stockée **en base64, non chiffrée**, dans `~/.local/share/containers/storage/secrets/filedriver/secretsdata.json`, et
+> `podman secret inspect --showsecret synco-ai-runtime-passphrase` l'affiche. Or `keys.sealed` vit dans le volume, sous le
+> **même `$HOME`** (`~/.local/share/containers/storage/volumes/`). Une sauvegarde du compte, un vol du disque ou un accès
+> au compte donne donc **la clé scellée et sa phrase ensemble** : le scellement ne protège alors que contre la lecture de
+> `keys.sealed` seule (fuite du volume exporté, d'une sauvegarde du seul volume). C'est le compromis retenu pour un
+> **redémarrage sans intervention**. Atténuations : compte dédié au runtime (voir §5, M5), disque chiffré, sauvegarde du
+> volume **sans** `~/.local/share/containers/storage/secrets/`.
+>
+> Alternatives (la question de fond reste à trancher) : (1) pilote de secrets `pass` (`podman secret create --driver pass …`,
+> phrase dans le trousseau `pass`/GPG) ou `shell` (commande à vous : coffre d'entreprise, TPM…), sous réserve que le
+> déverrouillage soit disponible au démarrage du service ; (2) **saisie au démarrage** : le superviseur lit la phrase sur un
+> terminal sans écho quand `passphrase_file` est absent (`seal.rs`, `PassphraseSource::Terminal`, vérifié dans le code), donc
+> `podman run -it` sans secret ; aucun redémarrage automatique possible (il faut quelqu'un) ; (3) mode systemd
+> (`systemd-creds`, TPM2) sans conteneur, §4. Aucun mode « saisie » n'existe pour un service détaché : ne pas l'attendre.
 
 Le fichier [`deploy/podman/synco-ai-runtime.container`](../deploy/podman/synco-ai-runtime.container) porte toutes les
 options du tableau ci-dessus ; la sortie de `systemctl --user start` puis `podman ps` doit montrer
@@ -175,12 +195,12 @@ le digest (procédure en tête du fichier) puis reconstruire.
 
 ### 2.5 Sauvegarde de la clé
 
-Deux éléments, **à conserver séparément** (l'un sans l'autre ne sert à rien, c'est voulu) :
+Deux éléments, **à conserver séparément, hors de ce `$HOME`** (l'un sans l'autre ne sert à rien : c'est le but, que la sauvegarde du volume seule ne donne pas la clé) :
 
 | Élément | Où | Sauvegarde |
 |---|---|---|
 | `keys.sealed` (clé privée du runtime scellée : Argon2id + AES-256-GCM) | volume `synco-ai-runtime-state` | `podman volume export synco-ai-runtime-state > etat.tar` (contient aussi `dashboard.pass` et l'historique) |
-| Phrase de passe | secret Podman `synco-ai-runtime-passphrase` | à noter dans un coffre : `podman secret inspect` ne la montre **pas** ; conservez-la à la création (étape 3) |
+| Phrase de passe | secret Podman `synco-ai-runtime-passphrase` (pilote `file` : en base64 dans `secretsdata.json`, visible par `podman secret inspect --showsecret`) | notée dans un coffre **à la création** (étape 3, affichée une fois) ; ne pas compter sur le secret Podman comme seule copie |
 
 Sans la clé **ou** sans la phrase : le runtime est perdu pour son identité actuelle. Il faut `reset-keys --yes` (nouvelle
 identité, **nouvel appairage**, les délégations existantes sont perdues). Restauration :

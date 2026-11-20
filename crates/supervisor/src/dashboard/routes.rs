@@ -119,10 +119,14 @@ impl DashboardState {
         trust_proxy_hops: usize,
         listen: SocketAddr,
     ) -> Arc<Self> {
+        let allowed_hosts = allowed_hosts.into_iter().map(|h| h.to_ascii_lowercase()).collect();
         Arc::new(Self { history, auth, source, allowed_hosts, trust_proxy_hops, listen, host: HostSampler::default() })
     }
 
+    /// Le nom d'hôte est insensible à la casse (RFC 9110) ; `allowed_hosts` est mis en minuscules.
     fn host_allowed(&self, host: &str) -> bool {
+        let host = host.to_ascii_lowercase();
+        let host = host.as_str();
         let port = self.listen.port();
         let local = [format!("localhost:{port}"), format!("127.0.0.1:{port}"), format!("[::1]:{port}")];
         host == self.listen.to_string()
@@ -217,7 +221,10 @@ async fn guard_inner(state: &Shared, req: Request, next: Next) -> Response {
     } else {
         match cookie_token(headers).and_then(|t| state.auth.check(&t, Instant::now())) {
             Some(c) => Some(c),
-            None => return json_error(StatusCode::UNAUTHORIZED, "unauthenticated"),
+            None if req.uri().path().starts_with("/api/") || req.uri().path() == "/api" => {
+                return json_error(StatusCode::UNAUTHORIZED, "unauthenticated");
+            }
+            None => return unauthenticated_page(),
         }
     };
     let mutating = !matches!(*req.method(), Method::GET | Method::HEAD);
@@ -232,6 +239,17 @@ async fn guard_inner(state: &Shared, req: Request, next: Next) -> Response {
         }
     }
     next.run(req).await
+}
+
+/// 401 d'une page HTML sans session : un court corps qui renvoie vers la connexion (aucun script).
+fn unauthenticated_page() -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        "<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\"><title>Connexion requise</title></head>\
+         <body><p>Connexion requise. <a href=\"/login\">Se connecter</a></p></body></html>",
+    )
+        .into_response()
 }
 
 fn asset(content_type: &'static str, body: &'static str) -> Response {

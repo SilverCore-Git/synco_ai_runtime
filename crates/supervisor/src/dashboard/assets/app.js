@@ -252,7 +252,13 @@
   function route() {
     var h = window.location.hash || "#/";
     var m = /^#\/session\/(.+)$/.exec(h);
-    if (m) return { view: "detail", id: decodeURIComponent(m[1]) };
+    if (m) {
+      try {
+        return { view: "detail", id: decodeURIComponent(m[1]) };
+      } catch (e) {
+        return { view: "overview" };
+      }
+    }
     if (h === "#/sessions") return { view: "sessions" };
     if (h === "#/totals") return { view: "totals" };
     return { view: "overview" };

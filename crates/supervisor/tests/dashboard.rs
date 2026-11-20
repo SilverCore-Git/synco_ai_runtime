@@ -181,6 +181,19 @@ async fn sans_authentification_401_partout_sauf_la_connexion() {
 }
 
 #[tokio::test]
+async fn page_html_sans_session_renvoie_vers_la_connexion_et_api_en_json() {
+    let e = env().await;
+    let r = e.client.get(e.url("/")).send().await.unwrap();
+    assert_eq!(r.status(), 401);
+    assert!(r.headers()["content-type"].to_str().unwrap().starts_with("text/html"));
+    let body = r.text().await.unwrap();
+    assert!(body.contains("href=\"/login\"") && !body.contains("<script"), "{body}");
+    let r = e.client.get(e.url("/api/overview")).send().await.unwrap();
+    assert_eq!(r.status(), 401);
+    assert!(r.headers()["content-type"].to_str().unwrap().starts_with("application/json"));
+}
+
+#[tokio::test]
 async fn la_page_de_connexion_est_servie_sans_session() {
     let e = env().await;
     for (p, ct) in [("/login", "text/html"), ("/assets/login.js", "text/javascript"), ("/assets/style.css", "text/css")]
@@ -373,9 +386,15 @@ async fn hote_refuse_contre_le_rebinding_dns() {
     assert_eq!(r.status(), 403);
     let r = e.client.get(e.url("/login")).header("host", format!("localhost:{}", e.addr.port())).send().await.unwrap();
     assert_eq!(r.status(), 200);
-    let proxied = env_with(1, vec!["runtime-admin.example.com".into()]).await;
+    let proxied = env_with(1, vec!["Runtime-Admin.example.com".into()]).await;
     let r = proxied.client.get(proxied.url("/login")).header("host", "runtime-admin.example.com").send().await.unwrap();
     assert_eq!(r.status(), 200, "hôte déclaré dans allowed_hosts");
+    // Le nom d'hôte est insensible à la casse.
+    for host in ["RUNTIME-ADMIN.EXAMPLE.COM".to_owned(), format!("LocalHost:{}", e.addr.port())] {
+        let (env, host) = if host.starts_with("RUNTIME") { (&proxied, host) } else { (&e, host) };
+        let r = env.client.get(env.url("/login")).header("host", host.clone()).send().await.unwrap();
+        assert_eq!(r.status(), 200, "{host}");
+    }
 }
 
 #[tokio::test]

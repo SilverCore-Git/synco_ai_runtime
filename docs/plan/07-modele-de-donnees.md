@@ -392,11 +392,13 @@ Passes réelles (révisé après la vague B, 2026-11-19 ; `runAiRuntimeMaintenan
 2. `sweepOrphanDelegations` : délégations actives d'un utilisateur qui n'est plus membre →
    `member_left` (filet de `revokeOrgMembership`) ;
 3. `sweepPolicyViolations` : délégations que l'état IA de l'org ne permet plus (03 §8.1 : org
-   bannie, module IA ou mode runtime coupé, membre non autorisé) ;
+   bannie, module IA ou mode runtime coupé, membre non autorisé) ; puis `sweepBannedUserDelegations`
+   (délégation active d'un utilisateur dont `bannedAt` est posé → `user_banned`, révisé après L03c,
+   Q17 = C) ;
 4. `sweepOrphanAuthorizations` : autorisations actives dont la délégation n'est plus active ou a
    expiré (révocation interrompue, course bascule / révocation) → conversations repassées en local ;
-5. `failTimedOutWaits` : `awaiting_confirmation` / `awaiting_user` depuis plus de 7 jours →
-   `failed` `confirmation_timeout` ; `awaiting_key` depuis plus de 7 jours → `failed` `key_timeout`
-   (comparaison sur `statusChangedAt`), journal et push `AI_FAILED` ; délai **fixe** en v1, non
-   réglable par l'org (00 §6 Q14) ;
+5. `failTimedOutWaits` : `awaiting_confirmation` / `awaiting_user` depuis plus de
+   `limits.confirmationTimeoutSecs` → `failed` `confirmation_timeout` ; `awaiting_key` depuis plus de
+   `limits.keyTimeoutSecs` → `failed` `key_timeout` (comparaison stricte sur `statusChangedAt`), journal
+   et push `AI_FAILED` ; défaut 7 jours, abaissable par l'org (§6 ; révisé après L03c, Q14 a = A) ;
 6. `purgeConsumedInbox` : éléments consommés depuis plus de 7 jours supprimés.

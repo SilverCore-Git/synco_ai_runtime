@@ -138,6 +138,7 @@ async fn session(rt: &Arc<Runtime>, mut socket: Socket) -> Attempt {
             if let Err(e) = rt.load_delegations().await {
                 tracing::warn!(error = %e, "délégations non relues");
             }
+            rt.reconcile_authorizations().await;
             if let Err(e) = rt.scan_pending().await {
                 tracing::warn!(error = %e, "conversations en attente non relues");
             }

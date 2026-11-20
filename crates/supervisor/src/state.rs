@@ -260,6 +260,12 @@ impl AuthStore {
         }
     }
 
+    /// Copie de toutes les autorisations (réconciliation).
+    #[must_use]
+    pub fn entries(&self) -> Vec<(String, Authorization)> {
+        self.map.iter().map(|(s, a)| (s.clone(), a.clone())).collect()
+    }
+
     /// Lecture.
     #[must_use]
     pub fn get(&self, session_id: &str) -> Option<&Authorization> {

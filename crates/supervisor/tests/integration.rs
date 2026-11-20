@@ -741,3 +741,52 @@ async fn flux_d_une_autre_org_ferme() {
     wait_until("reconnexions", || env.api.with(|st| st.stream_hellos >= 3)).await;
     synco_ai_runtime::app::shutdown(&rt).await;
 }
+
+/// authorizations.json : purge sur `user.revoked` et `delegation.revoked`, réconciliation avec
+/// l'API à la reconnexion du flux.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn autorisations_purgees_et_reconciliees() {
+    let env = setup().await;
+    let rt = Arc::clone(&env.running.runtime);
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    authorize(&env).await;
+    // Réconciliation : l'API ne reconnaît plus l'autorisation (403 auth_invalid).
+    env.api.with(|st| st.conversations.get_mut(SESSION).unwrap().auth_id = "autre-autorisation".into());
+    env.api.push(json!({ "type": "__close__" }));
+    let mut gone = false;
+    for _ in 0..100 {
+        if rt.state.lock().await.auths.get(SESSION).is_none() {
+            gone = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(gone, "autorisation retirée à la réconciliation");
+    // Purge sur user.revoked.
+    env.api.with(|st| st.conversations.get_mut(SESSION).unwrap().auth_id = AUTH.into());
+    authorize(&env).await;
+    env.api.push(json!({ "type": "user.revoked", "userId": USER, "until": now() }));
+    wait_until_async(&rt, |st| st.auths.get(SESSION).is_none()).await;
+    // Purge sur delegation.revoked.
+    authorize(&env).await;
+    env.api.push(
+        json!({ "type": "delegation.revoked", "userId": USER, "delegationId": "d-good", "reason": "user_revoked" }),
+    );
+    wait_until_async(&rt, |st| st.auths.get(SESSION).is_none() && st.vault.get(USER).is_none()).await;
+    let persisted = std::fs::read_to_string(env.state_dir.join("authorizations.json")).unwrap();
+    assert!(!persisted.contains(AUTH), "fichier purgé");
+    synco_ai_runtime::app::shutdown(&rt).await;
+}
+
+async fn wait_until_async(
+    rt: &Arc<synco_ai_runtime::runtime::Runtime>,
+    f: impl Fn(&synco_ai_runtime::state::State) -> bool,
+) {
+    for _ in 0..100 {
+        if f(&*rt.state.lock().await) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("délai dépassé");
+}

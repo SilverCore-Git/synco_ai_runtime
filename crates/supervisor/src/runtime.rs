@@ -360,6 +360,7 @@ impl Runtime {
                 st.mark_delegation_revoked(&id, now_secs());
             }
             st.vault.remove_user(user);
+            st.auths.remove_user(user);
             st.alert(now_secs(), code);
             st.convs.iter().filter(|(_, c)| c.user_id == user).map(|(s, _)| s.clone()).collect()
         };
@@ -450,6 +451,7 @@ impl Runtime {
             ApiEvent::UserRevoked { user_id, until } => {
                 let sessions: Vec<String> = {
                     let mut st = self.state.lock().await;
+                    st.auths.remove_user(&user_id);
                     st.tickets.revoked_users.push((
                         RevokedUser { user_id: user_id.clone(), until },
                         until.max(now_secs()).saturating_add(REVOCATION_TTL_SECS),
@@ -487,6 +489,39 @@ impl Runtime {
             && conv.user_id == user_id
         {
             auth_id.clone_into(&mut conv.auth_id);
+        }
+    }
+
+    /// Réconcilie les autorisations persistées avec l'API (démarrage, reconnexion du flux) : aucune
+    /// route ne liste les autorisations actives de l'org ; la plus proche est
+    /// `GET /conversations/:sessionId` (S+A), qui refuse une autorisation révoquée, expirée ou d'une
+    /// délégation inactive. Une erreur réseau garde l'entrée.
+    pub async fn reconcile_authorizations(self: &Arc<Self>) {
+        let entries = self.state.lock().await.auths.entries();
+        for (session, auth) in entries {
+            let gone = match self.api.conversation_head(&session, &auth.auth_id).await {
+                Ok(_) => false,
+                Err(e) => {
+                    e.status() == Some(404)
+                        || matches!(
+                            e.code(),
+                            Some(
+                                "auth_invalid"
+                                    | "auth_revoked"
+                                    | "auth_expired"
+                                    | "delegation_expired"
+                                    | "delegation_revoked"
+                                    | "out_of_scope"
+                            )
+                        )
+                }
+            };
+            if gone {
+                let mut st = self.state.lock().await;
+                if st.auths.get(&session).is_some_and(|a| a.auth_id == auth.auth_id) {
+                    st.auths.remove(&session);
+                }
+            }
         }
     }
 

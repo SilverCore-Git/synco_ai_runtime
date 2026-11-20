@@ -55,7 +55,8 @@ const ck = await crypto.subtle.importKey('raw', hexToBytes(fixture.ckHex), { nam
 // 1. Historique : déchiffré par le chemin de l'app, identique au clair attendu.
 const clear = await decryptGatewaySessionMessages(ck, fixture.sessionId, fixture.messages);
 check(JSON.stringify(clear.map((m: any) => m.content)) === JSON.stringify(fixture.expectedClear.map((m: any) => m.content)), 'content déchiffré');
-check(!JSON.stringify(clear).includes('illisible'), 'aucun champ illisible');
+const flat = JSON.stringify(clear);
+check(!flat.includes('Contenu illisible') && !flat.includes('Résultat illisible'), 'aucun champ illisible (marqueurs de l\'app)');
 const calls = clear.flatMap((m: any) => m.toolCalls ?? []);
 check(calls.length === 1 && calls[0].name === 'create_thread' && Array.isArray(calls[0].arguments.threads), 'arguments d\'outil déchiffrés (objet JSON)');
 const toolMsg = clear.find((m: any) => m.role === 'tool');

@@ -10,8 +10,8 @@
     },
     {
       "content": null,
-      "createdAt": "2026-11-20T16:05:22.134Z",
-      "id": "959fa944-fa61-4da4-80d6-7d02a4214a42",
+      "createdAt": "2026-11-20T16:37:14.093Z",
+      "id": "4a4a94d7-d551-48e0-96e7-c9c68df2ff38",
       "role": "assistant",
       "toolCalls": [
         {
@@ -30,7 +30,7 @@
             ]
           },
           "category": "client",
-          "id": "call_t",
+          "id": "call_d1b7ecc73e2fe630f6cb7f73",
           "mutating": true,
           "name": "create_thread",
           "status": "done"
@@ -44,11 +44,13 @@
     },
     {
       "content": null,
-      "createdAt": "2026-11-20T16:05:22.145Z",
-      "id": "fe6a305c-b390-4a14-89cf-f37f4cad31ff",
+      "createdAt": "2026-11-20T16:37:14.105Z",
+      "id": "bccd567f-fb0a-47dc-b9fe-84b886c068d8",
       "role": "tool",
-      "toolCallId": "call_t",
+      "toolCallId": "call_d1b7ecc73e2fe630f6cb7f73",
       "toolResult": {
+        "note": "Des membres n'ont pas reçu la clé (clé publique absente, illisible ou trop courte) : ils devront la recevoir depuis Synco.",
+        "skippedRecipients": 1,
         "threads": [
           {
             "id": "cm3threadnew0000000000001",
@@ -66,8 +68,8 @@
     },
     {
       "content": "Salons créés.",
-      "createdAt": "2026-11-20T16:05:22.159Z",
-      "id": "e87de9f0-308a-4127-bd54-6d83f43c21f5",
+      "createdAt": "2026-11-20T16:37:14.119Z",
+      "id": "5d937b5d-8d22-4960-9665-9c5d7d5601bb",
       "role": "assistant",
       "usage": {
         "completionTokens": 3,
@@ -78,21 +80,21 @@
   ],
   "messages": [
     {
-      "content": "gcm1:Rh+TwfTnK53wTtleq2QWrgpecRaz19U/oPdBeMVoOIFSOhdjovFIHoq4nyZpzJxRd8/NJf8z/8qRb3n/zyGRLCk1XXGIGuPPe6YmpoHCWuXL4CxRLjcnfVyD976xHuBl",
+      "content": "gcm1:DNHeH9h9MY3QxVVf3HS+sf40OBu0mq84f75Hj/cq7BK3T+20JDmUrWw1+VJNLkCIPJNEKSs2KQFPjM/H1cFqyRfCU4nfz+qaUtdeHF4X47N9mFW2aLm6E6lx7jMpHBfx",
       "createdAt": "2026-11-20T10:00:00.000Z",
       "id": "3c2b1a09-8f7e-4d6c-9b5a-493827161504",
       "role": "user"
     },
     {
       "content": null,
-      "createdAt": "2026-11-20T16:05:22.134Z",
-      "id": "959fa944-fa61-4da4-80d6-7d02a4214a42",
+      "createdAt": "2026-11-20T16:37:14.093Z",
+      "id": "4a4a94d7-d551-48e0-96e7-c9c68df2ff38",
       "role": "assistant",
       "toolCalls": [
         {
-          "arguments": "gcm1:unaBXVYXH3sYultfgHaj02Ful9iZv+Z7FyXphygpDq3M6c1fJTmG5ETWevg0E4CESzqZcjAM4eHoORoQNIhR/k4l3D10DJvTq68httaNwYA/agJLaQRr3zx9/QOxTkYhquj6jjbs9Y5liI11LKihjnjdwl5V8S3YpMejVIKaO1F963CaeFKYYScB8xk3El2Bv+O+zmSNsaceIcovJ+HSayL4XmU7SavULzhinGWp56KlhT6WOtnZ5MX9TsVC",
+          "arguments": "gcm1:HflNuZHspm0S+3glA9Lxd//YT4QGS91psUPViIlNNR+TeEuAeVmqr1jxcR2kfvkCguHUlsceAA9fWewWrF/p8VdU0pcOfzeK6bdyId5FOLhi4aqfv7Qj6bIPE/F+tkLamGJQFQXb1jzoqebNVD+i/aEACr3z+EWwajpZ/aX0+n1y7cIFF6BtHRuB1pkdJ7qE9ubZXxK6saT6PFtDNGlC/lhdRUw5WOVBYPwdvGCBvWLgi7OUtfh58Dnm5nMQ",
           "category": "client",
-          "id": "call_t",
+          "id": "call_d1b7ecc73e2fe630f6cb7f73",
           "mutating": true,
           "name": "create_thread",
           "status": "done"
@@ -106,16 +108,16 @@
     },
     {
       "content": null,
-      "createdAt": "2026-11-20T16:05:22.145Z",
-      "id": "fe6a305c-b390-4a14-89cf-f37f4cad31ff",
+      "createdAt": "2026-11-20T16:37:14.105Z",
+      "id": "bccd567f-fb0a-47dc-b9fe-84b886c068d8",
       "role": "tool",
-      "toolCallId": "call_t",
-      "toolResult": "gcm1:y9lNPjcJCiVVYOicah2XanCrpASwo5BsDRu4PqYnuaQMZRBxId2/BG59pedcD0EFwVfmVjkW83X7vepmA2x8Gk5IvSgomHmkuPEgLuMdjIftKLBvgW2+wxJc2iEdSdS7F8TvmrXHIiWXPTb1+6WrXzzL04bKmZLgWF3MM3K4HOtYQS4HdTqYC+cj8Ne1artlj7qton6JtV3sk86uUM5qMQEOtSTpx5sU9XtlPxEzM1xit74UgzrEX7ENoCUfUNADuL8T3cNmYT7w4xoIfQ6IOvs3IKA/s8fOGHo="
+      "toolCallId": "call_d1b7ecc73e2fe630f6cb7f73",
+      "toolResult": "gcm1:3r9lXjYOdA01BrLjMGE/jfbTC4lQgfRufJRP+iIrieobjkpcYEwrGRuUNsr3uUfnH3FeKvRbbaunnWPnRFWTUpSY0QgM+3ElkMlE+XN6v4inY21Or+Kwqv6azlqfXE9b5xJl2800dMwTuMZAL8/Qt3ut7UbeAKV6bwCuaUQ/hdyt0iJ08/GXV/71pqy9jFeumsgAcTNI3QwKJsr/5Hv8Hcj0h1ScdS/8pfwRFhaTvvatI3ZKdjpJaRUpLsk+wXbArkIYEpgAB1EIt7Fpr7cjhrNuVHHRBh03GSchjPQ2J8WO2hdtl/qXVgzWh4wp6j94oiH8lhilGBRkXEv7RPS8rjRupe4ULvx5gyoUvn76OWJB7aCYN6aZoUDoGXz06rgxb5Ess6kUxxWTKSsO9Hf0AtaXlrOLpzCqAoBOpxVOGS5bOEAXL7ChRP2ubLLQ77iaZExQNdrCPcg7+odzPQbMBJnxFZjXIx5SHpyCz16Q0EKPg7EdPF68"
     },
     {
-      "content": "gcm1:8okwi1b0x5Zqf1Z9ylOn79QvJ+bzOKw0L0LZwhF0TlPikVPBbHWLiRQUOw==",
-      "createdAt": "2026-11-20T16:05:22.159Z",
-      "id": "e87de9f0-308a-4127-bd54-6d83f43c21f5",
+      "content": "gcm1:F7g1DklkgM12KKhwI96rM0MhBSGkw8p7QgaCZbCMlr4SicPbZtX8YceuwA==",
+      "createdAt": "2026-11-20T16:37:14.119Z",
+      "id": "5d937b5d-8d22-4960-9665-9c5d7d5601bb",
       "role": "assistant",
       "usage": {
         "completionTokens": 3,
@@ -126,7 +128,7 @@
   ],
   "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
   "thread": {
-    "commitment": "FfFMnPtKz3h7+V5/26rM393R9iZGBzqhPkrHweXI+h4=",
+    "commitment": "82DVc+z84yzourffKq44yqyWLotJGYojEETSy8srfHg=",
     "cskPublic": {
       "crv": "P-256",
       "kty": "EC",
@@ -135,7 +137,7 @@
     },
     "ctx": "thread:cm3threadnew0000000000001",
     "delegationId": "d1e2f3a4-b5c6-4d7e-8f90-a1b2c3d4e5f6",
-    "encryptedKey": "g2/MtMbd5rRBNTrpaRsxGT0ii6pOE5FDDcYyDfRUsfYgT4hJgV55lRi15bXqGzac+asPOG7nKJbdvJG29tphnvrQwIbf3Lxst9OiSEg+CNHi9dx5KsgW7YAYD++mCgnx4UbvPCqvaPhzvZqv0mfSWrNhQbb2U15vf/MDdZJs5DDgHhoEaeaZ+EjV8kseG1n5MYK5SsKixhW75hlUBPPiCO0AKmTl5qoZb2qUr4AP1kgcH9xu0ZH0IyP633I1TNQoYaOgIwJ28UaQPPrmvyvbP2FPKFzdYqEKWnXXdianIknoB4x9N4OrKJ5+jffy2BqalcWTtUcR5yI2/HqYzQA7sQ==",
+    "encryptedKey": "Kv+wC5XKVt7vzGattO4iAK0PXKoX4UsNm24wueRHTtDm9z2IYJ9i2KvBraMWl1ngCI9+W5mc8KEvIMbQijUuphU9BZksem+/bKEwOWhodRNeswFwdIZ2TEZA8jY8jRISw5JmqaOaRmikw/3wGO42awjDHe1AuxPKnDwJDVFAEFo00sedlmQCAP2JsTYRiRGtgMTryrwm0AnubFTgYX2QTHSx0o7MTHmmkUnCDm5Q7fU2pnF9hSDtSUbzUzGhhX+9QDjjjETfikF0xJ06YPWoetQROojKXkUPTKzIYBKBlUdmW3vSNYDb101Fppgno4o0uj63XzlyeL4/WQGnx1ca3Q==",
     "memberPrivateJwk": {
       "alg": "RSA-OAEP-256",
       "d": "Ne0sd1HtNjloCx_-RyUt_meksstomWbZBjy20pjNx4MgkZjL217HVM3WZaxDz9moSzj8pxXZ8LlIPX-MZxQSP9nEa7WObVHVrAqj2F7CbGH3QrwkVzhE9v-ZGEiGIA4aKSixsinHBx7-pCJBXzJRuL01vc7elln3_yzMCKY0Glq941SC392Es2Qoy8QLwcLjHj5bn7YlVXgFxXajLPnnjt6tFkc2F_NORt8UkxV-raXgPMyR64hEh0fOEAEY0lViCqVcvQhhUO2aaIRw6lFMkCeQ1pKRH8kwBFuxvcMjCJn8DxWSpiYNvFbyEp5kXqiqilcYLzeGr85xyzcx78bGRw",
@@ -152,7 +154,7 @@
       "q": "zeyZQQxOQAJSRHactkIVXe3gRFcfOZfbRBYk-FFDXdGYFFIoyjRbaY-IDELhz7B7PSc2dWW1s04_8lT1oefgrOFnJvBqqJInjJ0KMX5z0SZbR6NX-g3ySzlIZvbbZMmrWlGuxbSo5luwpTP2Svjf2gn221fxvCE00Es6NdSTrkM",
       "qi": "gCPK-FO8v1DuFEN6Z_dBzV_i0L6-z_Gg2ny8xhRVqbr1X6g2aOQ4GYG62VM9Uucw_fBaFXCBW9BXi77ZOyDfGel1kH0eMAr3QbaFMDOy7xmDE6A1XUDszeVIX0Rxl0Dtm9ilclhMj0UmjgIjdx4GSvZ4bhR-Rw9p7JRVcBhFzzY"
     },
-    "signature": "f8bQA0IPw5rwLcLvN+yeRd2tUZU0bUWcQkhrpYxkmhLqcsXyryScbjjPwR+N5VYw3DJfz/AZKXYyg2k/8UzMHg==",
+    "signature": "9SP3WOodB8ta0BuoYLKV3JYFprhpMD7GEh2HSxTuwh2oJqwRsu5y/IrG2STX5E7jxqWk42VJX6AasefV2Me1pQ==",
     "threadId": "cm3threadnew0000000000001",
     "version": 1
   }

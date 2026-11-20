@@ -67,7 +67,7 @@ canonique valide (point sur la courbe), `blob` ≥ 12 + 32 + 16 octets ; recalcu
 champs **de l'enregistrement de délégation** et de **sa propre** `kex` ; échec GCM →
 `delegation_unusable`.
 
-## 4. Mandat
+## 4. Mandat (révisé après L05, 2026-11-20)
 
 ```
 mandateBytes = "synco-rt-mandate-v1|" userId "|" orgId "|" runtimeId "|" delegationId "|" scope "|" iat "|" exp "|" fprHex "|" b64u(SHA-256(utf8(wrap)))
@@ -88,6 +88,14 @@ Vérification par le runtime (L05), avant toute ouverture :
    - ensuite : la clé servie doit être l'épinglée, ou l'aboutissement d'une chaîne de transitions
      d'identité valide partant de l'épinglée (même algorithme que `identityChainPath`,
      `e2eeV4.ts:530-544`, porté dans `synco-e2ee`) ; sinon refus et alerte dans le dashboard.
+     **Précision (révisé après L05, 2026-11-20)** : le mandat n'est vérifié qu'avec la **seule** clé
+     épinglée courante, ou l'aboutissement d'une chaîne valide partant d'elle ; **jamais** avec une clé
+     précédente (`crates/supervisor/src/pins.rs:62-67`) : une clé retirée, éventuellement compromise,
+     ne peut pas signer un mandat neuf. Les clés précédentes ne servent qu'au diagnostic. Une
+     délégation déjà ouverte avant une rotation reste en mémoire jusqu'à `exp` ou révocation ; après un
+     redémarrage du runtime elle est `unusable` et le client la renouvelle (P11). Source :
+     `docs/journal.md`, entrée L05, correction 1 (qui remplace le point 9 de la première liste
+     d'écarts).
 3. Signature valide → sinon `delegation_unusable`.
 
 Limite assumée (00 §6 Q3) : au tout premier contact, la clé de l'utilisateur vient de l'API.
@@ -316,7 +324,7 @@ Causes de révocation : utilisateur (§7.3), admin (révocation d'un membre ou d
 l'org (`revokeOrgMembership`, `synco_api/src/services/membershipRevocation.ts:75`, à compléter par L03),
 remplacement par une nouvelle délégation (`superseded`).
 
-### 8.1 Causes et raisons réelles (révisé après la vague B, 2026-11-19)
+### 8.1 Causes et raisons réelles (révisé après la vague B, 2026-11-19 ; révisé après L03c, 2026-11-20)
 
 | Cause | Déclencheur | `status` / `revokedReason` (= `delegation.revoked.reason`) |
 |---|---|---|
@@ -329,6 +337,7 @@ remplacement par une nouvelle délégation (`superseded`).
 | Module IA coupé (`features` sans `ai` ou `activeModules.ai !== true`) | idem | `revoked` / `ai_disabled` |
 | Mode runtime désactivé (`aiConfig.runtime` absent ou `enabled: false`) | idem | `revoked` / `runtime_disabled` |
 | Membre retiré des membres autorisés (`members: "list"`) | idem, ses délégations seulement | `revoked` / `member_not_allowed` |
+| Utilisateur banni de la plateforme (`User.bannedAt`, Q17 = C) | `POST /api/admin/users/:id/ban` → `onUserBanned(userId)`, filet `sweepBannedUserDelegations` | `revoked` / `user_banned` : **toutes** ses délégations actives, dans toutes ses orgs |
 | Expiration | maintenance (07 §9) | `expired` / `revokedReason = null` ; `delegation.revoked.reason = "expired"` |
 | Remplacement | nouveau dépôt (§7.1) | `superseded` / `superseded` (pas de `delegation.revoked` : `delegation.updated`) |
 
@@ -338,7 +347,7 @@ délégation sort du régime runtime (08 §3) ; autorisations closes ; **toutes 
 délégation supprimées** (une délégation remplacée, révoquée ou expirée ne garde aucune entrée) ;
 `delegation.revoked` au runtime. Raison posée sur les autorisations (`AiSessionAuthorization.revokedReason`
 et `conversation.revoked.reason`) : `delegation_revoked` (utilisateur, admin, org bannie, IA ou
-runtime coupés, membre non autorisé), `delegation_expired`, `runtime_unpaired`, `member_left` ; plus,
+runtime coupés, membre non autorisé, utilisateur banni), `delegation_expired`, `runtime_unpaired`, `member_left` ; plus,
 hors délégation, `switched_to_local` et `session_deleted` (`conversationLifecycle.ts:26-32`,
 `delegationService.ts:349-358`).
 
@@ -350,16 +359,39 @@ hors délégation, `switched_to_local` et `session_deleted` (`conversationLifecy
 quand `features` change ; bannissement et levée (`synco_api/src/routes/admin.ts:677`, `:735`, `:783`) —
 la levée n'est qu'une invalidation de cache, rien n'est restauré. Filet : `sweepPolicyViolations` à
 chaque passe de maintenance (07 §9). L'ordre de priorité est `org_banned` > `ai_disabled` >
-`runtime_disabled` > `member_not_allowed`. Non traités en v1 (00 §6 Q14, Q17) : baisse de
-`maxDelegationDays` sous la durée d'une délégation existante (elle court jusqu'à son `exp`),
-bannissement d'un **utilisateur**.
+`runtime_disabled` > `member_not_allowed`. Non traité en v1 (Q14 b = B, 00 §5) : la baisse de
+`maxDelegationDays` sous la durée d'une délégation existante n'écourte rien, elle court jusqu'à son
+`exp` (≤ 30 j) ; pour couper tout de suite, révoquer (une délégation ou toutes, ci-dessus).
+
+**Utilisateur banni de la plateforme (Q17 = C ; `SYNCOAI_REFONTE_FEATURE.md` §13.1)**, quatre
+protections cumulées :
+
+1. **Révocation** : `POST /api/admin/users/:id/ban` appelle `onUserBanned(userId)`
+   (`runtimePolicyEnforcement.ts`) après l'écriture de `bannedAt` et l'invalidation du cache de
+   bannissement ; `revokeBannedUserDelegations` révoque TOUTES ses délégations actives
+   (`user_banned`, mêmes effets communs : entrées effacées, autorisations closes
+   `delegation_revoked`, conversations repassées en local, `delegation.revoked` puis `user.revoked`,
+   02 §8). Ne lève jamais. **La levée du bannissement ne restaure rien** : l'utilisateur redélègue
+   depuis son appareil.
+2. **Filet** : `sweepBannedUserDelegations` à chaque passe de maintenance (après `sweepPolicyViolations`,
+   07 §9).
+3. **Second verrou** : `403 auth_invalid` si `User.bannedAt` est posé (04 §3.2 étape 4), avec le cache
+   de 15 s de `getBanState` (le même que `banMiddleware`, invalidé par la route).
+4. **Contrôle métier** : `loadAuthorizedConversation` relit `User.bannedAt` en base, sans cache ; compte
+   absent → refusé (`auth_invalid`).
+
+Les routes utilisateur du mode runtime restent derrière `banMiddleware` (`403 ACCOUNT_BANNED`).
+`revokedReason` est une `String` : aucune migration (07 §3). Limite connue (M5, §13.6 bis de la
+spec de L03c) : `POST /tickets/llm` ne passe que par le second verrou ; si la révocation au
+bannissement a échoué, un utilisateur banni peut obtenir un ticket jusqu'à 15 s après (cache sur une
+autre instance) ; la révocation ou le filet de 60 s ferme ensuite l'autorisation.
 
 Perte d'accès à un salon ou un espace (`revokeSpaceMembership`, `membershipRevocation.ts:25`) :
 l'API supprime les entrées concernées et notifie `delegation.entries_removed` ; de toute façon elle
 refuse de servir au runtime le contenu d'un salon auquel l'utilisateur n'a plus accès (04 §5).
 Ce que le runtime a déjà vu reste vu (risque assumé, `03_securite.md §2`).
 
-## 9. Côté runtime (L05) : conservation et cloisonnement
+## 9. Côté runtime (L05) : conservation et cloisonnement (révisé après L05, 2026-11-20)
 
 - Récupération : `GET /api/runtime/v1/delegations` (actives de son org) et
   `GET /api/runtime/v1/delegations/:delegationId/entries?after=<curseur>` ; au démarrage, puis sur
@@ -367,6 +399,20 @@ Ce que le runtime a déjà vu reste vu (risque assumé, `03_securite.md §2`).
 - Ordre : mandat (§4) → enveloppe de tête (§3) → entrées (§5).
 - **En mémoire uniquement**, dans des types effacés à la libération (`zeroize`) ; jamais sur disque ni
   dans un journal. Effacement à `exp`, à la révocation, au remplacement, au désappairage.
+  **Précision (révisé après L05, 2026-11-20)** : « en mémoire uniquement » vaut pour les **clés**
+  (`DK`, entrées). Le runtime persiste en revanche, sur disque, les **autorisations de session
+  connues** (fichier `authorizations.json` du répertoire d'état : `sessionId`, `userId`, `authId`,
+  données publiques, aucune clé) : sans elles, après un redémarrage, un client d'une conversation
+  `idle` serait refusé (`4403`), car `GET …/conversations?state=pending` ne liste pas les conversations
+  `idle`. Le fichier est purgé sur `user.revoked`, `delegation.revoked` et expiration, et **réconcilié à
+  chaque ouverture du flux** par `GET /conversations/:sessionId` (S+A, qui refuse une autorisation
+  révoquée, expirée ou d'une délégation inactive) ; une erreur réseau garde l'entrée. Décision de
+  l'orchestrateur : persistance acceptée avec cette réconciliation. **Besoin API non tranché** : une
+  route « autorisations actives de l'org pour ce runtime » éviterait un appel par conversation
+  (00 §6 Q18). Clés remises au worker seulement si la délégation n'est pas expirée ; délégation
+  révoquée ou d'un appairage précédent jamais réinstallée (génération d'appairage vérifiée sous le
+  verrou). Sources : `docs/journal.md`, entrée L05, écart 5 et corrections 3, 8, 9 ;
+  `crates/supervisor/src/runtime.rs` (`reconcile_authorizations`), `state.rs:196`.
 - **Cloisonnement par utilisateur** : une clé reçue dans la délégation de l'utilisateur A ne sert
   **jamais** à une conversation de B, même si B a la même clé de salon dans sa propre délégation. Le
   worker d'une conversation ne reçoit que les clés de la délégation de son propriétaire (06 §3).
@@ -381,7 +427,7 @@ Ce que le runtime a déjà vu reste vu (risque assumé, `03_securite.md §2`).
   délégation absente, d'un autre runtime ou inactive → `404 not_found`) ; `POST …/status` →
   `204`, `404 not_found`.
 
-## 10. Clés créées par le runtime (signature FC4)
+## 10. Clés créées par le runtime (signature FC4) (révisé après L03c, 2026-11-20)
 
 Un outil exécuté par le worker peut créer une clé (`create_thread` : nouvelle `ThreadKey` scellée en
 RSA-OAEP pour chaque membre, comme `createThreadHelper`, `OrgAI.vue:495-528`). Les clients vérifient
@@ -435,12 +481,31 @@ Mandat servi (`GET …/delegations/:delegationId/mandate`, tout membre ; `getMan
 `delegationService.ts:543-566`) : exactement la forme de l'étape 1 ci-dessus, `certificate` étant
 celui du runtime de la délégation (`null` si la ligne n'existe plus) ; `404 not_found`.
 
-**Question ouverte (00 §6 Q11)** : l'enveloppe `rt1` signe `ctx = thread:<threadId>`, or l'id du
-salon est tiré par l'API **à la création** (`POST /e2ee/threads`, 04 §4.3) : le runtime ne peut pas
-le signer d'avance. Aujourd'hui, la route accepte `commitment` et `signature` (ensemble ou absents)
-mais le runtime ne peut pas les produire pour le bon `ctx` ; le salon créé par le runtime est donc
-accepté en **TOFU** par les clients, comme les salons créés par l'IA dans l'app aujourd'hui
-(`CreateNewThread.vue`, `OrgAI.vue` n'envoient pas de `commitment`).
+### 10.1 Pose a posteriori de l'enveloppe `rt1` (Q11 = B ; révisé après L03c, 2026-11-20)
+
+L'enveloppe `rt1` signe `ctx = thread:<threadId>` et l'id du salon est tiré par l'API **à la
+création** (`POST /e2ee/threads`, 04 §4.3) : le runtime ne peut pas le signer d'avance. Décision du
+point d'étape B (00 §5, Q11 = option B) : la signature est posée **après** la création par
+`POST /api/runtime/v1/e2ee/threads/:threadId/key-envelope` (forme et contrôles en 04 §4.3). Séquence du
+runtime (`SYNCOAI_REFONTE_FEATURE.md` §13.3) :
+
+1. `POST /e2ee/threads` **sans** `commitment` ni `signature` → id du salon ;
+2. signer `thread:<id>` avec `csk` (octets ci-dessus) ;
+3. `POST /e2ee/threads/:threadId/key-envelope` ;
+4. `POST /delegations/:delegationId/entries` (ordre libre avec l'étape 3 : aucune entrée n'est exigée
+   par la pose).
+
+Entre l'étape 1 et l'étape 3, le salon reste accepté en **TOFU** par les clients (un client peut
+épingler la clé sans vérification, puis voir apparaître une enveloppe qu'il n'a pas vérifiée à la
+première vue ; 00 §5, Q11). Les vecteurs `rt1-envelope.json` de la crate sont copiés
+dans `synco_api/tests/vectors/synco-e2ee/` et rejoués.
+
+**Limite inhérente à l'option B** : l'API n'a pas la clé du salon, elle **ne peut pas vérifier**
+`commitment`. Un runtime bogué ou compromis peut poser une enveloppe correctement signée mais avec un
+engagement faux : les clients à jour refusent alors la clé de ce salon et, la pose étant définitive
+(`409 envelope_exists` pour toute enveloppe différente), il n'y a **aucune voie de reprise** en v1
+(sauf intervention en base). Un runtime compromis peut de toute façon nuire aux salons qu'il crée ; le
+risque est d'abord celui d'un bogue, à couvrir par les vecteurs de L01 et les tests de L07.
 
 ## 11. Salon créé par un autre membre en l'absence de l'utilisateur
 
@@ -519,3 +584,4 @@ vérifient mais ne se reproduisent pas à l'octet près.
 | `not_found` | API 404 | Délégation absente ou d'un autre ; pas de délégation active (`…/missing`) |
 | `forbidden` | API 403 | Non membre, appartenance perdue pendant le dépôt, non admin (révocations admin) |
 | `ai_disabled` | API 403 | Module IA coupé ou org bannie |
+| `envelope_exists` | API 409 | Une `ThreadKey` `rt1:` du salon porte déjà une enveloppe différente (§10.1 ; révisé après L03c) |

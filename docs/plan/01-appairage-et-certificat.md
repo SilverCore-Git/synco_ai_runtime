@@ -71,7 +71,7 @@ vérifiée avant toute comparaison (comme `parseLinkSecret`, `e2eeV4.ts:310-318`
 
 Exemple : `YR2V-GWM8-2J3T-KCVZ-J0YS-JZZR-F459` (empreinte ci-dessus).
 
-## 3. URL canonique du runtime (révisé après la vague B, 2026-11-19)
+## 3. URL canonique du runtime (révisé après la vague B, 2026-11-19 ; révisé après L03c/L05, 2026-11-20)
 
 L'URL entre dans le certificat. Forme canonique (même esprit que `canonicalGatewayUrl`,
 `synco_api/src/services/ai/orgAiConfig.ts:43-50`), fixée par L01 dans
@@ -100,14 +100,35 @@ Code de refus côté client : `url_invalid`.
 Exemple : `https://runtime.example.com`. Toutes les routes publiques du runtime sont relatives à
 cette URL (`<url>/v1/identity`, etc.).
 
-**Écart connu (00 §6 Q12)** : l'API valide l'URL du certificat avec sa propre règle,
-`canonicalRuntimeUrl` (`synco_api/src/services/aiRuntime/runtimeFormats.ts:41-54`, appelée par
-`runtimeRegistry.ts:58`), plus permissive (analyse WHATWG) : elle accepte des URL que la crate
-refuse (hôte IPv6 `https://[::1]`, `_` dans l'hôte, `//` dans le chemin, caractères `!$&'()*+,;=:@`
-dans le chemin) et refuse tout `http`, même sous drapeau de développement. Un tel certificat serait
-déposé par l'API puis refusé par chaque client. Les formes ambiguës (numériques, `.`/`..`, `%`) sont
-en revanche refusées par l'API aussi, car l'analyse WHATWG les normalise et la forme reçue doit
-être déjà canonique.
+**Règle appliquée par l'API (révisé après L03c/L05, 2026-11-20)** : l'écart signalé par Q12 est
+résolu (décision « Option A » de 00 §5). `canonicalRuntimeUrl(raw, { allowDevHttp })`
+(`synco_api/src/services/aiRuntime/runtimeFormats.ts`) porte **exactement** `canonical_runtime_url` de
+la crate : minuscules ASCII seulement, IPv6, `_` dans l'hôte, `//` et ponctuation du chemin refusés,
+port à zéros de tête canonisé ; `isCanonicalRuntimeUrl` = `check_canonical_url`. Le dépôt du certificat
+(`validateRuntimeCertificate`) exige une URL **déjà canonique** (source : `synco_api/vibe/features/SYNCOAI_REFONTE_FEATURE.md`
+§13.4). Les 41 cas `urlCases` de `runtime-identity.json` et `runtime-cert.json` sont copiés à
+l'identique dans `synco_api/tests/vectors/synco-e2ee/` et rejoués ; `vectors.test.ts` compare la copie à
+la crate si elle est à côté de `synco_api` (ou `SYNCO_E2EE_VECTORS_DIR`).
+
+`http://localhost:<port>` et `http://127.0.0.1:<port>` ne sont admis par l'API que si
+`AI_RUNTIME_ALLOW_DEV_HTTP_URL=true` **et** `NODE_ENV=development` strictement (`.env.example` :
+désactivé par défaut ; ignoré en production, relecture M1 de L03c, §13.6 bis).
+
+**Note de migration** : un runtime déjà appairé avec une URL que la règle de la crate refuse (IPv6, `_`,
+`//`, ponctuation dans le chemin…) sera refusé (`cert_invalid`) à sa **prochaine recertification** ;
+changer l'URL du runtime avant de recertifier, à signaler dans la note de version (M7,
+`SYNCOAI_REFONTE_FEATURE.md` §13.6 bis).
+
+**Côté superviseur (L05, même règle)** : `public_url` doit être l'URL canonique (sinon la configuration
+est refusée, `crates/supervisor/src/config.rs:276-280`, sauf l'option de développement
+`dev_allow_http_public_url`, `:49-51`) ; `api_url` doit être une **origine sans chemin ni barre finale**
+(`https`, ou `http` seulement en boucle locale ; `config.rs:281-294`) : le chemin signé est le chemin
+envoyé (04 §2), aucun préfixe d'API n'est possible. Le runtime **ne termine pas TLS** (D10, v1) : les
+endpoints publics sont servis en HTTP sur `listen.public`, qui doit être une adresse de boucle locale
+(sauf `listen.allow_non_loopback_plain_http = true`, trafic non chiffré à la charge de l'opérateur,
+`config.rs:62-80`, `:297-301`), derrière un **mandataire inverse obligatoire** qui présente le certificat
+reconnu par les navigateurs (exemples Caddy / nginx : `crates/supervisor/README.md`, section « TLS »).
+Source : `docs/journal.md`, entrée L05, corrections 7 et décisions de l'orchestrateur.
 
 ## 4. Fiche publique du runtime
 
@@ -223,7 +244,7 @@ Elle peut la vérifier pour rejeter tôt une erreur de bonne foi.
 Contrôles de forme réels de l'API (révisé après la vague B, 2026-11-19 ;
 `validateRuntimeCertificate`, `synco_api/src/services/aiRuntime/runtimeRegistry.ts:48-78`) :
 exactement les neuf champs ci-dessus et exactement `sig`, `kex`, `csk` dans `keys` ; `v = 1` ;
-`runtimeId` UUID en minuscules ; URL canonique (§3, règle de l'API) ; `issuedAt ≤ maintenant + 300`
+`runtimeId` UUID en minuscules ; URL canonique (§3, règle de la crate, appliquée aussi par l'API) ; `issuedAt ≤ maintenant + 300`
 (`CERT_MAX_FUTURE_SECS`, `:40`) ; `1 ≤ serial ≤ 2³¹ − 1` (colonne `Int`) ; `signature` `b64` canonique
 de 64 octets ; `sig` `b64u` canonique de 32 octets ; `kex` et `csk` JWK-EC valides (point sur la
 courbe) et **différentes** (une clé, une primitive). Échec : `400 cert_invalid`. La crate applique
@@ -274,7 +295,7 @@ Dans l'ordre, chaque échec arrête la délégation avec le code indiqué :
 
 Le runtime refuse un second appairage tant qu'il est appairé (v1 : une seule org).
 
-### 7.1 Registre côté API (révisé après la vague B, 2026-11-19)
+### 7.1 Registre côté API (révisé après la vague B, 2026-11-19 ; révisé après L03c, 2026-11-20)
 
 Routes utilisateur (`synco_api/src/routes/aiRuntimeAdmin.ts:24-29`), réponses d'erreur
 `{ "error": "<code>" }`, toutes `503 runtime_disabled` si les clés de tickets IA ne sont pas
@@ -285,6 +306,10 @@ configurées (02 §2) :
 | `GET /api/orgs/:orgId/ai/runtime` | membre | `{ runtime: null \| RuntimeView, policy, allowedForMe }` | `403 forbidden` |
 | `POST /api/orgs/:orgId/ai/runtime` corps `{ certificate }` | propriétaire ou `ORG_AI` | `201 { runtime, recertified: false }` ; `200 { runtime, recertified: true }` | `400 cert_invalid`, `403 forbidden`, `403 ai_disabled`, `409 runtime_exists`, `409 runtime_already_paired`, `409 runtime_id_conflict` |
 | `DELETE /api/orgs/:orgId/ai/runtime` | propriétaire ou `ORG_AI` | `{ ok: true, runtimeId, sessions: <nombre de conversations repassées en local> }` | `403 forbidden`, `404 runtime_not_found` |
+
+`cert_invalid` couvre aussi une URL **non canonique** selon la règle de la crate (§3 ; L03c, `SYNCOAI_REFONTE_FEATURE.md`
+§13.8) ; une recertification d'un runtime déjà appairé avec une ancienne URL refusée par cette règle
+échoue de même (note de migration, §3).
 
 `RuntimeView` (`aiRuntimeAdmin.ts:37-60`) : `{ runtimeId, url, fingerprint, certificate, certSerial,
 online, lastSeenAt, registeredAt, pairedAt, pairedById, softwareVersion, signer: { adminId, isAdmin },

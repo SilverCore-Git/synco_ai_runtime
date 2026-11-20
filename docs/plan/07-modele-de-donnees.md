@@ -86,7 +86,7 @@ model AiRuntimeDelegation {
   /// = "<userId>:<runtimeId>" tant que la délégation est active, sinon null.
   activeKey        String?  @unique
   revokedAt        DateTime?
-  revokedReason    String?  // 'user_revoked' | 'admin_revoked' | 'runtime_unpaired' | 'member_left' | 'superseded'
+  revokedReason    String?  // 'user_revoked' | 'admin_revoked' | 'runtime_unpaired' | 'member_left' | 'superseded' (+ 'org_banned' | 'ai_disabled' | 'runtime_disabled' | 'member_not_allowed' | 'user_banned', ci-dessous)
   runtimeStatus    String?  // 'ok' | 'unusable' (04 §4.1, sans cause)
 
   entries          AiRuntimeDelegationEntry[]
@@ -161,13 +161,15 @@ model AiConversationKey {
 `AiRuntimeDelegation.mandateSignature` et `wrapHash` ne sont pas chiffrés en base : ils sont servis à
 tout membre de l'org pour vérifier les clés créées par le runtime (03 §10).
 
-Valeurs réelles (révisé après la vague B, 2026-11-19 ; le schéma appliqué,
+Valeurs réelles (révisé après la vague B, 2026-11-19, et après L03c, 2026-11-20 ; le schéma appliqué,
 `synco_api/prisma/schema.prisma:1634` et suivants, est identique aux modèles ci-dessus, seuls les
 commentaires d'énumération sont complétés ici) :
 
 - `AiRuntimeDelegation.revokedReason` : `user_revoked`, `admin_revoked`, `runtime_unpaired`,
   `member_left`, `superseded`, **`org_banned`, `ai_disabled`, `runtime_disabled`,
-  `member_not_allowed`** (03 §8.1) ; `null` pour une délégation `expired`
+  `member_not_allowed`** (03 §8.1), **`user_banned`** (utilisateur banni de la plateforme, Q17 = C ;
+  révisé après L03c, 2026-11-20 : colonne `String`, aucune migration ;
+  `SYNCOAI_REFONTE_FEATURE.md` §13.1) ; `null` pour une délégation `expired`
   (`synco_api/src/services/aiRuntime/delegationService.ts:345-347`, `:396-406`).
 - `AiSessionAuthorization.revokedReason` : `switched_to_local`, `delegation_revoked`,
   **`delegation_expired`**, `runtime_unpaired`, `member_left`, **`session_deleted`**
@@ -301,7 +303,7 @@ model AiChatSessionEvent {
   id        String   @id @default(cuid())
   sessionId String
   session   AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  type      String   // 'switch_to_runtime' | 'switch_to_local' | 'status' | 'lease_taken' | 'lease_lost' | 'tool_unknown_outcome' (les deux derniers : 00 §6 Q15)
+  type      String   // 'switch_to_runtime' | 'switch_to_local' | 'status' | 'lease_taken' | 'lease_lost' | 'tool_unknown_outcome' (les deux derniers écrits par le worker, `events`, 04 §4.2 ; Q15 = A)
   actor     String   // 'user' | 'runtime' | 'api'
   fromState String?
   toState   String?
@@ -319,8 +321,14 @@ Précisions (révisé après la vague B, 2026-11-19) : `payload` = trame sans `v
 100 éléments non consommés est vérifié avant l'insertion (`429 inbox_full`) ; un doublon ne change
 ni l'état ni le réveil (`conversationLifecycle.ts:398-460`). Journal : l'API écrit `switch_to_runtime`,
 `switch_to_local` (code = raison de sortie), `status` (code = `lastErrorCode` ou `null`, acteur `user`,
-`runtime` ou `api`) et `lease_taken`. Aucune route du canal ne permet au runtime d'écrire
-`lease_lost` ni `tool_unknown_outcome` (00 §6 Q15).
+`runtime` ou `api`) et `lease_taken`. **Révisé après L03c, 2026-11-20 (Q15 = A)** : le worker
+écrit `tool_unknown_outcome` et `lease_lost` lui-même par le champ facultatif `events: [{ type, code? }]`
+de `PUT …/transcript` et `POST …/status` (04 §4.2) : lignes `actor = "runtime"`, `fromState` /
+`toState` nuls, `code` = nom d'outil ou epoch (`^[a-z0-9_]{1,64}$`), écrites seulement si l'écriture
+qui les porte réussit (dans sa transaction). Un worker qui a perdu le bail ne peut pas écrire son
+propre `lease_lost` : c'est le worker suivant qui le constate. Aucune rétention : les lignes ne
+disparaissent qu'avec la conversation (`onDelete: Cascade`). Source :
+`synco_api/src/services/aiRuntime/conversationLease.ts:186-228`, `SYNCOAI_REFONTE_FEATURE.md` §13.6.
 
 ## 6. Politique runtime de l'org
 
@@ -335,7 +343,8 @@ Dans `Organization.activeModules.aiConfig` (JSON lisible par les membres, édit�
     "memberIds": [],
     "maxDelegationDays": 7,
     "toolPolicy": { "create_task": "ask", "delete_task": "deny" },
-    "limits": { "maxStepsPerTurn": 25, "maxTokensPerConversation": 2000000 }
+    "limits": { "maxStepsPerTurn": 25, "maxTokensPerConversation": 2000000,
+                "confirmationTimeoutSecs": 604800, "keyTimeoutSecs": 604800 }
   }
 }
 ```
@@ -346,10 +355,10 @@ Dans `Organization.activeModules.aiConfig` (JSON lisible par les membres, édit�
 | `members` / `memberIds` | `all`, ou liste des membres autorisés à basculer (sélecteur cherchable côté app) | — |
 | `maxDelegationDays` | Durée maximale d'une délégation | D4 (09 §1) |
 | `toolPolicy` | Politique par outil en l'absence de l'utilisateur | D5 |
-| `limits` | Plafonds de l'org, bornés par ceux du runtime | D6 (09 §2) |
+| `limits` | Plafonds de l'org, bornés par ceux du runtime ; contient aussi `confirmationTimeoutSecs` (`awaiting_confirmation` et `awaiting_user` → `failed` `confirmation_timeout`) et `keyTimeoutSecs` (`awaiting_key` → `failed` `key_timeout`) : entiers ≥ 1, défaut **604 800** (7 j), **abaissables seulement**, ancien format sans ces champs = 7 j (Q14 a = A ; révisé après L03c, 2026-11-20) | D6 (09 §2), 09 §3 |
 
 Lecture tolérante (règle des formats rétrocompatibles) : `runtime` absent = mode runtime désactivé ;
-champs absents = valeurs par défaut de 09. Normalisé par `normalizeAiConfig` (`orgAiConfig.ts:81`).
+champs absents = valeurs par défaut de 09. Normalisé par `normalizeAiConfig` (`orgAiConfig.ts:81`), qui conserve ces deux champs de `limits` ; la maintenance lit les délais de chaque org (politique illisible → défaut) et `GET /llm-policy` les renvoie dans `runtime.limits` (04 §4.1). Un délai de 1 s est admis (question ouverte : minimum, 00 §6 Q19).
 
 ## 7. Notifications
 
@@ -383,11 +392,13 @@ Passes réelles (révisé après la vague B, 2026-11-19 ; `runAiRuntimeMaintenan
 2. `sweepOrphanDelegations` : délégations actives d'un utilisateur qui n'est plus membre →
    `member_left` (filet de `revokeOrgMembership`) ;
 3. `sweepPolicyViolations` : délégations que l'état IA de l'org ne permet plus (03 §8.1 : org
-   bannie, module IA ou mode runtime coupé, membre non autorisé) ;
+   bannie, module IA ou mode runtime coupé, membre non autorisé) ; puis `sweepBannedUserDelegations`
+   (délégation active d'un utilisateur dont `bannedAt` est posé → `user_banned`, révisé après L03c,
+   Q17 = C) ;
 4. `sweepOrphanAuthorizations` : autorisations actives dont la délégation n'est plus active ou a
    expiré (révocation interrompue, course bascule / révocation) → conversations repassées en local ;
-5. `failTimedOutWaits` : `awaiting_confirmation` / `awaiting_user` depuis plus de 7 jours →
-   `failed` `confirmation_timeout` ; `awaiting_key` depuis plus de 7 jours → `failed` `key_timeout`
-   (comparaison sur `statusChangedAt`), journal et push `AI_FAILED` ; délai **fixe** en v1, non
-   réglable par l'org (00 §6 Q14) ;
+5. `failTimedOutWaits` : `awaiting_confirmation` / `awaiting_user` depuis plus de
+   `limits.confirmationTimeoutSecs` → `failed` `confirmation_timeout` ; `awaiting_key` depuis plus de
+   `limits.keyTimeoutSecs` → `failed` `key_timeout` (comparaison stricte sur `statusChangedAt`), journal
+   et push `AI_FAILED` ; défaut 7 jours, abaissable par l'org (§6 ; révisé après L03c, Q14 a = A) ;
 6. `purgeConsumedInbox` : éléments consommés depuis plus de 7 jours supprimés.

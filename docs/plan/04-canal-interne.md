@@ -45,6 +45,8 @@ requête sans en-têtes valides, hors fenêtre ou d'un runtime inconnu ou révoq
 - `METHOD` en majuscules ; `PATH` = chemin **et** chaîne de requête exactement tels qu'envoyés
   (`req.originalUrl`, encodage pourcent conservé), contrairement au CDN qui ignore la requête
   (`internalAuth.ts:7-10`) : certaines routes du runtime sont paginées ;
+- côté runtime (révisé après L05, 2026-11-20) : le chemin signé est le chemin **envoyé**, ce qui impose
+  que `api_url` soit une origine sans chemin ni barre finale (01 §3) ;
 - `AUTH` = valeur de `x-synco-auth`, ou `-` si absent ;
 - `CORPS` = octets exacts du corps (vide → SHA-256 de la chaîne vide).
 
@@ -117,14 +119,16 @@ conversation active. Enregistrement `AiSessionAuthorization` (07 §3) :
 Le runtime apprend l'`authId` par le flux de notifications (`conversation.authorized`, §6) ou par
 `GET /api/runtime/v1/conversations?state=pending`.
 
-### 3.2 Vérifications à chaque requête portant `x-synco-auth` (second verrou, mesure 6)
+### 3.2 Vérifications à chaque requête portant `x-synco-auth` (second verrou, mesure 6) (révisé après L03c, 2026-11-20)
 
 1. Autorisation trouvée, `runtimeId` = signataire → sinon `403 auth_invalid`.
 2. Non révoquée → `403 auth_revoked` ; `expiresAt > maintenant` → `403 auth_expired`.
 3. Délégation `delegationId` au statut `active`, `expiresAt > maintenant` → `403 delegation_expired` /
    `delegation_revoked`.
 4. L'utilisateur est **toujours** membre de l'org (`getPermission(userId, { orgId })`), org non bannie,
-   politique runtime de l'org l'autorise (07 §6) → `403 auth_invalid`.
+   politique runtime de l'org l'autorise (07 §6), **et l'utilisateur n'est pas banni de la plateforme**
+   (`User.bannedAt`, `RuntimeStore.isUserBanned`, cache de 15 s partagé avec `banMiddleware` et
+   invalidé par la route de bannissement ; révisé après L03c, Q17 = C) → `403 auth_invalid`.
 5. Conversation : propriétaire = `userId`, org = `orgId`, régime `runtime`, `runtimeId` = signataire ;
    si la route porte un `:sessionId`, il doit être celui de l'autorisation → `403 out_of_scope`.
 
@@ -149,7 +153,10 @@ Précisions (révisé après la vague B, 2026-11-19 ; `checkSessionAuthorization
   (`synco_api/src/services/aiRuntime/conversationLease.ts:53-103`) : mêmes conditions relues en base,
   plus « l'autorisation est l'autorisation **active** de la conversation » (`activeSessionId`),
   sinon `auth_revoked`. Toutes les routes qui servent des données par runtime filtrent aussi par
-  l'org du runtime.
+  l'org du runtime. **Utilisateur banni (révisé après L03c, 2026-11-20)** : `loadAuthorizedConversation`
+  relit aussi `User.bannedAt` **en base, sans cache** (compte absent → refusé) : `403 auth_invalid`,
+  au second verrou **et** dans le contrôle métier (`SYNCOAI_REFONTE_FEATURE.md` §13.1). Limite :
+  `POST /tickets/llm` ne passe que par le second verrou (03 §8.1).
 
 ## 4. Liste fermée des routes du runtime
 
@@ -157,14 +164,14 @@ Préfixe `/api/runtime/v1`. Toute route absente de cette liste n'existe pas pour
 ajouter une (L14/L15) = modifier ce document. Colonne « Auth » : **S** = signature seule ;
 **S+A** = signature + autorisation de session (§3.2).
 
-### 4.1 Runtime (sans utilisateur)
+### 4.1 Runtime (sans utilisateur) (révisé après L03c, 2026-11-20)
 
 | Méthode et chemin | Auth | Rôle | Lot |
 |---|---|---|---|
 | `POST /register` | S | Corps `{ url, software: { version } }` (`url` ≤ 255, `version` `^[0-9A-Za-z.+-]{1,64}$`, sinon `invalid_body`). Appairage terminé ? → `{ orgId, certificate }`, sinon `404 rt_unknown` (01 §7). Met à jour `registeredAt` (premier appel), `lastSeenAt`, version. | L02 |
 | `POST /unpair` | S | Désappairage demandé par l'opérateur (01 §9) | L02 |
 | `GET /stream` | S | Mise à niveau WebSocket du flux de notifications (§6) ; sans `Upgrade` → `426 upgrade_required` | L02 |
-| `GET /llm-policy` | S | Politique IA de l'org pour le runtime : fournisseurs et modèles autorisés, `reasoningEffort`, `toolPolicy` (D5), plafonds de l'org (D4/D6). **Aucun secret** (D1 = A). Forme réelle : `{ v: 1, orgId, defaultProvider, reasoningEffort, providers: [{ id, modelId?, gatewayUrl? }], runtime: { enabled, maxDelegationDays, toolPolicy, limits } }` (fournisseurs activés seulement ; ni clé, ni `hasApiKey`, ni liste des membres autorisés ; `runtime.ts:86-108`) | L02 |
+| `GET /llm-policy` | S | Politique IA de l'org pour le runtime : fournisseurs et modèles autorisés, `reasoningEffort`, `toolPolicy` (D5), plafonds de l'org (D4/D6) et délais `awaiting_*` (`limits.confirmationTimeoutSecs`, `limits.keyTimeoutSecs`, 09 §3 ; révisé après L03c). **Aucun secret** (D1 = A). Forme réelle : `{ v: 1, orgId, defaultProvider, reasoningEffort, providers: [{ id, modelId?, gatewayUrl? }], runtime: { enabled, maxDelegationDays, toolPolicy, limits } }` (fournisseurs activés seulement ; ni clé, ni `hasApiKey`, ni liste des membres autorisés ; `runtime.ts:86-108`) | L02 |
 | ~~`GET /llm-credentials`~~ | — | **N'existe pas** (D1 = A, 00 §5) | — |
 | `GET /delegations` | S | Délégations `active` **et non expirées** de l'org pour ce runtime : `{ delegationId, userId, scope, iat, exp, wrap, mandateSignature }[]` | L03 |
 | `GET /delegations/:delegationId/entries?after=<curseur>&limit=<≤500>` | S | `{ "entries": [{ id, kind, ref, version, ciphertext }], "next": <id> \| null }` (03 §9) | L03 |
@@ -173,7 +180,7 @@ ajouter une (L14/L15) = modifier ce document. Colonne « Auth » : **S** = signa
 | `GET /conversations?state=pending` | S | Conversations de l'org en régime runtime sur ce runtime qui demandent un worker : `queued`, `running` à bail expiré, `awaiting_key` dont la clé est désormais déléguée, **et `idle` avec un élément `message` non consommé** (filet contre la course dépôt / fin de tour, révisé après la vague B ; `conversationLease.ts:383-431`). `{ sessionId, userId, authId, status }[]`, seulement les conversations qui ont une autorisation active. Autre valeur de `state` → `400 invalid_body` | L03 |
 | `POST /metrics` | S | État du runtime sans contenu pour l'écran de Synco : corps `{ workers, queued, version? }` (entiers 0 à 1 000 000) → `{ ok: true }` ; ≤ 1 / min, sinon `429 rt_rate_limited` | L02 |
 
-### 4.2 Au nom d'un utilisateur (conversation)
+### 4.2 Au nom d'un utilisateur (conversation) (révisé après L03c, 2026-11-20)
 
 `:sessionId` est toujours la conversation de l'autorisation.
 
@@ -182,8 +189,8 @@ ajouter une (L14/L15) = modifier ce document. Colonne « Auth » : **S** = signa
 | `GET /conversations/:sessionId` | S+A | `{ id, title, messages, rev, status, pendingToolCall, encryptionScheme, leaseEpoch, lastErrorCode, awaitingKey }` (champs chiffrés `gcm1:`) | L03 |
 | `POST /conversations/:sessionId/lease` | S+A | Corps vide (ou `{}`) = **prendre** le bail ; `{ leaseEpoch }` = le **renouveler** (07 §4) → `{ leaseEpoch, expiresAt }` (`expiresAt` ISO 8601) ou `409 lease_conflict` | L03 |
 | `DELETE /conversations/:sessionId/lease` | S+A | Rendre le bail, corps `{ leaseEpoch }` → `204`, ou `409 lease_conflict` | L03 |
-| `PUT /conversations/:sessionId/transcript` | S+A | `{ leaseEpoch, baseRev, messages, title?, status, pendingToolCall, consumedInbox: [id], error?, awaitingKey? }` → `{ rev }` ou `409 rev_conflict` / `lease_conflict` (07 §4) | L03 |
-| `POST /conversations/:sessionId/status` | S+A | `{ leaseEpoch, status, error?, awaitingKey? }` (changement d'état sans réécrire l'historique ; `error` = code de 08 §6) | L03 |
+| `PUT /conversations/:sessionId/transcript` | S+A | `{ leaseEpoch, baseRev, messages, title?, status, pendingToolCall, consumedInbox: [id], error?, awaitingKey?, events? }` → `{ rev }` ou `409 rev_conflict` / `lease_conflict` (07 §4) | L03 |
+| `POST /conversations/:sessionId/status` | S+A | `{ leaseEpoch, status, error?, awaitingKey?, events? }` (changement d'état sans réécrire l'historique ; `error` = code de 08 §6) | L03 |
 | `GET /conversations/:sessionId/inbox?after=<curseur>` | S+A | Éléments non consommés (messages, décisions, annulations) déposés par le client via l'API ou par le runtime (05 §6) → `{ "items": [{ id, kind, source, createdAt, payload }] }`, 100 au plus par page, ordre de dépôt ; `payload` = trame sans `v` ni `t` (`null` si illisible) ; curseur = `id` du dernier élément lu | L03 |
 | `POST /conversations/:sessionId/inbox` | S+A | Le runtime rend durable un élément reçu par WebSocket **avant** d'en accuser réception au client (idempotent par `id`). Corps = la trame de 05 §6.2 **sans `v`** (`{ t, … }`, strict) → `201 { id, status }` (nouvel élément) ou `200 { id, status }` (doublon) ; `429 inbox_full`, `429 rt_rate_limited` (20 / 10 s par conversation), `409 not_runtime` | L03 |
 | `GET /conversations/:sessionId/tools` | S+A | Manifeste des outils (même contenu que `GET /api/orgs/:orgId/ai/tools`, `aiChat.ts:216-226`) : `[{ name, description, category, mutating, interactive, parameters }]`, `parameters` en JSON Schema | L03 |
@@ -201,14 +208,24 @@ Contraintes des écritures du worker (révisé après la vague B, 2026-11-19 ;
 - `error` ∈ codes de 08 §6, écrit dans `lastErrorCode` (`null` s'il est absent) ;
 - `transcript` : `messages` au format chiffré (tout champ de contenu en `gcm1:`, ≤ 20 000 messages,
   ≤ 8 Mio sérialisés), `title` `gcm1:` ≤ 1 024 caractères, `consumedInbox` ≤ 200 identifiants ;
-- un conflit est classé après coup : bail encore détenu → `rev_conflict`, sinon `lease_conflict`.
+- un conflit est classé après coup : bail encore détenu → `rev_conflict`, sinon `lease_conflict` ;
+- **`events` (révisé après L03c, 2026-11-20 ; Q15 = A, 00 §5)** : facultatif, `[{ type, code? }]` ;
+  `type` ∈ `tool_unknown_outcome`, `lease_lost` ; `code` facultatif `^[a-z0-9_]{1,64}$` (nom d'outil,
+  epoch…) ; objets stricts, 20 au plus (sinon `400 invalid_body`). Écrits en `AiChatSessionEvent`
+  (`actor: "runtime"`, `fromState` / `toState` nuls) **seulement** si l'écriture qui les porte réussit :
+  dans la même transaction que le transcript, et, pour `POST …/status`, statut et `events` dans la
+  même transaction (un échec n'écrit ni l'un ni l'autre). Champ absent : inchangé. Les `events`
+  exigent le bail courant : un worker qui l'a perdu ne peut pas écrire son propre `lease_lost`, c'est
+  le worker suivant qui le constate et l'écrit ; aucune rétention des `AiChatSessionEvent` (supprimés
+  avec la conversation). Source : `synco_api/src/services/aiRuntime/conversationLease.ts:186-228`,
+  `SYNCOAI_REFONTE_FEATURE.md` §13.6, §13.6 bis (M4).
 
 Après **chaque** écriture du worker qui change l'état, l'API applique aux éléments restés non
 consommés la transition « au dépôt » de 08 §2 à partir du **nouvel** état (`inboxTransition`) et
 réveille le runtime si la conversation repasse `queued` (`afterWorkerWrite`,
 `conversationLease.ts:228-273` ; 08 §2.1).
 
-### 4.3 Données E2EE de l'org (dans le périmètre de la délégation)
+### 4.3 Données E2EE de l'org (dans le périmètre de la délégation) (révisé après L03c, 2026-11-20)
 
 Toutes **S+A**. En plus de §3.2, chaque route vérifie : la ressource appartient à l'org de
 l'autorisation ; l'utilisateur y a accès **maintenant** (`getPermission`, mêmes services que les routes
@@ -222,6 +239,7 @@ d'autre org : ces routes n'existent pas.
 | `GET /e2ee/search-index/workspace/:workspaceId` | `GET /api/search-index/workspace/:workspaceId` (`searchIndex.ts:20`) | Index chiffrés, **sans** `threadKeys` (le runtime les a par la délégation) | L03 |
 | `GET /e2ee/members/keys` | annuaire des membres | Clés publiques RSA et de signature des membres de l'org, pour sceller une nouvelle clé ; le runtime les épingle en TOFU comme `resolveRecipientKey` | L03 |
 | `POST /e2ee/threads` | `POST /api/threads/org/:orgId`, `/api/threads/space/:spaceId` (`threads.ts`) | Créer un salon : mêmes champs que `createThreadSchema` (`validators/index.ts:125-144`) + `spaceId?` + **`leaseEpoch`** ; `creatorId` = `rt1:<delegationId>` posé par l'API (03 §10) | L03b |
+| `POST /e2ee/threads/:threadId/key-envelope` | — | Pose a posteriori de l'enveloppe `rt1` d'un salon créé par le runtime (03 §10.1, Q11 = B) | L03c |
 | `POST /delegations/:delegationId/entries` | — | Le runtime ajoute l'entrée d'une clé qu'il a créée (03 §10) | L03 |
 | `POST /e2ee/cdn/uploads` | `POST /api/cdn/transfers/uploads` (`cdnTransferRoutes.ts:66`) | Ouvrir un envoi CDN pour l'utilisateur (outil `create_file`), destination **un espace seulement** | L03b |
 
@@ -238,12 +256,44 @@ entrée de clé absente de la délégation → `403 key_not_delegated`.
 | `POST /e2ee/threads` | champs de `createThreadSchema` + `spaceId?` + `leaseEpoch` + `commitment?` (`b64` de 32 octets) et `signature?` (`b64` de 64 octets, P1363), **ensemble ou absents** ; corps strict (aucun `creatorId`) | porte d'outil `create_thread` (§5 : `ai_disabled`, `tool_denied_by_policy`, `lease_conflict`) ; `spaceId` de l'org ; puis le **même** service que la route HTTP (`createThread`) avec l'utilisateur de l'autorisation et `creatorId = rt1:<delegationId de l'autorisation>` ; refus du service 403 → `forbidden`, 404 → `not_found`, 429 → `rate_limited`, autre → `invalid_body` | `201` + `Thread` (forme de `POST /api/threads/…`) ; `thread:created` émis comme pour HTTP |
 | `POST /e2ee/cdn/uploads` | `{ leaseEpoch, orgId?, workspaceId, folderId?, fileName, size, partSize, mimeType?, encryptedFileKey, keyVersion, iv }`, strict | `orgId` absent ou = org de l'autorisation (`out_of_scope`) ; porte d'outil `create_file` ; espace de l'org ; accès à l'espace ; entrée `space:<workspaceId>` **de version `keyVersion`** ; puis le **même** service que la route HTTP (`openCreateTransfer` : membre, dossier de l'espace, module Fichiers, quota) | `201 { tid, fileId, cdnUrl, ticket, expiresAt, size, partSize, partCount }` |
 
+**`POST /e2ee/threads/:threadId/key-envelope` (révisé après L03c, 2026-11-20 ; Q11 = B ;
+`synco_api/src/routes/runtimeInternal/e2ee.ts:119`, `conversationE2ee.ts:266-288`,
+`SYNCOAI_REFONTE_FEATURE.md` §13.3)** : S+A, ajoutée à la liste fermée. Corps strict (tout champ
+inconnu → `400 invalid_body`) :
+
+```json
+{ "leaseEpoch": 3, "ctx": "thread:<threadId>", "version": 1,
+  "commitment": "<b64 de 32 octets>", "signature": "<b64 de 64 octets, ECDSA P-256 P1363>" }
+```
+
+Contrôles, dans l'ordre (après le second verrou et `loadAuthorizedConversation`) :
+
+| # | Contrôle | Refus |
+|---|---|---|
+| 1 | `:threadId` au format 00 §3.2 ; corps ; `ctx = "thread:" + :threadId` ; `version = 1` (une `ThreadKey` n'a qu'une version) | `400 invalid_body` |
+| 2 | Porte de l'outil `create_thread` : module IA ; D5 `deny` ; bail courant (`leaseEpoch`) | `403 ai_disabled`, `403 tool_denied_by_policy`, `409 lease_conflict` |
+| 3 | Salon de l'org de l'autorisation (inconnu ou autre org : même réponse) | `403 out_of_scope` |
+| 4 | L'utilisateur de l'autorisation a accès au salon **maintenant** (`requireThreadAccess`) | `403 forbidden` |
+| 5 | Au moins une `ThreadKey` du salon de `creatorId = "rt1:" + delegationId de l'autorisation` (salon d'un membre, d'un autre utilisateur ou d'une délégation remplacée : rien à poser) | `403 forbidden` |
+| 6 | Une `ThreadKey` `rt1:` de ce salon porte déjà une enveloppe **différente** | `409 envelope_exists` |
+| 7 | Signature vérifiée avec la clé `csk` du certificat du runtime sur les octets de 03 §10 (`synco-key-envelope-rt-v1`, `ctx`, `version`, `commitment`, `delegationId`) | `400 invalid_body` |
+| 8 | Écriture **une fois** : `updateMany` conditionné (`threadId`, `creatorId`, `commitment = null`, `signature = null`) ; course perdue contre une autre enveloppe | `409 envelope_exists` |
+
+`commitment` et `signature` doivent être en base64 **canonique** (`decodeB64Exact` : longueur exacte,
+bits de fin nuls, comme `from_b64` de la crate) ; la même exigence s'applique désormais aux champs
+`commitment` / `signature` de `POST /e2ee/threads`. Succès : `200 { "threadId": "<id>", "updated":
+<nombre de ThreadKey écrites> }` ; la même enveloppe reposée → `200` avec `updated: 0` (idempotent :
+reprise après coupure réseau). Aucune entrée de délégation n'est exigée (ordre libre avec
+`POST /delegations/:delegationId/entries`). **Limite** : l'API n'a pas la clé du salon, elle ne vérifie
+pas `commitment` ; la pose est définitive, sans voie de reprise en v1 (03 §10.1). Journalisation :
+gabarit `/e2ee/threads/:id/key-envelope` (§7).
+
 Les deux routes d'écriture sont l'exécution des outils `create_thread` et `create_file` (catégorie
 `client` du registre : la cryptographie est faite par le worker) ; comme `tools/:name/execute`, seul
 le worker qui détient le bail courant fait agir l'utilisateur, et un outil `deny` n'agit jamais.
 Aucune autre destination d'envoi (DM, support, message, tâche) n'existe sur le canal. Le plafond de
 corps de 256 Kio limite `POST /e2ee/threads` à environ 300 destinataires de clé RSA-4096, alors que
-`createThreadSchema` en admet 500 (09 §4). Signature `rt1` d'un salon créé par le runtime : 00 §6 Q11.
+`createThreadSchema` en admet 500 (09 §4). Signature `rt1` d'un salon créé par le runtime : route de pose ci-dessus (Q11 = B).
 
 Extensions prévues (à spécifier ici par L14/L15 avant d'être codées) : lecture de fichiers (ticket
 `down`), envoi de message dans un salon, documentation.
@@ -297,7 +347,7 @@ Réponses réelles (révisé après la vague B, 2026-11-19 ; `synco_api/src/serv
   `switched_to_local` et `session_deleted`, notifie `conversation.revoked` puis
   `delegation.entries_removed` pour l'entrée `conv`, et émet `ai:session-status` (avec `regime`).
 
-## 6. Flux de notifications (WebSocket sortant)
+## 6. Flux de notifications (WebSocket sortant) (révisé après L03c/L05, 2026-11-20)
 
 `GET /api/runtime/v1/stream` avec en-tête `Upgrade: websocket`, signé comme une requête `GET` de
 corps vide (§2). Serveur : bibliothèque `ws` (déjà résolue dans `synco_api`, version 8.21.3 via
@@ -316,7 +366,7 @@ nouvelle connexion ferme la précédente.
 | `delegation.entries_added` | `delegationId`, `after` | Lire les nouvelles entrées |
 | `delegation.entries_removed` | `delegationId`, `entries: [{kind, ref, version}]` | Effacer ces clés |
 | `delegation.revoked` | `userId`, `delegationId`, `reason` | Effacer `DK` et les clés ; arrêter les workers de l'utilisateur |
-| `user.revoked` | `userId`, `until` | Liste de révocation des tickets (02 §8). **Jamais émis en v1** (00 §6 Q13) |
+| `user.revoked` | `userId`, `until` | Liste de révocation des tickets (02 §8). **Émis** après `delegation.revoked` (raisons et `until` : 02 §8 ; révisé après L03c, Q13 = A) |
 | `runtime.unpaired` | — | 01 §9 |
 | `ping` | — | Répondre `pong` |
 
@@ -367,7 +417,7 @@ gabarit où tout segment non fixe devient `:id`, sans chaîne de requête (`runt
 erreurs serveur ne journalisent que nom et code de l'exception, jamais son `message` (Prisma y
 recopie les valeurs ; `errorTag`, `conversationResult.ts`).
 
-## 8. Codes d'erreur (révisé après la vague B, 2026-11-19)
+## 8. Codes d'erreur (révisé après la vague B, 2026-11-19 ; révisé après L03c, 2026-11-20)
 
 Réponses d'erreur : `{ "error": "<code>" }`. Contrat : `synco_api/src/services/aiRuntime/runtimeAuthContract.ts:47-93`
 et `conversationResult.ts` (L03).
@@ -382,7 +432,7 @@ et `conversationResult.ts` (L03).
 | `rt_sig_invalid` | 401 | Signature invalide |
 | `rt_replay` | 401 | Nonce déjà vu |
 | `rt_rate_limited` | 429 | Débit du runtime (50 / s, rafale 200), ensemble de nonces du runtime plein, échecs ou lectures de corps simultanées par adresse IP, `POST /metrics` (1 / min), dépôt de boîte (20 / 10 s), push (1 / 30 s) |
-| `auth_invalid` | 403 | Autorisation inconnue, d'un autre runtime, ou utilisateur plus autorisé |
+| `auth_invalid` | 403 | Autorisation inconnue, d'un autre runtime, ou utilisateur plus autorisé (non membre, politique, **banni de la plateforme** : révisé après L03c) |
 | `auth_revoked` / `auth_expired` | 403 | Autorisation révoquée / expirée |
 | `delegation_expired` / `delegation_revoked` | 403 | Délégation plus active |
 | `out_of_scope` | 403 | Ressource hors de l'autorisation (autre conversation, autre org) |
@@ -395,6 +445,7 @@ et `conversationResult.ts` (L03).
 | `gateway_not_configured` | 409 | `POST /tickets/llm` sans fournisseur `gateway` configuré |
 | `invalid_body` | 400 | Corps invalide, trop gros ou lu trop lentement ; requête mal formée |
 | `ai_disabled` | 403 | Module IA désactivé ou org bannie |
+| `envelope_exists` | 409 | `POST /e2ee/threads/:threadId/key-envelope` : une enveloppe différente est déjà posée, ou course perdue (§4.3 ; révisé après L03c) |
 | `not_found` | 404 | Route absente de la liste fermée, ressource absente, outil inconnu ou non `server` |
 | `inbox_full` | 429 | 100 éléments non consommés dans la boîte |
 | `rate_limited` | 429 | Refus de débit d'un service HTTP partagé (création de salon, envoi CDN) |

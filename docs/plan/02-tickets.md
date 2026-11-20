@@ -98,7 +98,7 @@ dans les deux cas. Refus du navigateur : `403 forbidden`, `403 ai_disabled`,
 `409 gateway_not_configured` (`aiRuntimeTickets.ts:53-69`) ; refus du runtime : ceux du canal
 (04 §8) et `409 gateway_not_configured` (`synco_api/src/routes/runtimeInternal/runtime.ts:128-143`).
 
-## 5. Vérification (ordre)
+## 5. Vérification (ordre) (révisé après L05, 2026-11-20)
 
 Identique à `sct1` (`synco_cdn/docs/plan/02-tickets.md` « Vérification ») :
 
@@ -110,7 +110,9 @@ Identique à `sct1` (`synco_cdn/docs/plan/02-tickets.md` « Vérification ») :
 4. JSON strict : champs inconnus refusés, types exacts, identifiants conformes (00 §3.2), `op` connu →
    sinon `ticket_invalid`.
 5. `iat − 30 s ≤ maintenant < exp + 30 s` → sinon `ticket_expired` (ou `ticket_invalid` si pas encore
-   valide) ; `exp − iat ≤ durée maximale` (§6) → sinon `ticket_invalid`.
+   valide) ; `exp − iat ≤ durée maximale` (§6) → sinon `ticket_invalid`. **`exp < iat` est refusé**
+   (`ticket_invalid`) par la crate du runtime ; la référence TypeScript l'admettrait : plus strict, sans effet sur une API honnête (révisé après L05,
+   2026-11-20 ; `crates/runtime-protocol/src/ticket.rs:263-267`).
 6. `op` correspond à la route → sinon `ticket_wrong_operation`.
 7. Destinataire : runtime : `rt` = son `runtimeId` ; passerelle : `gw` = son URL publique configurée →
    sinon `ticket_wrong_audience`.
@@ -125,6 +127,10 @@ Identique à `sct1` (`synco_cdn/docs/plan/02-tickets.md` « Vérification ») :
 
 Chaque échec répond **401** avec le code (HTTP pour la passerelle ; fermeture `4401` avec le code en
 raison pour le WebSocket du runtime, 05 §7), jamais le détail.
+
+Clés publiques côté runtime (révisé après L05, 2026-11-20 ; `crates/supervisor/src/client_ws.rs:35-72`) :
+même **échec fermé** que la passerelle (§7) : sans relecture réussie des clés depuis 1 h, aucun ticket
+n'est accepté (`ticket_unknown_key`) ; un `kid` inconnu déclenche une relecture (au plus une par minute).
 
 ## 6. Durées
 
@@ -204,16 +210,25 @@ Précisions (révisé après la vague B, 2026-11-19) :
   ticket est refusé jusqu'à la première lecture. API jointe en HTTPS vérifié, HTTP seulement vers
   `localhost`, sans redirection.
 
-## 8. Révocation
+## 8. Révocation (révisé après L03c/L05, 2026-11-20)
 
 - **Runtime** : liste en mémoire, alimentée par le flux de notifications (04 §6) : `user.revoked`
   (`sub`, `until`), `conversation.revoked` (`conv`). Un ticket de ce `sub` émis avant `until`, ou pour
   cette conversation, est refusé ; les WebSocket ouverts concernés sont fermés (`4403`). Chaque entrée
   expire après la durée maximale d'un ticket.
-  **Écart (révisé après la vague B, 2026-11-19)** : l'API n'émet **jamais** `user.revoked` en v1 (le
-  type existe, `synco_api/src/services/aiRuntime/runtimeStreamEvents.ts:25`, sans émetteur). La
-  perte de droits d'un utilisateur arrive au runtime par `delegation.revoked` et
-  `conversation.revoked` (03 §8) ; voir 00 §6 Q13.
+  **`user.revoked` est émis (révisé après L03c, 2026-11-20 ; Q13 = A, 00 §5)** : à chaque révocation de
+  la délégation d'un utilisateur, `revokeOne` (`synco_api/src/services/aiRuntime/delegationService.ts`)
+  émet `{ type: "user.revoked", userId, until }` sur le flux du runtime de la délégation, après
+  `delegation.revoked`, pour les raisons `user_revoked`, `admin_revoked` (une ou toutes), `member_left`
+  (route et maintenance), `member_not_allowed`, `user_banned`, `org_banned`, `ai_disabled`,
+  `runtime_disabled` ; **pas** pour `expired` ni `runtime_unpaired`. `until` = secondes Unix, **borne
+  haute de la seconde courante** (`Math.ceil`), pour qu'un `srt1` émis dans la même seconde (`iat`
+  tronqué) soit refusé lui aussi. Un utilisateur n'a qu'une délégation active par runtime
+  (`activeKey`) : révoquer celle-ci révoque toutes ses délégations vers ce runtime. Source :
+  `synco_api/vibe/features/SYNCOAI_REFONTE_FEATURE.md` §13.2. Côté runtime (L05,
+  `crates/supervisor/src/runtime.rs:451-475`) : l'évènement efface les autorisations connues de
+  l'utilisateur, alimente la liste de révocation (entrée expirée après `until` + durée maximale d'un
+  ticket) et ferme ses WebSocket ouverts (`4403`, `revoked`).
 - **Passerelle** : pas de liste ; la durée courte suffit (une perte de droits prend effet au plus tard
   au renouvellement).
 

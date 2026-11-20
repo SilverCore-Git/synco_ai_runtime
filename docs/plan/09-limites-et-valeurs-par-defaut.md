@@ -26,6 +26,12 @@ Règles communes, quelle que soit l'option :
 
 **Recommandation** : A (7 jours, admin libre entre 1 h et 30 jours).
 
+**Effet d'une baisse de `maxDelegationDays` (révisé après L03c, 2026-11-20 ; Q14 b = B, 00 §5)** : le
+maximum est contrôlé **au dépôt** (API) et à l'ouverture (runtime) ; abaisser `maxDelegationDays`
+**n'écourte pas** les délégations existantes, qui courent jusqu'à leur `exp` (≤ 30 j). Pour couper
+tout de suite : révoquer une délégation ou toutes (03 §8.1). À documenter dans l'écran admin (L11).
+Source : `SYNCOAI_REFONTE_FEATURE.md` §13.5, §13.7.
+
 ## 2. D6 — Plafonds du worker et du runtime
 
 | Plafond | Valeur proposée | Portée | Où appliqué | Justification |
@@ -50,19 +56,25 @@ Règles communes, quelle que soit l'option :
 **Recommandation** : ces valeurs, à revoir après les mesures de L06 (coût d'un worker vide, temps de
 lancement) et les premiers essais de L07.
 
-## 3. Délais d'attente
+## 3. Délais d'attente (révisé après L03c/L05, 2026-11-20)
 
 | Attente | Délai | Au-delà |
 |---|---|---|
-| `awaiting_confirmation`, `awaiting_user` | **7 jours** (org) | `failed` `confirmation_timeout` (08 §2) — dépend aussi de D5 |
-| `awaiting_key` | **7 jours** | `failed` `key_timeout` |
+| `awaiting_confirmation`, `awaiting_user` | **7 jours** par défaut, abaissable par l'org (`limits.confirmationTimeoutSecs`) | `failed` `confirmation_timeout` (08 §2) — dépend aussi de D5 |
+| `awaiting_key` | **7 jours** par défaut, abaissable par l'org (`limits.keyTimeoutSecs`) | `failed` `key_timeout` |
 | `queued` (runtime hors ligne) | aucun | reste `queued` ; affiché « runtime injoignable » |
-| `hello` du WebSocket client | 10 s | fermeture `4408` |
+| `hello` du WebSocket client | **5 s** (la spec proposait 10 s ; raccourci par L05 pour limiter les connexions inoccupées, `client_ws.rs:HELLO_TIMEOUT`) | fermeture `4408` |
+| Inactivité du WebSocket client | 60 s sans trame reçue | fermeture `1000` `idle_timeout` (05 §6.3, §7) |
 
-Réalisation (révisé après la vague B, 2026-11-19) : les deux délais de 7 jours sont **fixes** dans
-l'API (`WAIT_TIMEOUT_MS`, `synco_api/src/services/aiRuntime/runtimeMaintenance.ts:25`), comparés à
-`statusChangedAt` par une passe toutes les 60 s (07 §9) ; l'org ne peut pas encore les abaisser
-(00 §6 Q14).
+Réalisation (révisé après L03c, 2026-11-20 ; Q14 a = A) : l'API lit, pour chaque org,
+`aiConfig.runtime.limits.confirmationTimeoutSecs` et `keyTimeoutSecs` (entiers ≥ 1, défaut **604 800**,
+**abaissables seulement**, même normalisation que les autres `limits`, 07 §6) ; la maintenance les
+compare strictement à `statusChangedAt` par une passe toutes les 60 s (résolution = une passe, 07 §9) ;
+politique illisible ou ancien format sans ces champs : 7 jours. Les champs figurent aussi dans
+`GET /api/runtime/v1/llm-policy` (`runtime.limits`, 04 §4.1). Source :
+`synco_api/src/services/aiRuntime/runtimeMaintenance.ts`, `runtimePolicy.ts`,
+`SYNCOAI_REFONTE_FEATURE.md` §13.5. Les 7 jours de `WAIT_TIMEOUT_MS` ne sont plus que la valeur par
+défaut. Un délai de 1 s est admis : minimum à fixer, 00 §6 Q19.
 
 ## 4. Débits et tailles
 
@@ -80,10 +92,10 @@ l'API (`WAIT_TIMEOUT_MS`, `synco_api/src/services/aiRuntime/runtimeMaintenance.t
 | Boîte de réception | 100 éléments non consommés par conversation ; 20 dépôts / 10 s |
 | Notifications push | 1 / 30 s par conversation |
 | `POST /metrics` | 1 / min |
-| Trames du pipe | 1 Mio (JSON), 64 Kio (clés) |
+| Trames du pipe | charge de 1 Mio (JSON), 64 Kio (clés) ; la longueur en tête compte le genre en plus (06 §1) |
 | Synchro P11 (client) | regroupement 5 s ; backoff 30 s → 30 min ; 5 tentatives par session de l'app |
 
-### 4.1 Valeurs réelles après la vague B (révisé après la vague B, 2026-11-19)
+### 4.1 Valeurs réelles après la vague B (révisé après la vague B, 2026-11-19 ; complété après L05, 2026-11-20)
 
 Valeurs appliquées par le code (L02, L03, L03b, L04). Elles précisent ou remplacent la table
 ci-dessus quand elles diffèrent ; un écart de fond est signalé en dernière colonne.
@@ -111,6 +123,17 @@ ci-dessus quand elles diffèrent ; un écart de fond est signalé en dernière c
 | Passerelle : concurrence | **16** requêtes de chat simultanées au total, **4** par utilisateur (`sub`) → `429`, `Retry-After: 1` | `src/config.rs:9-10`, `src/limits.rs` | ajout |
 | Passerelle : jetons | `max_tokens` plafonné à 4 096 (`SYNCO_MAX_TOKENS`), `n = 1` | `src/config.rs:7`, `src/relay.rs:80-90` | ajout |
 | Passerelle : clés publiques | relecture 600 s ; `kid` inconnu ≤ 1 / 60 s ; plus aucune clé utilisée après 1 h sans relecture réussie ; réponse ≤ 64 Kio, ≤ 16 clés | `src/keys.rs:10-28` | ajout |
-| Délais d'attente (§3) | 7 jours fixes, non réglables par l'org | `runtimeMaintenance.ts:25` | écart, 00 §6 Q14 |
+| Délais d'attente (§3) | 7 jours par défaut, **abaissables** par l'org (`limits.confirmationTimeoutSecs`, `keyTimeoutSecs`) — révisé après L03c | `runtimeMaintenance.ts`, `runtimePolicy.ts` | écart résolu (Q14 a = A) |
+
+Valeurs appliquées par le superviseur (L05, `crates/supervisor/src/`, `crates/runtime-protocol/src/pipe.rs`) :
+
+| Élément | Valeur réelle | Source | Écart avec la table |
+|---|---|---|---|
+| `hello` du WebSocket client | 5 s (`4408`) | `client_ws.rs:HELLO_TIMEOUT` | remplace 10 s (§3) |
+| WebSocket sans `hello` vérifié | **8 par adresse, 256 au total** ; au-delà : réponse HTTP `429` avant la mise à niveau ; place rendue dès le ticket vérifié ; `X-Forwarded-For` lu à `trust_proxy_hops` depuis la **droite**, jamais au-delà de l'entrée la plus à droite | `server.rs:MAX_UNAUTHENTICATED_*`, `client_address` | ajout |
+| Inactivité du WebSocket client | 60 s sans trame reçue → fermeture `1000` `idle_timeout` (toute trame, `ping` compris, remet le compteur à zéro) | `client::IDLE_TIMEOUT_SECS`, `client_ws.rs` | précision |
+| Clés publiques des tickets (runtime) | sans relecture réussie depuis 1 h, aucun ticket accepté (échec fermé, comme la passerelle) | `client_ws.rs:TICKET_KEYS_MAX_AGE` | ajout |
+| Relais `signed_request` | requêtes et réponses découpées en parties de ≤ 512 Kio bruts ; ≤ **4** requêtes en vol par worker et **8** pour le runtime (`relay_busy`) ; 2 corps en réassemblage par worker ; corps ≤ 8 Mio + 64 Kio (requête), 9 Mio (réponse) ; débit 20 / s, rafale 50 par worker (`429` `rt_rate_limited`, `relay_rate_limited`) | `pipe.rs:RELAY_*`, `state.rs:RELAY_*`, `config.rs:203-204` | précision (06 §4) |
+| `snapshot` | ≤ 1 Mio, sinon `ready { mode: "reload" }` | `client_ws.rs`, `runtime.rs` | précision (05 §2) |
 
 Sauf mention, les chemins sont relatifs à `synco_api/src/services/aiRuntime/` ou `synco_api/src/routes/`.

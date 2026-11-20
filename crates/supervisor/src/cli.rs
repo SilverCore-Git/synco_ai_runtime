@@ -109,6 +109,8 @@ pub async fn execute(args: Args) -> Result<()> {
         out(HELP);
         return Ok(());
     }
+    // Mesure 8 : pas de vidage mémoire ni de fichier core, AVANT toute lecture de clé ou de secret.
+    crate::hardening::harden_process()?;
     let config = Config::load(&args.config)?;
     init_tracing(&config.log_level);
     let backend = seal::backend_from_config(&config.key_sealing);

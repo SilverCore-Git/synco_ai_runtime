@@ -29,7 +29,7 @@ toml = { version = "=1.1.6", default-features = false, features = ["parse", "ser
 tracing = { version = "=0.1.44" }
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["fmt", "env-filter", "ansi", "std"] }
 argon2 = { version = "=0.6.0", default-features = false, features = ["alloc", "zeroize"] }
-rustix = { version = "=1.1.5", default-features = false, features = ["std", "termios"] }
+rustix = { version = "=1.1.5", default-features = false, features = ["std", "termios", "process"] }
 tempfile = { version = "=3.27.0" }
 
 # Règles « zéro panique » de synco_cdn, communes aux crates du runtime (synco-e2ee garde sa copie) ;

@@ -19,6 +19,7 @@ pub mod client_ws;
 pub mod clock;
 pub mod config;
 pub mod error;
+pub mod hardening;
 pub mod keys;
 pub mod launcher;
 pub mod pins;

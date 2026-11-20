@@ -547,18 +547,127 @@ pub struct ShutdownMsg {
     pub reason: ShutdownReason,
 }
 
-/// `signed_request_response`.
+fn yes() -> bool {
+    true
+}
+
+fn is_zero(v: &u32) -> bool {
+    *v == 0
+}
+
+fn is_true(v: &bool) -> bool {
+    *v
+}
+
+/// `signed_request_response`, éventuellement découpée en parties (extension L05 de 06 §4) : une
+/// réponse dont le corps dépasse [`RELAY_CHUNK_BYTES`] est envoyée en plusieurs trames de même
+/// `id`, `part` = 0, 1, 2…, la dernière avec `last = true`. `status` et `headers` sont répétés.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SignedResponse {
     /// Identifiant de la requête.
     pub id: String,
-    /// Statut HTTP (0 : requête refusée par le superviseur ou erreur réseau).
+    /// Statut HTTP. `0` : pas de réponse de l'API, la cause est dans `error`.
     pub status: u16,
     /// En-têtes utiles (`content-type`).
     pub headers: BTreeMap<String, String>,
-    /// Corps (`b64`).
+    /// Morceau du corps (`b64`).
     pub body: String,
+    /// Rang de la partie (0 si absente).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub part: u32,
+    /// Dernière partie (vrai si absent).
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub last: bool,
+    /// Code machine quand `status = 0` : `relay_refused`, `relay_busy`, `relay_too_large`,
+    /// `relay_bad_part`, `relay_network`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Taille brute maximale d'une partie de corps relayé (sa forme `b64` tient largement dans une
+/// trame JSON de 1 Mio).
+pub const RELAY_CHUNK_BYTES: usize = 512 * 1024;
+/// Corps maximal d'une requête relayée (historique ≤ 8 Mio, 09 §4).
+pub const MAX_RELAY_REQUEST_BYTES: usize = 8 * 1024 * 1024 + 64 * 1024;
+/// Corps maximal d'une réponse relayée.
+pub const MAX_RELAY_RESPONSE_BYTES: usize = 9 * 1024 * 1024;
+
+impl SignedResponse {
+    /// Réponse d'échec sans corps (`status = 0`).
+    #[must_use]
+    pub fn failure(id: &str, code: &str) -> Self {
+        Self {
+            id: id.to_owned(),
+            status: 0,
+            headers: BTreeMap::new(),
+            body: String::new(),
+            part: 0,
+            last: true,
+            error: Some(code.to_owned()),
+        }
+    }
+
+    /// Découpe une réponse en parties de ≤ [`RELAY_CHUNK_BYTES`] octets bruts.
+    #[must_use]
+    pub fn split(id: &str, status: u16, headers: &BTreeMap<String, String>, body: &[u8]) -> Vec<Self> {
+        let chunks: Vec<&[u8]> = if body.is_empty() { vec![&[][..]] } else { body.chunks(RELAY_CHUNK_BYTES).collect() };
+        let n = chunks.len();
+        chunks
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| Self {
+                id: id.to_owned(),
+                status,
+                headers: headers.clone(),
+                body: synco_e2ee::encoding::b64(c),
+                part: u32::try_from(i).unwrap_or(u32::MAX),
+                last: i.saturating_add(1) == n,
+                error: None,
+            })
+            .collect()
+    }
+}
+
+/// Réassemblage de parties successives (requête ou réponse relayée).
+#[derive(Debug, Default)]
+pub struct Reassembly {
+    next_part: u32,
+    body: Vec<u8>,
+}
+
+impl Reassembly {
+    /// Ajoute la partie `part` (`b64`). Erreur si hors d'ordre, illisible ou au-delà de `max`.
+    pub fn push(&mut self, part: u32, b64_chunk: &str, max: usize) -> Result<(), &'static str> {
+        if part != self.next_part {
+            return Err("relay_bad_part");
+        }
+        let bytes = synco_e2ee::encoding::from_b64(b64_chunk).map_err(|_| "relay_bad_part")?;
+        if bytes.len() > RELAY_CHUNK_BYTES || self.body.len().saturating_add(bytes.len()) > max {
+            return Err("relay_too_large");
+        }
+        self.body.extend_from_slice(&bytes);
+        self.next_part = self.next_part.saturating_add(1);
+        Ok(())
+    }
+
+    /// Octets reçus.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.body.len()
+    }
+
+    /// Aucun octet.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.body.is_empty()
+    }
+
+    /// Corps complet.
+    #[must_use]
+    pub fn into_body(self) -> Vec<u8> {
+        self.body
+    }
 }
 
 /// `snapshot_request`.
@@ -672,10 +781,36 @@ pub struct SignedRequest {
     pub method: HttpMethod,
     /// Chemin et requête, relatif à l'API (`/api/runtime/v1/…`).
     pub path: String,
-    /// Corps (`b64`, vide si aucun).
+    /// Morceau du corps (`b64`, vide si aucun).
     pub body: String,
     /// Ajouter `x-synco-auth` (autorisation de la conversation du worker).
     pub with_auth: bool,
+    /// Rang de la partie (0 si absente) : un corps > [`RELAY_CHUNK_BYTES`] est envoyé en plusieurs
+    /// trames de même `id` ; `method`, `path` et `withAuth` sont répétés à l'identique.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub part: u32,
+    /// Dernière partie (vrai si absent).
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub last: bool,
+}
+
+impl SignedRequest {
+    /// Découpe une requête en parties.
+    #[must_use]
+    pub fn split(id: &str, method: HttpMethod, path: &str, body: &[u8], with_auth: bool) -> Vec<Self> {
+        SignedResponse::split(id, 0, &BTreeMap::new(), body)
+            .into_iter()
+            .map(|r| Self {
+                id: r.id,
+                method,
+                path: path.to_owned(),
+                body: r.body,
+                with_auth,
+                part: r.part,
+                last: r.last,
+            })
+            .collect()
+    }
 }
 
 /// `inbox_ack`.
@@ -841,6 +976,26 @@ mod tests {
         assert!(frames.iter().all(|f| f.len() <= MAX_KEYS_PAYLOAD));
     }
 
+    #[test]
+    fn decoupage_des_reponses_relayees() {
+        let body: Vec<u8> = (0..(3 * RELAY_CHUNK_BYTES + 10)).map(|i| u8::try_from(i % 251).unwrap()).collect();
+        let parts = SignedResponse::split("r1", 200, &BTreeMap::new(), &body);
+        assert_eq!(parts.len(), 4);
+        let mut re = Reassembly::default();
+        for p in &parts {
+            // Chaque partie tient dans une trame JSON.
+            assert!(
+                serde_json::to_vec(&SupervisorMsg::SignedRequestResponse(p.clone())).unwrap().len() <= MAX_JSON_PAYLOAD
+            );
+            re.push(p.part, &p.body, MAX_RELAY_RESPONSE_BYTES).unwrap();
+        }
+        assert!(parts.last().unwrap().last && !parts[0].last);
+        assert_eq!(re.into_body(), body);
+        let mut re = Reassembly::default();
+        assert_eq!(re.push(1, &parts[1].body, MAX_RELAY_RESPONSE_BYTES), Err("relay_bad_part"), "hors d'ordre");
+        assert_eq!(re.push(0, &parts[0].body, 10), Err("relay_too_large"));
+    }
+
     #[tokio::test]
     async fn cadrage() {
         let (mut a, mut b) = tokio::io::duplex(1 << 20);
@@ -872,6 +1027,9 @@ mod tests {
             fields: BTreeMap::from([("steps".into(), Value::from(3))]),
         };
         assert!(log.is_contentless());
+        // Compatibilité : `part`/`last` absents = une seule partie.
+        let r: SignedResponse = serde_json::from_str(r#"{"id":"r1","status":200,"headers":{},"body":""}"#).unwrap();
+        assert!(r.last && r.part == 0);
         let bad = LogMsg {
             level: "info".into(),
             code: "x".into(),

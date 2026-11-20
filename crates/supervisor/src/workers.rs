@@ -141,7 +141,7 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
         };
         conv.buffer.clear();
         conv.status = "running".to_owned();
-        conv.worker = WorkerState::Running(WorkerHandle {
+        conv.worker = WorkerState::Running(Box::new(WorkerHandle {
             tx: tx.clone(),
             kill: kill_tx.clone(),
             epoch: lease.lease_epoch,
@@ -149,7 +149,9 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
             started: false,
             metrics: None,
             requests: TokenBucket::new(l.worker_signed_requests_per_sec, l.worker_signed_requests_burst),
-        });
+            in_flight: Arc::new(tokio::sync::Semaphore::new(crate::state::RELAY_IN_FLIGHT_PER_WORKER)),
+            uploads: Default::default(),
+        }));
     }
     tracing::info!(code = "worker_launched", launcher = rt.launcher.name(), epoch = lease.lease_epoch, "worker lancé");
     let rt2 = Arc::clone(rt);
@@ -180,8 +182,14 @@ async fn writer(mut wr: WriteHalf<Box<dyn WorkerIo>>, mut rx: mpsc::Receiver<ToW
             ToWorker::Json(m) => pipe::write_json(&mut wr, &m).await,
             ToWorker::Keys(k) => pipe::write_keys(&mut wr, &k).await,
         };
-        if res.is_err() {
-            break;
+        match res {
+            // Une trame refusée à l'encodage (trop grande) n'est jamais une raison de fermer le
+            // pipe : elle est abandonnée (le relais n'en produit pas, cf. `SignedResponse::split`).
+            Err(pipe::PipeError::BadFrame | pipe::PipeError::BadMessage | pipe::PipeError::BadKeys) => {
+                tracing::warn!(code = "pipe_frame_dropped", "trame vers le worker abandonnée");
+            }
+            Err(_) => break,
+            Ok(()) => {}
         }
     }
 }
@@ -395,8 +403,15 @@ async fn on_worker_msg(
     Ok(())
 }
 
+fn reply(tx: &mpsc::Sender<ToWorker>, resp: SignedResponse) {
+    let _ = tx.try_send(ToWorker::Json(SupervisorMsg::SignedRequestResponse(resp)));
+}
+
 /// `signed_request` (06 §4) : liste fermée de chemins, débit borné, `x-synco-auth` = autorisation de
 /// **cette** conversation (jamais choisie par le worker). Hors liste : incident, worker tué.
+/// Corps en parties (`part`, `last`) réassemblé ici ; requêtes en vol bornées par worker et pour
+/// tout le runtime (au-delà : `status = 0`, `relay_busy`, sans fermer le pipe) ; la réponse est
+/// renvoyée en parties de ≤ 512 Kio.
 async fn relay(
     rt: &Arc<Runtime>,
     session: &str,
@@ -408,44 +423,96 @@ async fn relay(
     if req.id.is_empty() || req.id.len() > 64 {
         return Err("worker_bad_request_id");
     }
-    {
+    let (req, body, permit) = {
         let mut st = rt.state.lock().await;
         let owner_delegation = st.vault.get(user_id).map(|d| d.delegation_id().to_owned());
         if !worker_path_allowed(&req.path, session, owner_delegation.as_deref()) {
             return Err("worker_path_forbidden");
         }
         let Some(WorkerState::Running(w)) = st.convs.get_mut(session).map(|c| &mut c.worker) else { return Ok(()) };
+        // Réassemblage d'un corps en plusieurs parties.
+        let (req, body) = if req.part == 0 && req.last {
+            let body =
+                if req.body.is_empty() { None } else { Some(from_b64(&req.body).map_err(|_| "worker_bad_body")?) };
+            if body.as_ref().is_some_and(|b| b.len() > pipe::RELAY_CHUNK_BYTES) {
+                return Err("worker_bad_body");
+            }
+            (req, body)
+        } else {
+            let id = req.id.clone();
+            if req.part == 0 {
+                if w.uploads.len() >= crate::state::RELAY_UPLOADS_PER_WORKER || w.uploads.contains_key(&id) {
+                    reply(tx, SignedResponse::failure(&id, "relay_busy"));
+                    return Ok(());
+                }
+                w.uploads.insert(id.clone(), (req.clone(), pipe::Reassembly::default()));
+            }
+            let Some((head, buf)) = w.uploads.get_mut(&id) else {
+                reply(tx, SignedResponse::failure(&id, "relay_bad_part"));
+                return Ok(());
+            };
+            let same = head.method == req.method && head.path == req.path && head.with_auth == req.with_auth;
+            let pushed =
+                if same { buf.push(req.part, &req.body, pipe::MAX_RELAY_REQUEST_BYTES) } else { Err("relay_bad_part") };
+            if let Err(code) = pushed {
+                w.uploads.remove(&id);
+                reply(tx, SignedResponse::failure(&id, code));
+                return Ok(());
+            }
+            if !req.last {
+                return Ok(());
+            }
+            let Some((head, buf)) = w.uploads.remove(&id) else { return Ok(()) };
+            let body = if buf.is_empty() { None } else { Some(buf.into_body()) };
+            (head, body)
+        };
         if !w.requests.take(Instant::now()) {
-            let _ = tx.try_send(ToWorker::Json(SupervisorMsg::SignedRequestResponse(SignedResponse {
-                id: req.id,
-                status: 429,
-                headers: Default::default(),
-                body: b64(br#"{"error":"rt_rate_limited"}"#),
-            })));
+            reply(
+                tx,
+                SignedResponse {
+                    status: 429,
+                    body: b64(br#"{"error":"rt_rate_limited"}"#),
+                    ..SignedResponse::failure(&req.id, "relay_rate_limited")
+                },
+            );
             return Ok(());
         }
-    }
-    let body = if req.body.is_empty() { None } else { Some(from_b64(&req.body).map_err(|_| "worker_bad_body")?) };
+        let permits = Arc::clone(&w.in_flight)
+            .try_acquire_owned()
+            .ok()
+            .zip(Arc::clone(&rt.relay_permits).try_acquire_owned().ok());
+        let Some(permit) = permits else {
+            reply(tx, SignedResponse::failure(&req.id, "relay_busy"));
+            return Ok(());
+        };
+        (req, body, permit)
+    };
     let auth = req.with_auth.then_some(auth_id.to_owned());
     let rt = Arc::clone(rt);
     let tx = tx.clone();
     tokio::spawn(async move {
+        let _permit = permit;
         let result = rt.api.signed(Method::from(req.method), &req.path, body, auth.as_deref()).await;
-        let resp = match result {
-            Ok(r) => SignedResponse {
-                id: req.id,
-                status: r.status,
-                headers: r
-                    .content_type
-                    .map(|c| [("content-type".to_owned(), c)].into_iter().collect())
-                    .unwrap_or_default(),
-                body: b64(&r.body),
-            },
-            Err(ApiError::Refused) | Err(_) => {
-                SignedResponse { id: req.id, status: 0, headers: Default::default(), body: String::new() }
+        let parts = match result {
+            Ok(r) => {
+                let headers =
+                    r.content_type.map(|c| [("content-type".to_owned(), c)].into_iter().collect()).unwrap_or_default();
+                SignedResponse::split(&req.id, r.status, &headers, &r.body)
+            }
+            Err(e) => {
+                let code = match e {
+                    ApiError::Refused => "relay_refused",
+                    ApiError::Decode => "relay_too_large",
+                    _ => "relay_network",
+                };
+                vec![SignedResponse::failure(&req.id, code)]
             }
         };
-        let _ = tx.send(ToWorker::Json(SupervisorMsg::SignedRequestResponse(resp))).await;
+        for p in parts {
+            if tx.send(ToWorker::Json(SupervisorMsg::SignedRequestResponse(p))).await.is_err() {
+                break;
+            }
+        }
     });
     Ok(())
 }

@@ -211,6 +211,10 @@ async fn channel(
     body: Bytes,
 ) -> Response {
     let path = uri.path_and_query().map(|p| p.as_str().to_owned()).unwrap_or_default();
+    // Route lente (tests de concurrence du relais).
+    if uri.path().ends_with("/tools") {
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    }
     let mut st = state.lock().unwrap();
     let auth = match verify(&mut st, method.as_str(), &path, &body, &headers) {
         Ok(a) => a,
@@ -346,6 +350,7 @@ pub async fn start(runtime_id: &str, runtime_key: VerifyingKey, ticket_key: Sign
         .route("/api/ai/ticket-keys", get(ticket_keys))
         .route(runtime_protocol::stream::STREAM_PATH, get(stream))
         .fallback(channel)
+        .layer(axum::extract::DefaultBodyLimit::max(9 * 1024 * 1024))
         .with_state(shared);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

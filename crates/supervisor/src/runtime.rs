@@ -58,6 +58,8 @@ pub struct Runtime {
     pub unpaired: Notify,
     /// Relire les conversations en attente.
     pub wake: Notify,
+    /// Requêtes relayées en vol pour tout le runtime.
+    pub relay_permits: Arc<tokio::sync::Semaphore>,
 }
 
 impl core::fmt::Debug for Runtime {
@@ -97,6 +99,7 @@ impl Runtime {
             shutdown,
             unpaired: Notify::new(),
             wake: Notify::new(),
+            relay_permits: Arc::new(tokio::sync::Semaphore::new(crate::state::RELAY_IN_FLIGHT_TOTAL)),
         })
     }
 

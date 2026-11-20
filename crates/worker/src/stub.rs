@@ -13,11 +13,11 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use runtime_protocol::pipe::{
-    self, DoneMsg, DoneReason, EventMsg, Frame, HttpMethod, InboxAckMsg, Init, KeyFrame, KeyKind, KeyOp, Metrics,
-    PipeError, ReadyMsg, SignedRequest, SignedResponse, SnapshotMsg, StatusMsg, SupervisorMsg, WorkerMsg,
+    self, DoneMsg, DoneReason, EventMsg, Frame, HttpMethod, InboxAckMsg, Init, KeyFrame, KeyKind, KeyOp,
+    MAX_RELAY_RESPONSE_BYTES, Metrics, PipeError, ReadyMsg, Reassembly, SignedRequest, SnapshotMsg, StatusMsg,
+    SupervisorMsg, WorkerMsg,
 };
 use serde_json::{Value, json};
-use synco_e2ee::encoding::{b64, from_b64};
 use synco_e2ee::session::{self, FieldName, SNAPSHOT_MESSAGE_ID};
 use synco_e2ee::{OsRandom, RandomSource, SymmetricKey};
 use tokio::io::{AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
@@ -25,6 +25,12 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
 /// Texte fixe de la réponse du bouchon.
 pub const STUB_REPLY: &str = "Réponse du bouchon de worker (L05) : la boucle d'agent arrive avec L07.";
 const LEASE_RENEW: Duration = Duration::from_secs(20);
+
+/// Réponse relayée, réassemblée.
+struct Relayed {
+    status: u16,
+    body: Vec<u8>,
+}
 
 struct Stub<S> {
     rd: ReadHalf<S>,
@@ -117,28 +123,32 @@ impl<S: AsyncRead + AsyncWrite + Send + Unpin> Stub<S> {
         self.send(&WorkerMsg::Event(EventMsg { event })).await
     }
 
-    /// Requête signée par le superviseur ; les messages reçus entre-temps sont mis de côté.
+    /// Requête signée par le superviseur (corps et réponse en parties de ≤ 512 Kio) ; les messages
+    /// reçus entre-temps sont mis de côté.
     async fn call(
         &mut self,
         method: HttpMethod,
         path: &str,
         body: Option<Value>,
         with_auth: bool,
-    ) -> Result<SignedResponse, PipeError> {
+    ) -> Result<Relayed, PipeError> {
         self.next_id = self.next_id.saturating_add(1);
         let id = format!("r{}", self.next_id);
-        let body = body.map(|b| b64(b.to_string().as_bytes())).unwrap_or_default();
-        self.send(&WorkerMsg::SignedRequest(SignedRequest {
-            id: id.clone(),
-            method,
-            path: path.into(),
-            body,
-            with_auth,
-        }))
-        .await?;
+        let bytes = body.map(|b| b.to_string().into_bytes()).unwrap_or_default();
+        for part in SignedRequest::split(&id, method, path, &bytes, with_auth) {
+            self.send(&WorkerMsg::SignedRequest(part)).await?;
+        }
+        let mut body = Reassembly::default();
         loop {
             match self.read_msg().await? {
-                SupervisorMsg::SignedRequestResponse(r) if r.id == id => return Ok(r),
+                SupervisorMsg::SignedRequestResponse(r) if r.id == id => {
+                    if body.push(r.part, &r.body, MAX_RELAY_RESPONSE_BYTES).is_err() {
+                        return Ok(Relayed { status: 0, body: Vec::new() });
+                    }
+                    if r.last {
+                        return Ok(Relayed { status: r.status, body: body.into_body() });
+                    }
+                }
                 other => self.queued.push_back(other),
             }
         }
@@ -216,7 +226,7 @@ impl<S: AsyncRead + AsyncWrite + Send + Unpin> Stub<S> {
     async fn fetch_inbox(&mut self) -> Result<Vec<(String, Value)>, PipeError> {
         let path = self.conv_path("/inbox");
         let r = self.call(HttpMethod::Get, &path, None, true).await?;
-        let body: Value = from_b64(&r.body).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(Value::Null);
+        let body: Value = serde_json::from_slice(&r.body).unwrap_or(Value::Null);
         Ok(body
             .get("items")
             .and_then(Value::as_array)
@@ -242,8 +252,7 @@ impl<S: AsyncRead + AsyncWrite + Send + Unpin> Stub<S> {
         }
         let head_path = self.conv_path("");
         let head = self.call(HttpMethod::Get, &head_path, None, true).await?;
-        let head: Value =
-            from_b64(&head.body).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(Value::Null);
+        let head: Value = serde_json::from_slice(&head.body).unwrap_or(Value::Null);
         let mut messages = head.get("messages").and_then(Value::as_array).cloned().unwrap_or_default();
         self.rev = head.get("rev").and_then(Value::as_u64).unwrap_or(0);
         let mut consumed = Vec::new();
@@ -285,11 +294,7 @@ impl<S: AsyncRead + AsyncWrite + Send + Unpin> Stub<S> {
         let path = self.conv_path("/transcript");
         let r = self.call(HttpMethod::Put, &path, Some(transcript), true).await?;
         if (200..300).contains(&r.status) {
-            if let Some(rev) = from_b64(&r.body)
-                .ok()
-                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-                .and_then(|v| v.get("rev")?.as_u64())
-            {
+            if let Some(rev) = serde_json::from_slice::<Value>(&r.body).ok().and_then(|v| v.get("rev")?.as_u64()) {
                 self.rev = rev;
             }
         } else {

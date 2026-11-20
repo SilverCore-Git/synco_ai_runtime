@@ -71,7 +71,19 @@ pub struct WorkerHandle {
     pub metrics: Option<Metrics>,
     /// Débit des `signed_request`.
     pub requests: TokenBucket,
+    /// Requêtes relayées en vol pour ce worker (au plus [`RELAY_IN_FLIGHT_PER_WORKER`]).
+    pub in_flight: Arc<tokio::sync::Semaphore>,
+    /// Requêtes en cours de réassemblage (corps en plusieurs parties).
+    pub uploads: HashMap<String, (runtime_protocol::pipe::SignedRequest, runtime_protocol::pipe::Reassembly)>,
 }
+
+/// Requêtes relayées en vol par worker.
+pub const RELAY_IN_FLIGHT_PER_WORKER: usize = 4;
+/// Requêtes relayées en vol pour tout le runtime : avec des réponses ≤ 9 Mio, la mémoire des
+/// relais reste sous ~ 8 × 9 Mio (plus une partie `b64` à la fois par relais).
+pub const RELAY_IN_FLIGHT_TOTAL: usize = 8;
+/// Corps en réassemblage simultanés par worker.
+pub const RELAY_UPLOADS_PER_WORKER: usize = 2;
 
 /// État du worker d'une conversation.
 #[derive(Debug)]
@@ -81,7 +93,7 @@ pub enum WorkerState {
     /// Lancement en cours (bail, process).
     Launching,
     /// En cours.
-    Running(WorkerHandle),
+    Running(Box<WorkerHandle>),
 }
 
 impl WorkerState {

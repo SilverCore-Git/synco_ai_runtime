@@ -104,6 +104,10 @@ fn delegation_record(
 }
 
 async fn setup() -> Env {
+    setup_with(Arc::new(InProcessStubLauncher)).await
+}
+
+async fn setup_with(launcher: Arc<dyn synco_ai_runtime::launcher::WorkerLauncher>) -> Env {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join("etat");
     // Clés générées et scellées par phrase de passe (comme au premier démarrage).
@@ -169,8 +173,7 @@ shutdown_grace_secs = 2
     ))
     .unwrap();
     let keys = seal::load(&state_dir, &backend()).unwrap().unwrap();
-    let running =
-        synco_ai_runtime::app::start(config, keys, Arc::new(InProcessStubLauncher), BTreeMap::new()).await.unwrap();
+    let running = synco_ai_runtime::app::start(config, keys, launcher, BTreeMap::new()).await.unwrap();
     Env { _dir: dir, state_dir, api, running, keys_secret }
 }
 
@@ -493,4 +496,161 @@ async fn desappairage_efface_les_cles_deleguees() {
     assert_eq!(identity["orgId"], Value::Null, "les mêmes clés, non appairé");
     assert_eq!(identity["runtimeId"], rt.keys.runtime_id());
     synco_ai_runtime::app::shutdown(&rt).await;
+}
+
+// ---------------------------------------------------------------------------
+// Relais signed_request : réponses > 1 Mio en parties, requêtes en vol bornées
+// ---------------------------------------------------------------------------
+
+use runtime_protocol::pipe::{self as wire, Frame, HttpMethod, Reassembly, SignedRequest, SupervisorMsg, WorkerMsg};
+use synco_ai_runtime::launcher::{
+    BoxFuture, LaunchError, SpawnedWorker, WorkerExit, WorkerLauncher, WorkerProcess, WorkerSpec,
+};
+
+#[derive(Debug, Default)]
+struct Report {
+    big_len: usize,
+    statuses: Vec<(u16, Option<String>)>,
+    upload_status: u16,
+    after: u16,
+}
+
+struct Scripted(tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<Report>>>);
+
+struct Task(Option<tokio::task::JoinHandle<()>>);
+
+impl WorkerProcess for Task {
+    fn kill(&mut self) {
+        if let Some(t) = &self.0 {
+            t.abort();
+        }
+    }
+    fn wait(&mut self) -> BoxFuture<'_, WorkerExit> {
+        Box::pin(async move {
+            match self.0.take() {
+                Some(t) => {
+                    let _ = t.await;
+                    WorkerExit::Exited(0)
+                }
+                None => WorkerExit::Unknown,
+            }
+        })
+    }
+    fn usage(&self) -> Option<synco_ai_runtime::launcher::ResourceUsage> {
+        None
+    }
+    fn pid(&self) -> Option<u32> {
+        None
+    }
+}
+
+async fn read(rd: &mut tokio::io::ReadHalf<tokio::io::DuplexStream>) -> SupervisorMsg {
+    loop {
+        match wire::read_frame(rd).await.unwrap() {
+            Frame::Json(j) => return wire::decode_json(&j).unwrap(),
+            Frame::Keys(_) => {}
+        }
+    }
+}
+
+/// Réponse complète d'une requête (parties réassemblées).
+async fn response(rd: &mut tokio::io::ReadHalf<tokio::io::DuplexStream>, id: &str) -> (u16, Option<String>, Vec<u8>) {
+    let mut buf = Reassembly::default();
+    loop {
+        if let SupervisorMsg::SignedRequestResponse(r) = read(rd).await {
+            assert_eq!(r.id, id, "réponses dans l'ordre d'émission pour ce test");
+            buf.push(r.part, &r.body, wire::MAX_RELAY_RESPONSE_BYTES).unwrap();
+            if r.last {
+                return (r.status, r.error, buf.into_body());
+            }
+        }
+    }
+}
+
+async fn script(io: tokio::io::DuplexStream, report: tokio::sync::oneshot::Sender<Report>) {
+    let (mut rd, mut wr) = tokio::io::split(io);
+    let SupervisorMsg::Init(init) = read(&mut rd).await else { panic!("init attendu") };
+    wire::write_json(&mut wr, &WorkerMsg::Ready(wire::ReadyMsg { pid: 1, version: "test".into() })).await.unwrap();
+    while !matches!(read(&mut rd).await, SupervisorMsg::Start(_)) {}
+    let conv = format!("/api/runtime/v1/conversations/{}", init.session_id);
+    let send = |id: &str, method: HttpMethod, path: String, body: Vec<u8>| {
+        SignedRequest::split(id, method, &path, &body, true)
+    };
+    let mut out = Report::default();
+    // 1. Réponse de plus de 1 Mio : reçue en parties, le pipe reste ouvert.
+    for p in send("big", HttpMethod::Get, conv.clone(), vec![]) {
+        wire::write_json(&mut wr, &WorkerMsg::SignedRequest(p)).await.unwrap();
+    }
+    let (status, _, body) = response(&mut rd, "big").await;
+    assert_eq!(status, 200);
+    out.big_len = body.len();
+    serde_json::from_slice::<Value>(&body).expect("corps réassemblé lisible");
+    // 2. Corps de requête de plus de 1 Mio (historique) en parties.
+    let messages: Vec<Value> = (0..300).map(|i| json!({ "id": format!("m{i}"), "pad": "x".repeat(8_000) })).collect();
+    let transcript = json!({ "leaseEpoch": init.lease_epoch, "baseRev": 0, "messages": messages, "status": "idle",
+        "pendingToolCall": null, "consumedInbox": [] });
+    let bytes = transcript.to_string().into_bytes();
+    assert!(bytes.len() > 2 * 1024 * 1024);
+    for p in send("up", HttpMethod::Put, format!("{conv}/transcript"), bytes) {
+        wire::write_json(&mut wr, &WorkerMsg::SignedRequest(p)).await.unwrap();
+    }
+    out.upload_status = response(&mut rd, "up").await.0;
+    // 3. Six requêtes lentes d'un coup : 4 en vol au plus, les autres `relay_busy`, sans fermeture.
+    for i in 0..6 {
+        for p in send(&format!("slow{i}"), HttpMethod::Get, format!("{conv}/tools"), vec![]) {
+            wire::write_json(&mut wr, &WorkerMsg::SignedRequest(p)).await.unwrap();
+        }
+    }
+    for _ in 0..6 {
+        if let SupervisorMsg::SignedRequestResponse(r) = read(&mut rd).await {
+            out.statuses.push((r.status, r.error));
+        }
+    }
+    // 4. Le pipe fonctionne toujours.
+    for p in send("after", HttpMethod::Get, format!("{conv}/inbox"), vec![]) {
+        wire::write_json(&mut wr, &WorkerMsg::SignedRequest(p)).await.unwrap();
+    }
+    out.after = response(&mut rd, "after").await.0;
+    let _ = report.send(out);
+    wire::write_json(&mut wr, &WorkerMsg::Done(wire::DoneMsg { reason: wire::DoneReason::Idle })).await.unwrap();
+}
+
+impl WorkerLauncher for Scripted {
+    fn spawn(&self, _spec: WorkerSpec) -> BoxFuture<'_, Result<SpawnedWorker, LaunchError>> {
+        Box::pin(async move {
+            let report = self.0.lock().await.take().ok_or(LaunchError("une seule fois"))?;
+            let (ours, theirs) = tokio::io::duplex(1 << 20);
+            let task = tokio::spawn(script(theirs, report));
+            Ok(SpawnedWorker { io: Box::new(ours), process: Box::new(Task(Some(task))) })
+        })
+    }
+    fn name(&self) -> &'static str {
+        "scripted"
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn relais_signed_request_borne_et_decoupe() {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let env = setup_with(Arc::new(Scripted(tokio::sync::Mutex::new(Some(tx))))).await;
+    // Historique de ~3 Mio servi par l'API.
+    env.api.with(|st| {
+        st.conversations.get_mut(SESSION).unwrap().messages =
+            (0..400).map(|i| json!({ "id": format!("m{i}"), "pad": "y".repeat(8_000) })).collect();
+    });
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    authorize(&env).await;
+    env.api.push(json!({ "type": "conversation.wake", "sessionId": SESSION, "authId": AUTH, "reason": "inbox" }));
+    let report = tokio::time::timeout(Duration::from_secs(20), rx).await.expect("rapport du worker").unwrap();
+    assert!(report.big_len > 3 * 1024 * 1024, "{}", report.big_len);
+    assert_eq!(report.upload_status, 200);
+    let busy = report.statuses.iter().filter(|(s, e)| *s == 0 && e.as_deref() == Some("relay_busy")).count();
+    let served = report.statuses.iter().filter(|(s, _)| *s == 404).count();
+    assert_eq!((served, busy), (4, 2), "{:?}", report.statuses);
+    assert_eq!(report.after, 200, "pipe toujours ouvert");
+    env.api.with(|st| {
+        assert_eq!(st.conversations[SESSION].messages.len(), 300, "corps de requête réassemblé");
+        assert!(st.signature_failures.is_empty(), "{:?}", st.signature_failures);
+    });
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }

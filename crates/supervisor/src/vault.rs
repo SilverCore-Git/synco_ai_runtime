@@ -129,6 +129,11 @@ impl OpenDelegation {
         self.keys.len()
     }
 
+    /// Chiffre sous `DK` l'entrée d'une clé de salon créée par le runtime (03 §10), version 1.
+    pub fn seal_created_thread_entry(&self, thread_id: &str, key: &SymmetricKey) -> Result<String, synco_e2ee::Error> {
+        delegation::seal_entry(&self.dk, &self.ctx, EntryKind::Thread, thread_id, 1, key, &mut synco_e2ee::OsRandom)
+    }
+
     /// Identités des clés détenues.
     #[must_use]
     pub fn key_ids(&self) -> Vec<KeyId> {
@@ -343,6 +348,23 @@ mod tests {
         assert!(vault.keys_for_conversation("a", "convA", 1_000 + 86_400).is_none());
         assert!(!vault.has_conversation_key("a", "convA", 1_000 + 86_400));
         assert!(vault.org_keys("a", &vault.get("a").unwrap().key_ids(), 1_000 + 86_400).is_empty());
+    }
+
+    #[test]
+    fn entree_d_une_cle_creee_par_le_runtime() {
+        let f = fixture();
+        let user = EcSigningKey::generate(&mut OsRandom).unwrap();
+        let c = ctx("a", "d1", 1_000, 1_000 + 86_400);
+        let (wrap, sig, _) = delegate(&f, &user, &c, &[]);
+        let mut d = OpenDelegation::accept(&me(&f), 1_100, c, &user.public_key().unwrap(), &wrap, &sig).unwrap();
+        let key = SymmetricKey::from_bytes([7; 32]);
+        let ct = d.seal_created_thread_entry("tNew", &key).unwrap();
+        // L'entrée s'ouvre comme une entrée déposée par le client (même AAD, même DK)…
+        let id = d.add_entry("thread", "tNew", 1, &ct).unwrap();
+        assert_eq!(id.reference, "tNew");
+        // … et pas sous une autre référence ou version.
+        assert!(d.add_entry("thread", "tAutre", 1, &ct).is_none());
+        assert!(d.add_entry("thread", "tNew", 2, &ct).is_none());
     }
 
     #[test]

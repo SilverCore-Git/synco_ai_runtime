@@ -75,6 +75,8 @@ pub struct WorkerHandle {
     pub in_flight: Arc<tokio::sync::Semaphore>,
     /// Requêtes en cours de réassemblage (corps en plusieurs parties).
     pub uploads: HashMap<String, (runtime_protocol::pipe::SignedRequest, runtime_protocol::pipe::Reassembly)>,
+    /// Clés de salon créées par ce worker et scellées par le superviseur (`created_key`, L07).
+    pub created_keys: u32,
 }
 
 /// Requêtes relayées en vol par worker.

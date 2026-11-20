@@ -164,6 +164,7 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
             requests: TokenBucket::new(l.worker_signed_requests_per_sec, l.worker_signed_requests_burst),
             in_flight: Arc::new(tokio::sync::Semaphore::new(crate::state::RELAY_IN_FLIGHT_PER_WORKER)),
             uploads: Default::default(),
+            created_keys: 0,
         }));
     }
     tracing::info!(code = "worker_launched", launcher = rt.launcher.name(), epoch = lease.lease_epoch, "worker lancé");
@@ -194,11 +195,80 @@ async fn writer(mut wr: WriteHalf<Box<dyn WorkerIo>>, mut rx: mpsc::Receiver<ToW
 }
 
 async fn read_msg(rd: &mut ReadHalf<Box<dyn WorkerIo>>) -> Result<WorkerMsg, pipe::PipeError> {
-    match pipe::read_frame(rd).await? {
-        Frame::Json(j) => pipe::decode_json(&j),
-        // Le worker n'envoie jamais de clés.
-        Frame::Keys(_) => Err(pipe::PipeError::BadMessage),
+    match read_incoming(rd).await? {
+        Incoming::Msg(m) => Ok(m),
+        // Avant `start`, le worker n'envoie aucune clé.
+        Incoming::CreatedKey(_) => Err(pipe::PipeError::BadMessage),
     }
+}
+
+/// Trame reçue du worker.
+enum Incoming {
+    Msg(WorkerMsg),
+    /// Seule trame `0x02` admise d'un worker : la clé d'un salon qu'il vient de créer (L07).
+    CreatedKey(KeyFrame),
+}
+
+async fn read_incoming(rd: &mut ReadHalf<Box<dyn WorkerIo>>) -> Result<Incoming, pipe::PipeError> {
+    match pipe::read_frame(rd).await? {
+        Frame::Json(j) => pipe::decode_json(&j).map(Incoming::Msg),
+        Frame::Keys(k) => {
+            let frame = KeyFrame::decode(&k)?;
+            if frame.is_created_thread_key() { Ok(Incoming::CreatedKey(frame)) } else { Err(pipe::PipeError::BadKeys) }
+        }
+    }
+}
+
+/// Clé de salon créée par le worker (`create_thread`, 03 §10, §10.1) : le superviseur calcule
+/// l'engagement depuis la clé, signe l'enveloppe `rt1` avec `csk` et chiffre l'entrée sous `DK` de la
+/// délégation **du propriétaire**. Il n'installe pas la clé dans le coffre : elle y entrera par le
+/// chemin normal (`delegation.entries_added` après la pose de l'entrée par le worker). Borné à
+/// [`pipe::MAX_CREATED_KEYS_PER_WORKER`] par worker.
+pub(crate) async fn created_key(
+    rt: &Arc<Runtime>,
+    session: &str,
+    user_id: &str,
+    frame: &KeyFrame,
+) -> pipe::CreatedKeyMsg {
+    let Some(entry) = frame.entries.first() else {
+        return created_key_error("", "created_key_failed");
+    };
+    let reference = entry.reference.clone();
+    let mut st = rt.state.lock().await;
+    let Some(WorkerState::Running(w)) = st.convs.get_mut(session).map(|c| &mut c.worker) else {
+        return created_key_error(&reference, "created_key_failed");
+    };
+    if w.created_keys >= pipe::MAX_CREATED_KEYS_PER_WORKER {
+        return created_key_error(&reference, "created_key_limit");
+    }
+    w.created_keys = w.created_keys.saturating_add(1);
+    let Some(delegation) = st.vault.get(user_id).filter(|d| d.exp() > now_secs()) else {
+        return created_key_error(&reference, "delegation_unavailable");
+    };
+    let Ok(key) = synco_e2ee::SymmetricKey::from_slice(&entry.key) else {
+        return created_key_error(&reference, "created_key_failed");
+    };
+    let ctx = synco_e2ee::keys::thread_context(&reference);
+    let delegation_id = delegation.delegation_id().to_owned();
+    let signed = synco_e2ee::keys::sign_rt1_envelope(rt.keys.csk(), key.as_bytes(), &ctx, 1, &delegation_id);
+    let sealed = delegation.seal_created_thread_entry(&reference, &key);
+    match (signed, sealed) {
+        (Ok(sig), Ok(ciphertext)) => pipe::CreatedKeyMsg {
+            reference,
+            envelope: Some(pipe::CreatedKeyEnvelope {
+                delegation_id,
+                commitment: sig.commitment,
+                signature: sig.signature,
+                ciphertext,
+            }),
+            error: None,
+        },
+        _ => created_key_error(&reference, "created_key_failed"),
+    }
+}
+
+fn created_key_error(reference: &str, code: &str) -> pipe::CreatedKeyMsg {
+    pipe::CreatedKeyMsg { reference: reference.to_owned(), envelope: None, error: Some(code.to_owned()) }
 }
 
 /// Conduite d'un worker jusqu'à sa fin.
@@ -233,12 +303,17 @@ async fn drive(
     if started {
         loop {
             tokio::select! {
-                msg = read_msg(&mut rd) => match msg {
-                    Ok(WorkerMsg::Done(d)) => {
+                msg = read_incoming(&mut rd) => match msg {
+                    Ok(Incoming::CreatedKey(frame)) => {
+                        let resp = created_key(&rt, &session, &user_id, &frame).await;
+                        tracing::info!(code = "worker_created_key", ok = resp.error.is_none(), "clé de salon créée par le worker");
+                        let _ = tx.send(ToWorker::Json(SupervisorMsg::CreatedKey(resp))).await;
+                    }
+                    Ok(Incoming::Msg(WorkerMsg::Done(d))) => {
                         tracing::info!(code = "worker_done", reason = ?d.reason, "fin du worker");
                         done = true;
                     }
-                    Ok(m) => {
+                    Ok(Incoming::Msg(m)) => {
                         if let Err(code) = on_worker_msg(&rt, &session, &user_id, &auth_id, &tx, m).await {
                             // Incident de sécurité ou violation du protocole : le worker est tué.
                             tracing::error!(code, "worker tué (violation du protocole)");

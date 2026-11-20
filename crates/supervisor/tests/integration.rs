@@ -1210,6 +1210,9 @@ async fn marked_script(io: tokio::io::DuplexStream) {
     .await
     .unwrap();
     // État et code libres contenant le marqueur : ramenés à `other`.
+    wire::write_json(&mut wr, &WorkerMsg::Status(wire::StatusMsg { status: MARKER.into(), reason: None }))
+        .await
+        .unwrap();
     wire::write_json(
         &mut wr,
         &WorkerMsg::Status(wire::StatusMsg { status: "running".into(), reason: Some(MARKER.into()) }),

@@ -209,9 +209,17 @@ impl SandboxLauncher {
         let proxy_task = match llm {
             Some(route) => {
                 let socket = dir.join(child::LLM_SOCKET_NAME);
-                let listener = tokio::net::UnixListener::bind(&socket).map_err(|_| LaunchError("llm_socket"))?;
-                set_mode(&socket, 0o600).map_err(|_| LaunchError("llm_socket"))?;
-                Some(self.proxy.serve(listener, route).map_err(LaunchError)?)
+                let served = tokio::net::UnixListener::bind(&socket)
+                    .map_err(|_| "llm_socket")
+                    .and_then(|l| set_mode(&socket, 0o600).map(|()| l).map_err(|_| "llm_socket"))
+                    .and_then(|l| self.proxy.serve(l, route));
+                match served {
+                    Ok(t) => Some(t),
+                    Err(code) => {
+                        let _ = std::fs::remove_dir_all(&dir);
+                        return Err(LaunchError(code));
+                    }
+                }
             }
             None => None,
         };
@@ -244,7 +252,25 @@ impl SandboxLauncher {
                 (child::WORKER_ARG, args.to_args(false))
             }
         };
-        let (ours, theirs) = std::os::unix::net::UnixStream::pair().map_err(|_| LaunchError("socketpair"))?;
+        // Tout ce qui peut échouer est fait AVANT le lancement : après lui, plus aucune erreur ne
+        // peut laisser un processus, un cgroup ou une tâche du mandataire orphelins (M4).
+        let pair = std::os::unix::net::UnixStream::pair().and_then(|(ours, theirs)| {
+            ours.set_nonblocking(true)?;
+            Ok((tokio::net::UnixStream::from_std(ours)?, theirs))
+        });
+        let (io, theirs) = match pair {
+            Ok(p) => p,
+            Err(_) => {
+                if let Some(t) = &proxy_task {
+                    t.abort();
+                }
+                if let Some(c) = cgroup {
+                    c.destroy().await;
+                }
+                cleanup_dir(&dir);
+                return Err(LaunchError("socketpair"));
+            }
+        };
         let started = Instant::now();
         let spawned = tokio::process::Command::new(&self.program)
             .arg(stage)
@@ -271,8 +297,6 @@ impl SandboxLauncher {
         };
         let pid = child.id();
         let stderr = child.stderr.take().map(|e| tokio::spawn(read_setup_error(e)));
-        ours.set_nonblocking(true).map_err(|_| LaunchError("socketpair"))?;
-        let io = tokio::net::UnixStream::from_std(ours).map_err(|_| LaunchError("socketpair"))?;
         Ok(RawWorker {
             io,
             process: SandboxProcess {

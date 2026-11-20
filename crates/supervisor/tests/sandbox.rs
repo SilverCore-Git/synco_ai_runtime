@@ -408,3 +408,21 @@ async fn vrai_worker_et_cout() {
     spawned.process.kill();
     assert_eq!(spawned.process.wait().await, WorkerExit::Signaled(libc::SIGKILL));
 }
+
+/// M4 : un lancement refusé après la création du répertoire du worker (route LLM refusée) ne
+/// laisse ni répertoire ni socket.
+#[tokio::test]
+async fn lancement_refuse_sans_reste() {
+    let run = run_dir();
+    let l = launcher(&run, Mode::Insecure, no_proxy()).await;
+    let route = LlmRoute {
+        provider: "openai".into(),
+        base_url: "http://evil.example.com/v1".into(),
+        budget: LlmBudget::default(),
+    };
+    let args = synco_ai_runtime::sandbox::ChildArgs { payload: "worker".into(), ..Default::default() };
+    let err = l.spawn_child(args, &limits(), Some(route), vec![]).await.unwrap_err();
+    assert_eq!(err.0, "llm_route_refused");
+    let left: Vec<_> = std::fs::read_dir(run.path().join("w")).unwrap().flatten().map(|e| e.file_name()).collect();
+    assert!(left.is_empty(), "restes : {left:?}");
+}

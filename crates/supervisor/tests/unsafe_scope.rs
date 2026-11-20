@@ -9,6 +9,7 @@
     clippy::unwrap_used,
     clippy::indexing_slicing,
     clippy::arithmetic_side_effects,
+    clippy::string_slice,
     missing_docs,
     reason = "tests"
 )]

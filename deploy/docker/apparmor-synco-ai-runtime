@@ -11,10 +11,13 @@
 # Chargement :  sudo apparmor_parser -r -W deploy/docker/apparmor-synco-ai-runtime
 # Usage      :  docker run --security-opt apparmor=synco-ai-runtime …
 # Ubuntu >= 23.10 (kernel.apparmor_restrict_unprivileged_userns=1) : la règle `userns,` ci-dessous
-# est ce qui autorise la création d'espaces de noms utilisateur ; AppArmor >= 4.0 requis. Sur un
-# AppArmor plus ancien, supprimer cette ligne.
+# est ce qui autorise la création d'espaces de noms utilisateur ; elle n'est appliquée qu'avec
+# `abi <abi/4.0>` (AppArmor >= 4.0 requis, ce que déclare la ligne abi ci-dessous). Attention : en ABI 4.0,
+# `network` n'inclut plus `network unix` (moby/containerd#12726) : les sockets Unix du mandataire LLM
+# (entre processus du conteneur) sont à vérifier ; ajouter `unix,` au besoin. NON TESTÉ.
+# Sur un AppArmor < 4.0, repasser à `abi <abi/3.0>` et supprimer la règle userns.
 
-abi <abi/3.0>,
+abi <abi/4.0>,
 
 #include <tunables/global>
 
@@ -22,6 +25,7 @@ profile synco-ai-runtime flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
 
   network,
+  unix,
   # Disallow AF_ALG (Linux kernel crypto API) et AF_VSOCK, comme docker-default.
   deny network alg,
   deny network vsock,

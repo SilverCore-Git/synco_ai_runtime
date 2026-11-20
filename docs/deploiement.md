@@ -244,8 +244,9 @@ Docker, par défaut, bloque trois choses dont le bac à sable a besoin :
    (`seccomp=unconfined` fonctionne aussi mais prive le superviseur du filtre de Docker.)
 2. **AppArmor** (`docker-default`, hôtes Ubuntu/Debian) : `deny mount`. → profil dédié
    [`deploy/docker/apparmor-synco-ai-runtime`](../deploy/docker/apparmor-synco-ai-runtime) (docker-default sans
-   `deny mount`, plus `userns`, `mount`, `pivot_root`). **Jamais chargé ni testé** : pas d'hôte AppArmor ici, et la règle
-   `userns` n'existe qu'avec `abi <abi/4.0>` (AppArmor ≥ 4.0). `sudo apparmor_parser -r -W deploy/docker/apparmor-synco-ai-runtime`.
+   `deny mount`, plus `userns`, `mount`, `pivot_root`). **Jamais chargé ni testé** : pas d'hôte AppArmor ici. Le profil
+   déclare `abi <abi/4.0>` (la règle `userns` n'est appliquée qu'avec AppArmor ≥ 4.0 ; en ABI 4.0, `network` n'inclut plus
+   `network unix`, d'où une règle `unix,` ajoutée, à vérifier). `sudo apparmor_parser -r -W deploy/docker/apparmor-synco-ai-runtime`.
 3. **cgroup v2** : Docker monte `/sys/fs/cgroup` en lecture seule hors `--privileged`, même en `--cgroupns=private`
    (moby#46763). Décision du projet : un **sous-arbre cgroup délégué de l'hôte**, dédié au conteneur, désigné par
    `[sandbox] cgroup_root`. **Jamais** tout `/sys/fs/cgroup`.

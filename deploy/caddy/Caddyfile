@@ -1,0 +1,44 @@
+# Vhosts Caddy du Synco AI Runtime (v1 : pas de TLS natif, ce mandataire est OBLIGATOIRE).
+# Caddy obtient et renouvelle seul un certificat reconnu (ACME) pour un nom public ; pour un nom
+# interne, utiliser le CA de l'entreprise (`tls /chemin/cert.pem /chemin/key.pem`) : un certificat
+# auto-signé fait échouer le WebSocket (décision D10).
+#
+# Côté runtime (config.toml) : listen.trust_proxy_hops = 1, dashboard.trust_proxy_hops = 1,
+# dashboard.allowed_hosts = ["runtime-admin.example.com"].
+#
+# Journal des accès : Caddy n'écrit ni corps ni en-têtes d'autorisation par défaut ; ne pas activer
+# de journal de corps.
+
+# --- Endpoints publics : fiche, défi, WebSocket (détection automatique de l'Upgrade) ---------------
+runtime.example.com {
+	# Seul /v1/ est relayé.
+	handle /v1/* {
+		reverse_proxy 127.0.0.1:8790 {
+			# Un seul mandataire : on ÉCRASE X-Forwarded-For (trust_proxy_hops = 1).
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			# Pas de mise en tampon : flux et évènements immédiats.
+			flush_interval -1
+		}
+	}
+	handle {
+		respond 404
+	}
+	# CORS : géré par le runtime (allowed_origins) ; ne pas ajouter d'en-têtes Access-Control-*.
+	header Strict-Transport-Security "max-age=31536000"
+}
+
+# --- Dashboard ----------------------------------------------------------------------------------
+runtime-admin.example.com {
+	# Exemple de restriction réseau (recommandé) :
+	# @interdit not remote_ip 192.0.2.0/24
+	# respond @interdit 403
+
+	reverse_proxy 127.0.0.1:8791 {
+		# Host est transmis tel quel (contrôlé par dashboard.allowed_hosts) ; X-Forwarded-* écrasés
+		# (jamais ceux du client), cookie de session Secure.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+	header Strict-Transport-Security "max-age=31536000"
+}

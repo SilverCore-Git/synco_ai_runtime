@@ -359,6 +359,15 @@ Ce que les deux font, et pourquoi :
 - **aucun en-tête CORS** ajouté par le mandataire : le runtime gère l'origine (`allowed_origins`) ;
 - ne pas journaliser les corps ni les en-têtes d'autorisation (les tickets ne sont jamais dans l'URL).
 
+**Limite de `trust_proxy_hops = 1` sur un hôte partagé.** Avec `trust_proxy_hops = 1`, le runtime fait confiance à
+`X-Forwarded-For` / `X-Forwarded-Proto` de **toute connexion** qui arrive sur son port. Tout utilisateur local de la
+machine qui atteint `127.0.0.1:8790` ou `127.0.0.1:8791` (sans passer par le mandataire) peut donc **forger ces en-têtes** :
+contourner la limite de débit par adresse (dashboard : 5 échecs / 15 min), et les `allow`/`deny` du vhost du dashboard
+(le mandataire n'est jamais traversé). Le mot de passe du dashboard reste exigé. **Recommandation** : un hôte dédié au
+runtime, ou au minimum un compte système dédié (Podman rootless sous ce compte : le port publié sur la boucle locale reste
+joignable par les autres comptes locaux, d'où l'hôte dédié) ; ne pas héberger le runtime sur une machine où des utilisateurs
+non fiables ont un shell.
+
 Conteneur : si le mandataire tourne **dans** le même réseau Compose, publier les ports sur ce réseau interne seulement ;
 `listen.allow_non_loopback_plain_http = true` (nécessaire dans un conteneur) n'est sûr que si 8790/8791 ne sont jamais
 exposés hors boucle locale / réseau interne.

@@ -89,3 +89,19 @@ Conception, coût mesuré, systemd et Docker : [`docs/plan/10-bac-a-sable.md`](.
 - Vérifier l'environnement réel : `synco-ai-runtime --config … sandbox-check`.
 - systemd : `Delegate=yes` et `ProtectControlGroups=private` (unité d'exemple).
 - Tests sur l'hôte : `host-spawn sh crates/supervisor/tests/sandbox-host.sh`.
+
+## Dashboard (L08)
+
+Interface web de l'administrateur du runtime : état, empreinte de la clé, sessions (tokens, coût
+estimé, CPU et RAM des workers), totaux par utilisateur et par fournisseur. **Jamais de contenu de
+conversation.** Conception et choix d'authentification : `docs/plan/11-dashboard.md`.
+
+```text
+synco-ai-runtime --config /etc/synco-ai-runtime/config.toml dashboard-password   # définit le mot de passe
+```
+
+Sans mot de passe, le dashboard ne démarre pas (le journal l'indique). Il écoute sur
+`listen.dashboard` (défaut `127.0.0.1:8791`) ; derrière un mandataire TLS, déclarer le nom d'hôte
+dans `dashboard.allowed_hosts`. L'historique est dans `<state_dir>/dashboard/` (JSONL) et conservé
+`dashboard.retention_days` jours (défaut 90). Redémarrer le runtime après avoir défini le mot de
+passe la première fois ; un changement ultérieur est pris en compte à chaud (sessions fermées).

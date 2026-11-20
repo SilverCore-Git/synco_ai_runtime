@@ -1,4 +1,4 @@
-//! Interface des **adaptateurs LLM** du worker (lot L07 ; Gemini et Mistral spécifiques : L07b).
+//! Interface des **adaptateurs LLM** du worker (lot L07 ; Mistral et Gemini : L07b).
 //!
 //! Un adaptateur ne fait **aucune** entrée/sortie : il traduit une requête normalisée
 //! ([`ChatRequest`]) en appel HTTP ([`HttpCall`]) et décode le flux de la réponse en évènements
@@ -18,6 +18,8 @@
 //!   Bearer sgt1…` est fourni par l'appelant ([`ChatRequest::bearer`]) ;
 //! - erreurs typées ([`LlmError`]), jamais de texte du fournisseur (il peut recopier le contenu).
 
+pub mod gemini;
+pub mod mistral;
 pub mod openai;
 pub mod think;
 
@@ -310,18 +312,16 @@ pub fn classify_http_error(status: u16, retry_after_secs: Option<u64>, body: &[u
     }
 }
 
-/// Adaptateur du fournisseur configuré. L07 : un seul adaptateur compatible OpenAI pour tous ;
-/// L07b remplacera les branches `Mistral` et `Gemini` par leurs adaptateurs propres.
+/// Adaptateur du fournisseur configuré : `openai`, `gateway` et `custom` parlent le dialecte compatible
+/// OpenAI ; Mistral et Gemini (par son endpoint compatible OpenAI) ont leur adaptateur (L07b).
 #[must_use]
 pub fn adapter_for(provider: LlmProvider) -> Box<dyn LlmAdapter> {
     match provider {
         LlmProvider::Openai => Box::new(openai::OpenAiCompatible::openai()),
         LlmProvider::Gateway => Box::new(openai::OpenAiCompatible::gateway()),
         LlmProvider::Custom => Box::new(openai::OpenAiCompatible::custom()),
-        // L07b : adaptateurs dédiés (docs/journal.md, brief L07b). En attendant, le dialecte
-        // compatible OpenAI (Mistral le parle ; Gemini l'expose sous `/v1beta/openai`).
-        LlmProvider::Mistral => Box::new(openai::OpenAiCompatible::custom_named("mistral")),
-        LlmProvider::Gemini => Box::new(openai::OpenAiCompatible::custom_named("gemini")),
+        LlmProvider::Mistral => Box::new(mistral::Mistral),
+        LlmProvider::Gemini => Box::new(gemini::Gemini),
     }
 }
 

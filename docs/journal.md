@@ -539,6 +539,32 @@ tests, tous verts) ; `node --check` des deux fichiers JS (via `host-spawn`). Tes
   filtres, tri, totaux, coûts par période, force brute (par adresse, globale, rafale parallèle,
   remise à zéro), expiration des sessions, changement de mot de passe.
 
+**Corrections après revue Opus légère** (commits `7bc8b18`, `d8cada6`, `44f34d3`, `3ae6455`, `4ed692b`) :
+
+- **I1** : le dashboard avait repris `listen.trust_proxy_hops` (défaut 1) et croyait `X-Forwarded-For` /
+  `X-Forwarded-Proto` sur une connexion directe (contournement de la limite par adresse, blocage de
+  l'admin par la limite globale). Réglage propre `dashboard.trust_proxy_hops`, **défaut 0** (en-têtes
+  ignorés), borné à 4. La limite globale n'est plus un refus : au-delà de 20 échecs / 15 min, une
+  adresse inconnue ne déclenche qu'une vérification toutes les 5 s ; les 8 dernières adresses ayant
+  ouvert une session en sont exemptées (jamais de la limite par adresse stricte) ; IPv6 compté par /64.
+  `docs/plan/11-dashboard.md` §3 et README (blocs nginx / Caddy) mis à jour. Tests : XFF ignoré par
+  défaut et lu à 1, `Secure` non posé sur un `X-Forwarded-Proto` forgé à 0, admin connecté pendant une
+  attaque continue (adresse connue sans attente, adresse nouvelle après ≤ 5 s), IPv6 /64.
+- **I2** : plafond `MAX_RUNS` appliqué après le chargement ; élagage amorti (jusqu'à 90 % du plafond,
+  une passe O(n log n) tous les 5 000 ajouts) au lieu d'une passe quadratique à chaque ajout. Test :
+  75 000 enregistrements chargés → plafond respecté, plus récentes gardées, 2 000 ajouts rapides.
+- **M1** (marqueur dans `status.status`, mutation de `clean_status` vérifiée : le test échoue),
+  **M2** (listes, totaux, coûts sur des exécutions **sans chronologie** ; seul le détail clone celles
+  d'une session), **M4** (identifiant d'exécution avec aléa : unique à travers les redémarrages),
+  **M5** (rechargement : `done_reason`, `exit`, `run_id` et chaînes de la chronologie refiltrés ;
+  enregistrement à identifiant invalide ignoré), **M6** (page HTML sans session : 401 avec un court
+  corps renvoyant vers `/login` ; `/api` reste en JSON ; `decodeURIComponent` protégé), **M7**
+  (fichier du mot de passe illisible ou invalide : dashboard non démarré, journal
+  `dashboard_password_unreadable`), **M8** (`Host` insensible à la casse).
+- **M3** laissé : les écritures JSONL (points de reprise toutes les 60 s, fin d'exécution) se font sous
+  le verrou de l'historique ; volume faible (quelques centaines d'octets), non critique.
+- I2, M2, M4, M5 sont dans un seul commit (mêmes fichiers, impossibles à séparer proprement).
+
 **Écarts / décisions remontées** :
 
 1. **Authentification** : mot de passe local retenu. La connexion par ticket Synco (admins de l'org)

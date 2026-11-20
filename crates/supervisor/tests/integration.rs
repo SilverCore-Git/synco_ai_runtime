@@ -255,7 +255,28 @@ async fn authorize(env: &Env) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn aller_retour_client_superviseur_worker() {
-    let env = setup().await;
+    aller_retour(setup().await).await;
+}
+
+/// Même scénario avec le **vrai** bac à sable (L06) : le worker est un processus isolé, relancé
+/// depuis le binaire du superviseur. Sur l'hôte seulement, dans un cgroup délégué
+/// (`crates/supervisor/tests/sandbox-host.sh`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "noyau : espaces de noms, cgroup délégué (tests/sandbox-host.sh)"]
+async fn aller_retour_avec_bac_a_sable() {
+    use synco_ai_runtime::sandbox::{Mode, SandboxLauncher, SandboxSettings, proxy::LlmProxy};
+    let run = tempfile::Builder::new().prefix("l06").tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let settings = SandboxSettings {
+        program: Some(env!("CARGO_BIN_EXE_synco-ai-runtime").into()),
+        cgroup_root: None,
+        run_dir: run.path().join("w"),
+    };
+    let launcher =
+        SandboxLauncher::new(&settings, Mode::Sandboxed, LlmProxy::new(BTreeMap::new()).unwrap()).await.unwrap();
+    aller_retour(setup_with(Arc::new(launcher)).await).await;
+}
+
+async fn aller_retour(env: Env) {
     let rt = Arc::clone(&env.running.runtime);
     let http = reqwest::Client::new();
     let base = format!("http://{}", env.running.public_addr);

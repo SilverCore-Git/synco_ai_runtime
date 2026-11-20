@@ -33,6 +33,8 @@ pub const CRED_NAME: &str = "synco-ai-runtime-keys";
 /// Longueur minimale d'une phrase de passe.
 pub const MIN_PASSPHRASE_CHARS: usize = 12;
 const AAD_LABEL: &str = "synco-rt-keystore-v1";
+/// Tampon fixe des secrets lus (clés déscellées, phrase de passe).
+const SECRET_BUFFER: usize = 4096;
 
 /// Paramètres Argon2id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -261,7 +263,8 @@ fn aad(params: KdfParams, salt: &str) -> String {
 
 fn derive(passphrase: &[u8], salt: &[u8], params: KdfParams) -> Result<Zeroizing<[u8; 32]>> {
     // Bornes : un fichier altéré ne doit pas faire allouer 1 Tio au démarrage.
-    if params.m_kib > 4 * 1024 * 1024 || params.t > 64 || params.p > 16 || salt.len() < 16 {
+    if params.m_kib > 1024 * 1024 || params.t == 0 || params.t > 16 || params.p == 0 || params.p > 8 || salt.len() < 16
+    {
         return Err(ks("paramètres Argon2id hors bornes"));
     }
     let p = Params::new(params.m_kib, params.t, params.p, Some(32)).map_err(|_| ks("paramètres Argon2id invalides"))?;
@@ -313,15 +316,41 @@ fn open_passphrase_file(path: &Path, source: &PassphraseSource) -> Result<Zeroiz
     open_with_passphrase(&doc, &passphrase)
 }
 
+/// Fichier secret (phrase de passe) : fichier ordinaire, propriétaire = utilisateur du processus,
+/// droits `0600` ou `0400` (aucun accès pour le groupe ni les autres).
+pub fn check_secret_file(path: &Path) -> Result<()> {
+    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+    let meta = std::fs::metadata(path).map_err(|e| ks(format!("passphrase_file : {}", e.kind())))?;
+    if !meta.is_file() {
+        return Err(ks("passphrase_file n'est pas un fichier ordinaire"));
+    }
+    if meta.uid() != rustix::process::getuid().as_raw() {
+        return Err(ks("passphrase_file doit appartenir à l'utilisateur du runtime"));
+    }
+    if meta.permissions().mode() & 0o077 != 0 {
+        return Err(ks("passphrase_file : droits 0600 ou 0400 attendus"));
+    }
+    if meta.len() >= u64::try_from(SECRET_BUFFER).unwrap_or(4096) {
+        return Err(ks("passphrase_file trop long"));
+    }
+    Ok(())
+}
+
 fn read_passphrase(source: &PassphraseSource, creating: bool) -> Result<Zeroizing<String>> {
     let value = match source {
         PassphraseSource::Provided(p) => p.clone(),
         PassphraseSource::File(path) => {
-            let mut s = Zeroizing::new(String::new());
+            check_secret_file(path)?;
+            // Capacité réservée d'avance (fichier ≤ 4 Kio) : pas de réallocation.
+            let mut s = Zeroizing::new(String::with_capacity(SECRET_BUFFER));
             std::fs::File::open(path)
-                .and_then(|mut f| f.read_to_string(&mut s))
+                .and_then(|f| {
+                    f.take(u64::try_from(SECRET_BUFFER).unwrap_or(4096).saturating_sub(1)).read_to_string(&mut s)
+                })
                 .map_err(|e| ks(format!("passphrase_file illisible : {}", e.kind())))?;
-            Zeroizing::new(s.trim_end_matches(['\n', '\r']).to_owned())
+            let end = s.trim_end_matches(['\n', '\r']).len();
+            s.truncate(end);
+            s
         }
         PassphraseSource::Terminal => {
             let first = prompt_hidden("Phrase de passe des clés du runtime : ")?;
@@ -358,11 +387,14 @@ fn prompt_hidden(prompt: &str) -> Result<Zeroizing<String>> {
     let _ = err.write_all(prompt.as_bytes());
     let _ = err.flush();
     tcsetattr(&stdin, OptionalActions::Flush, &hidden).map_err(|_| ks("terminal non configurable"))?;
-    let mut line = Zeroizing::new(String::new());
+    // Capacité réservée : une ligne de moins de 4 Kio ne provoque aucune réallocation.
+    let mut line = Zeroizing::new(String::with_capacity(SECRET_BUFFER));
     let read = stdin.read_line(&mut line);
     let _ = tcsetattr(&stdin, OptionalActions::Flush, &original);
     read.map_err(|_| ks("lecture du terminal impossible"))?;
-    Ok(Zeroizing::new(line.trim_end_matches(['\n', '\r']).to_owned()))
+    let end = line.trim_end_matches(['\n', '\r']).len();
+    line.truncate(end);
+    Ok(line)
 }
 
 // ---------------------------------------------------------------------------
@@ -417,16 +449,35 @@ fn systemd_decrypt(path: &Path, user: bool) -> Result<Zeroizing<Vec<u8>>> {
                 .map_err(|e| ks(format!("identifiant systemd : {}", e.kind())));
         }
     }
-    let out = systemd_command(user)
+    let mut child = systemd_command(user)
         .arg("decrypt")
         .arg(format!("--name={CRED_NAME}"))
         .arg(path)
         .arg("-")
         .stdin(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
+        .spawn()
         .map_err(|e| ks(format!("systemd-creds introuvable : {}", e.kind())))?;
-    let secret = Zeroizing::new(out.stdout);
+    // Lecture dans un tampon effacé de taille fixe (aucune réallocation qui laisserait une copie).
+    let mut secret = Zeroizing::new(vec![0u8; SECRET_BUFFER]);
+    let mut filled = 0usize;
+    if let Some(mut stdout) = child.stdout.take() {
+        while let Some(rest) = secret.get_mut(filled..) {
+            if rest.is_empty() {
+                let _ = child.kill();
+                return Err(ks("sortie de systemd-creds trop longue"));
+            }
+            match stdout.read(rest) {
+                Ok(0) => break,
+                Ok(n) => filled = filled.saturating_add(n),
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(ks(format!("systemd-creds : {}", e.kind()))),
+            }
+        }
+    }
+    secret.truncate(filled);
+    let out = child.wait_with_output().map_err(|e| ks(format!("systemd-creds : {}", e.kind())))?;
     if !out.status.success() {
         return Err(ks(format!(
             "systemd-creds decrypt a échoué : {}",
@@ -458,6 +509,29 @@ mod tests {
         assert!(create(&state, &provided("une phrase assez longue")).is_err(), "pas d'écrasement");
         assert!(reset(&state).unwrap());
         assert!(load(&state, &provided("x")).unwrap().is_none());
+    }
+
+    #[test]
+    fn fichier_de_phrase_de_passe_controle() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("pp");
+        std::fs::write(&file, "une phrase assez longue\n").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(check_secret_file(&file).is_err(), "lisible par les autres : refusé");
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+        check_secret_file(&file).unwrap();
+        let src = PassphraseSource::File(file);
+        assert_eq!(read_passphrase(&src, false).unwrap().as_str(), "une phrase assez longue");
+        assert!(check_secret_file(dir.path()).is_err(), "répertoire refusé");
+    }
+
+    #[test]
+    fn bornes_argon2_a_la_lecture() {
+        let doc = seal_with_passphrase(b"secret", "une phrase assez longue", FAST, &mut OsRandom).unwrap();
+        let mut v: serde_json::Value = serde_json::from_slice(&doc).unwrap();
+        v["kdf"]["mKib"] = serde_json::Value::from(4u64 * 1024 * 1024);
+        assert!(open_with_passphrase(&serde_json::to_vec(&v).unwrap(), "une phrase assez longue").is_err());
     }
 
     #[test]

@@ -221,7 +221,9 @@ pub struct Provider {
     pub base_url: Option<String>,
     /// Fichier contenant la clé API (lu au démarrage, gardé en mémoire effacée à la libération).
     pub api_key_file: Option<PathBuf>,
-    /// Variable d'environnement contenant la clé API.
+    /// Variable d'environnement contenant la clé API. Elle reste dans l'environnement du processus
+    /// (la retirer exige `unsafe` en Rust 2024) : préférer `api_key_file` ; L06 vide
+    /// l'environnement des workers (`env_clear`).
     pub api_key_env: Option<String>,
     /// Tarif indicatif (€ / million de tokens d'entrée), pour le dashboard.
     pub input_eur_per_mtok: Option<f64>,

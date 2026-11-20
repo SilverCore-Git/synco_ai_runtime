@@ -250,7 +250,12 @@ impl KeyFrame {
     /// Encode (≤ 64 Kio). Contrôle chaque entrée.
     pub fn encode(&self) -> Result<Zeroizing<Vec<u8>>, PipeError> {
         let count = u16::try_from(self.entries.len()).map_err(|_| PipeError::BadKeys)?;
-        let mut out = Zeroizing::new(Vec::new());
+        // Capacité exacte calculée d'avance : aucune réallocation ne laisse de copie des clés.
+        let size = self.entries.iter().fold(3usize, |acc, e| acc.saturating_add(entry_size(e, self.op)));
+        if size > MAX_KEYS_PAYLOAD {
+            return Err(PipeError::BadKeys);
+        }
+        let mut out = Zeroizing::new(Vec::with_capacity(size));
         out.push(if self.op == KeyOp::Add { 0x01 } else { 0x02 });
         out.extend_from_slice(&count.to_be_bytes());
         for e in &self.entries {
@@ -268,7 +273,7 @@ impl KeyFrame {
             out.extend_from_slice(&u16::try_from(key.len()).map_err(|_| PipeError::BadKeys)?.to_be_bytes());
             out.extend_from_slice(key);
         }
-        if out.len() > MAX_KEYS_PAYLOAD {
+        if out.len() > MAX_KEYS_PAYLOAD || out.capacity() != size {
             return Err(PipeError::BadKeys);
         }
         Ok(out)
@@ -950,6 +955,7 @@ mod tests {
         assert_eq!(back.entries[0].key.as_slice(), &[7; 32]);
         assert_eq!(back.entries[1].kind, KeyKind::LlmCredential);
         assert!(!format!("{back:?}").contains('7'), "clés masquées dans Debug");
+        assert_eq!(bytes.capacity(), bytes.len(), "aucune réallocation pendant l'encodage");
     }
 
     #[test]

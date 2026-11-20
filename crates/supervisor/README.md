@@ -69,8 +69,10 @@ Le mandataire ne doit pas journaliser les corps ; les tickets ne sont jamais dan
   dans ce dépôt ; `mlockall` ferait échouer les allocations). Désactiver l'espace d'échange pour le
   service (`MemorySwapMax=0`) ou utiliser un swap chiffré.
 - `passphrase_file` doit appartenir à l'utilisateur du service, droits `0600` ou `0400`.
-- Une clé LLM lue par `api_key_env` est retirée de l'environnement du processus après lecture ;
-  préférer `api_key_file` avec un identifiant systemd.
+- Une clé LLM lue par `api_key_env` **reste** dans l'environnement du processus : la retirer
+  (`std::env::remove_var`) exige du code non sûr en Rust 2024, interdit ici. Préférer
+  `api_key_file` avec un identifiant systemd. Le lanceur des workers (L06) doit vider leur
+  environnement (`env_clear`) : un worker ne doit jamais hériter de cette variable.
 
 ## Workers
 

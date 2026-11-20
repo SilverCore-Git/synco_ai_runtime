@@ -31,6 +31,8 @@ pub struct Running {
     pub runtime: Arc<Runtime>,
     /// Adresse d'écoute publique effective.
     pub public_addr: SocketAddr,
+    /// Adresse du dashboard, s'il est démarré (mot de passe défini, docs/plan/11).
+    pub dashboard_addr: Option<SocketAddr>,
     /// Fin de la boucle principale.
     pub task: tokio::task::JoinHandle<()>,
 }
@@ -60,6 +62,10 @@ pub async fn start(
             }
         });
     }
+    let dashboard_addr = crate::dashboard::start(&runtime)
+        .await
+        .map_err(|e| Error::Io(format!("écoute du dashboard : {}", e.kind())))?
+        .map(|d| d.addr);
     tracing::info!(
         code = "runtime_started",
         runtime_id = runtime.keys.runtime_id(),
@@ -69,7 +75,7 @@ pub async fn start(
         "superviseur démarré"
     );
     let task = tokio::spawn(main_loop(Arc::clone(&runtime)));
-    Ok(Running { runtime, public_addr, task })
+    Ok(Running { runtime, public_addr, dashboard_addr, task })
 }
 
 async fn main_loop(rt: Arc<Runtime>) {

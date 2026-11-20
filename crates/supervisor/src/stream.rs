@@ -203,7 +203,10 @@ pub async fn run(rt: Arc<Runtime>) -> StreamEnd {
         let outcome = match connect(&rt).await {
             Ok(socket) => {
                 tracing::info!(code = "stream_connected", "flux de notifications ouvert");
-                session(&rt, socket).await
+                rt.api_connected.store(true, std::sync::atomic::Ordering::Relaxed);
+                let outcome = session(&rt, socket).await;
+                rt.api_connected.store(false, std::sync::atomic::Ordering::Relaxed);
+                outcome
             }
             Err(code) => {
                 tracing::warn!(code, "flux de notifications injoignable");

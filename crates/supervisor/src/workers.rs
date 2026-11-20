@@ -21,6 +21,18 @@ use crate::runtime::Runtime;
 use crate::state::{ToWorker, WorkerHandle, WorkerState};
 
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
+/// Relevé de la consommation du cgroup d'un worker pour le dashboard (docs/plan/11).
+const SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
+
+const fn done_reason(r: pipe::DoneReason) -> &'static str {
+    match r {
+        pipe::DoneReason::Idle => "idle",
+        pipe::DoneReason::Awaiting => "awaiting",
+        pipe::DoneReason::Failed => "failed",
+        pipe::DoneReason::Cancelled => "cancelled",
+        pipe::DoneReason::Shutdown => "shutdown",
+    }
+}
 
 /// Tue le worker après `delay` (si l'arrêt demandé n'a pas suffi).
 pub fn kill_after(kill: watch::Sender<bool>, delay: Duration) {
@@ -321,6 +333,10 @@ async fn drive(
 ) {
     let crate::launcher::SpawnedWorker { io, mut process } = spawned;
     let lease_epoch = init.lease_epoch;
+    // Dashboard (L08) : uniquement des compteurs et des états de liste fermée, jamais de contenu.
+    let run_id = rt.history.begin_run(&session, &user_id, init.llm.provider.as_str(), &init.llm.model, now_secs());
+    let mono = Instant::now();
+    let mut sampler = tokio::time::interval(SAMPLE_INTERVAL);
     let (mut rd, wr) = tokio::io::split(io);
     let writer_task = tokio::spawn(writer(wr, rx));
     let mut done = false;
@@ -345,10 +361,11 @@ async fn drive(
                     }
                     Ok(Incoming::Msg(WorkerMsg::Done(d))) => {
                         tracing::info!(code = "worker_done", reason = ?d.reason, "fin du worker");
+                        rt.history.on_done(&run_id, done_reason(d.reason), now_secs());
                         done = true;
                     }
                     Ok(Incoming::Msg(m)) => {
-                        if let Err(code) = on_worker_msg(&rt, &session, &user_id, &auth_id, &tx, m).await {
+                        if let Err(code) = on_worker_msg(&rt, &run_id, &session, &user_id, &auth_id, &tx, m).await {
                             // Incident de sécurité ou violation du protocole : le worker est tué.
                             tracing::error!(code, "worker tué (violation du protocole)");
                             rt.state.lock().await.alert(now_secs(), code);
@@ -361,6 +378,12 @@ async fn drive(
                         break;
                     }
                 },
+                _ = sampler.tick() => {
+                    if let Some(u) = process.usage() {
+                        let ms = u64::try_from(mono.elapsed().as_millis()).unwrap_or(u64::MAX);
+                        rt.history.on_sample(&run_id, u, now_secs(), ms);
+                    }
+                }
                 changed = kill_rx.changed() => {
                     if changed.is_err() || *kill_rx.borrow() {
                         break;
@@ -368,6 +391,11 @@ async fn drive(
                 }
             }
         }
+    }
+    // Dernier relevé du cgroup, avant que le process ne disparaisse.
+    if let Some(u) = process.usage() {
+        let ms = u64::try_from(mono.elapsed().as_millis()).unwrap_or(u64::MAX);
+        rt.history.on_sample(&run_id, u, now_secs(), ms);
     }
     // Fin : laisser le worker partir s'il a annoncé `done`, sinon le tuer.
     if !done {
@@ -382,6 +410,7 @@ async fn drive(
     };
     writer_task.abort();
     let clean = done && exit.is_clean();
+    rt.history.end_run(&run_id, exit, !clean && !rt.is_shutting_down(), now_secs());
     {
         let mut st = rt.state.lock().await;
         if let Some(conv) = st.convs.get_mut(&session)
@@ -423,6 +452,7 @@ async fn handshake(
 
 async fn on_worker_msg(
     rt: &Arc<Runtime>,
+    run_id: &str,
     session: &str,
     user_id: &str,
     auth_id: &str,
@@ -473,6 +503,7 @@ async fn on_worker_msg(
             }
         }
         WorkerMsg::Status(s) => {
+            rt.history.on_status(run_id, &s.status, s.reason.as_deref(), now_secs());
             let mut st = rt.state.lock().await;
             if let Some(conv) = st.convs.get_mut(session)
                 && s.status.len() <= 32
@@ -502,6 +533,7 @@ async fn on_worker_msg(
         WorkerMsg::SignedRequest(req) => relay(rt, session, user_id, auth_id, tx, req).await?,
         WorkerMsg::InboxAck(a) => tracing::debug!(code = "inbox_ack", count = a.ids.len(), "éléments consommés"),
         WorkerMsg::Metrics(m) => {
+            rt.history.on_metrics(run_id, &m, now_secs());
             let mut st = rt.state.lock().await;
             if let Some(WorkerState::Running(w)) = st.convs.get_mut(session).map(|c| &mut c.worker) {
                 w.metrics = Some(*m);

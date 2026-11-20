@@ -41,6 +41,7 @@ const USER: &str = "66666666-7777-4888-9999-aaaaaaaaaaaa";
 const BAD_USER: &str = "77777777-7777-4888-9999-aaaaaaaaaaaa";
 const SESSION: &str = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const AUTH: &str = "9e8d7c6b-5a49-4382-9170-6f5e4d3c2b1a";
+const DASH_PW: &str = "mot de passe du dashboard de test";
 const PASSPHRASE: &str = "phrase de passe des tests d'intégration";
 const CK: [u8; 32] = [0xdd; 32];
 const THREAD_KEY: [u8; 32] = [0xbb; 32];
@@ -133,6 +134,13 @@ async fn setup_llm(
     let state_dir = dir.path().join("etat");
     // Clés générées et scellées par phrase de passe (comme au premier démarrage).
     let keys = seal::create(&state_dir, &backend()).unwrap();
+    // Dashboard (L08) : un mot de passe est défini, le dashboard démarre sur 127.0.0.1:0.
+    synco_ai_runtime::dashboard::auth::set_password(
+        &state_dir,
+        DASH_PW,
+        synco_ai_runtime::seal::KdfParams { m_kib: 256, t: 1, p: 1 },
+    )
+    .unwrap();
     let keys_secret = keys.to_secret_bytes();
     let ticket_key = SigningKey::from_bytes(&[0x2c; 32]);
     let api = common::start(keys.runtime_id(), keys.sig().verifying_key(), ticket_key).await;
@@ -525,12 +533,26 @@ async fn aller_retour(env: Env, expected: &str) {
     assert_no_private_key_on_disk(&env);
 }
 
+/// Tous les fichiers sous `dir`, récursivement.
+fn all_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            out.extend(all_files(&path));
+        } else {
+            out.push(path);
+        }
+    }
+    out
+}
+
 fn assert_no_private_key_on_disk(env: &Env) {
     let privates: Vec<&[u8]> = env.keys_secret[4 + 1 + 36..].chunks(32).collect();
     assert_eq!(privates.len(), 3);
     let mut files = 0;
-    for entry in std::fs::read_dir(&env.state_dir).unwrap() {
-        let bytes = std::fs::read(entry.unwrap().path()).unwrap();
+    for path in all_files(&env.state_dir) {
+        let bytes = std::fs::read(path).unwrap();
         files += 1;
         for p in &privates {
             for needle in
@@ -1159,4 +1181,193 @@ async fn created_key_reserve_aux_salons_crees_par_ce_worker() {
     assert!(!report.lock().unwrap().survived, "trame de clés interdite : worker tué");
     env.api.with(|st| assert_eq!(st.threads_created, 34, "aucune requête relayée après la trame interdite"));
     synco_ai_runtime::app::shutdown(&rt).await;
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard (L08) : aucun contenu de conversation dans ses réponses ni dans son stockage
+// ---------------------------------------------------------------------------
+
+/// Marqueur injecté partout où un contenu de conversation peut passer par le superviseur.
+const MARKER: &str = "MARQUEUR-CONFIDENTIEL-9f3a7c";
+
+struct Marked;
+
+async fn marked_script(io: tokio::io::DuplexStream) {
+    let (mut rd, mut wr) = tokio::io::split(io);
+    let SupervisorMsg::Init(init) = read(&mut rd).await else { panic!("init attendu") };
+    wire::write_json(&mut wr, &WorkerMsg::Ready(wire::ReadyMsg { pid: 1, version: "test".into() })).await.unwrap();
+    while !matches!(read(&mut rd).await, SupervisorMsg::Start(_)) {}
+    // Journal avec le marqueur (refusé par le superviseur, jamais copié ailleurs).
+    wire::write_json(
+        &mut wr,
+        &WorkerMsg::Log(wire::LogMsg {
+            level: "info".into(),
+            code: "marqueur_dans_un_journal".into(),
+            fields: [("texte".to_owned(), json!(MARKER)), ("outil".to_owned(), json!(format!("outil_{MARKER}")))]
+                .into(),
+        }),
+    )
+    .await
+    .unwrap();
+    // État et code libres contenant le marqueur : ramenés à `other`.
+    wire::write_json(
+        &mut wr,
+        &WorkerMsg::Status(wire::StatusMsg { status: "running".into(), reason: Some(MARKER.into()) }),
+    )
+    .await
+    .unwrap();
+    // Évènements chiffrés (ici en clair, pire cas) : texte, appel d'outil avec arguments, résultat.
+    for (seq, (t, field)) in
+        [("text", "content"), ("tool_call", "args"), ("tool_result", "result")].into_iter().enumerate()
+    {
+        let event = json!({ "v": 1, "t": t, "epoch": init.lease_epoch, "seq": seq + 1, field: MARKER, "name": MARKER });
+        wire::write_json(&mut wr, &WorkerMsg::Event(wire::EventMsg { event })).await.unwrap();
+    }
+    // Historique de la conversation écrit par le worker (contenu, arguments et résultats d'outils).
+    let conv = format!("/api/runtime/v1/conversations/{}", init.session_id);
+    let transcript = json!({ "leaseEpoch": init.lease_epoch, "baseRev": 0, "status": "idle", "pendingToolCall": null,
+        "consumedInbox": [], "messages": [
+            { "id": "m1", "role": "user", "content": MARKER },
+            { "id": "m2", "role": "assistant", "content": MARKER,
+              "toolCalls": [{ "id": "c1", "name": "search_messages", "args": { "q": MARKER }, "result": MARKER }] },
+        ] });
+    for p in SignedRequest::split(
+        "t1",
+        HttpMethod::Put,
+        &format!("{conv}/transcript"),
+        transcript.to_string().as_bytes(),
+        true,
+    ) {
+        wire::write_json(&mut wr, &WorkerMsg::SignedRequest(p)).await.unwrap();
+    }
+    // Métriques réelles (sans contenu), puis fin.
+    let metrics = wire::Metrics {
+        turn: 1,
+        steps: 3,
+        llm_calls: 3,
+        tool_calls: 2,
+        tool_errors: 1,
+        prompt_tokens: 1234,
+        completion_tokens: 321,
+        reasoning_tokens: 55,
+        cost_eur_micro: 4242,
+        turn_duration_ms: 9000,
+        ..wire::Metrics::default()
+    };
+    wire::write_json(&mut wr, &WorkerMsg::Metrics(Box::new(metrics))).await.unwrap();
+    wire::write_json(&mut wr, &WorkerMsg::Done(wire::DoneMsg { reason: wire::DoneReason::Idle })).await.unwrap();
+    // Laisse le superviseur traiter le relais avant de fermer le pipe.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+}
+
+impl WorkerLauncher for Marked {
+    fn spawn(&self, _spec: WorkerSpec) -> BoxFuture<'_, Result<SpawnedWorker, LaunchError>> {
+        Box::pin(async move {
+            let (ours, theirs) = tokio::io::duplex(1 << 20);
+            let task = tokio::spawn(marked_script(theirs));
+            Ok(SpawnedWorker { io: Box::new(ours), process: Box::new(Task(Some(task))) })
+        })
+    }
+    fn name(&self) -> &'static str {
+        "marked"
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn dashboard_sans_contenu_de_conversation() {
+    let env = setup_with(Arc::new(Marked)).await;
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    authorize(&env).await;
+    env.api.push(json!({ "type": "conversation.wake", "sessionId": SESSION, "authId": AUTH, "reason": "inbox" }));
+    let addr = env.running.dashboard_addr.expect("dashboard démarré (mot de passe défini)");
+    let base = format!("http://{addr}");
+    let client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+    let login = client
+        .post(format!("{base}/api/login"))
+        .header("origin", &base)
+        .header("content-type", "application/json")
+        .body(json!({ "password": DASH_PW }).to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(login.status(), 200);
+    let cookie = login.headers()["set-cookie"].to_str().unwrap().split(';').next().unwrap().to_owned();
+    let get = |path: String| {
+        let (client, cookie, base) = (client.clone(), cookie.clone(), base.clone());
+        async move {
+            let r = client.get(format!("{base}{path}")).header("cookie", cookie).send().await.unwrap();
+            (r.status().as_u16(), r.text().await.unwrap())
+        }
+    };
+    // Attend la fin de l'exécution (visible dans la liste).
+    let mut list = String::new();
+    for _ in 0..200 {
+        let (_, body) = get("/api/sessions".into()).await;
+        let v: Value = serde_json::from_str(&body).unwrap();
+        if v["items"].as_array().is_some_and(|i| i.first().is_some_and(|s| s["active"] == false)) {
+            list = body;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(!list.is_empty(), "exécution terminée attendue");
+    let v: Value = serde_json::from_str(&list).unwrap();
+    let s = &v["items"][0];
+    // Les compteurs sans contenu sont bien là.
+    assert_eq!(s["sessionId"], SESSION);
+    assert_eq!(s["userId"], USER);
+    assert_eq!((s["steps"].as_u64(), s["toolCalls"].as_u64(), s["errors"].as_u64()), (Some(3), Some(2), Some(1)));
+    assert_eq!(
+        (s["promptTokens"].as_u64(), s["completionTokens"].as_u64(), s["costMicro"].as_u64()),
+        (Some(1234), Some(321), Some(4242))
+    );
+    // Toutes les réponses du dashboard, avec plusieurs filtres et tris.
+    let paths = [
+        "/api/overview".to_owned(),
+        "/api/session".to_owned(),
+        "/api/sessions".to_owned(),
+        "/api/sessions?sort=cost&desc=false&state=ended&errorsOnly=true".to_owned(),
+        format!("/api/sessions?user={USER}&provider=openai&sort=tokens"),
+        format!("/api/sessions/{SESSION}"),
+        "/api/totals?by=user".to_owned(),
+        "/api/totals?by=provider".to_owned(),
+        "/".to_owned(),
+        "/login".to_owned(),
+        "/assets/app.js".to_owned(),
+        "/assets/login.js".to_owned(),
+        "/assets/style.css".to_owned(),
+        "/api/inconnu".to_owned(),
+    ];
+    let mut total_bytes = 0;
+    for p in paths {
+        let (status, body) = get(p.clone()).await;
+        assert!(status == 200 || status == 404, "{p} : {status}");
+        assert!(!body.contains(MARKER), "contenu de conversation dans la réponse de {p}");
+        total_bytes += body.len();
+    }
+    assert!(total_bytes > 1000);
+    let (_, detail) = get(format!("/api/sessions/{SESSION}")).await;
+    assert!(
+        detail.contains("\"k\":\"metrics\"") && detail.contains("\"k\":\"done\""),
+        "chronologie sans contenu : {detail}"
+    );
+    // Stockage : aucun fichier du répertoire d'état ne contient le marqueur ; l'historique existe.
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+    let history: Vec<_> = all_files(&env.state_dir)
+        .into_iter()
+        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("history-")))
+        .collect();
+    assert_eq!(history.len(), 1, "un fichier d'historique du jour");
+    assert!(
+        std::fs::read_to_string(&history[0]).unwrap().contains("\"cost_micro\"")
+            || std::fs::read_to_string(&history[0]).unwrap().contains("costMicro")
+    );
+    for path in all_files(&env.state_dir) {
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(!bytes.windows(MARKER.len()).any(|w| w == MARKER.as_bytes()), "marqueur dans {}", path.display());
+    }
+    // L'API simulée, elle, a bien reçu le contenu : le test injecte donc réellement le marqueur.
+    env.api.with(|st| {
+        assert!(st.conversations[SESSION].messages.iter().any(|m| m.to_string().contains(MARKER)));
+    });
 }

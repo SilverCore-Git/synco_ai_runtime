@@ -72,6 +72,10 @@ pub struct MockState {
     pub pending: Vec<Value>,
     pub conversations: BTreeMap<String, Conversation>,
     pub stream_hellos: u32,
+    /// Délai (ms) avant de servir les entrées d'une délégation.
+    pub slow_entries_ms: u64,
+    /// Requêtes d'entrées reçues (avant le délai).
+    pub entries_requested: u32,
     pub presences: u32,
 }
 
@@ -211,6 +215,14 @@ async fn channel(
     body: Bytes,
 ) -> Response {
     let path = uri.path_and_query().map(|p| p.as_str().to_owned()).unwrap_or_default();
+    if uri.path().ends_with("/entries") && method == Method::GET {
+        let delay = {
+            let mut st = state.lock().unwrap();
+            st.entries_requested += 1;
+            st.slow_entries_ms
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+    }
     // Route lente (tests de concurrence du relais).
     if uri.path().ends_with("/tools") {
         tokio::time::sleep(std::time::Duration::from_millis(400)).await;

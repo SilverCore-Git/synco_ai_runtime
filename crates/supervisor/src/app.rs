@@ -115,7 +115,10 @@ async fn wait_paired(rt: &Arc<Runtime>) -> bool {
         match rt.api.register(&rt.config.public_url).await {
             Ok(resp) => match check_certificate(rt, &resp.org_id, &resp.certificate) {
                 Ok(()) => {
-                    rt.state.lock().await.org_id = Some(resp.org_id.clone());
+                    let mut st = rt.state.lock().await;
+                    st.org_id = Some(resp.org_id.clone());
+                    st.generation = st.generation.saturating_add(1);
+                    drop(st);
                     tracing::info!(code = "runtime_paired", "runtime appairé");
                     return true;
                 }

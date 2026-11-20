@@ -108,6 +108,10 @@ async fn setup() -> Env {
 }
 
 async fn setup_with(launcher: Arc<dyn synco_ai_runtime::launcher::WorkerLauncher>) -> Env {
+    setup_full(launcher, 0).await
+}
+
+async fn setup_full(launcher: Arc<dyn synco_ai_runtime::launcher::WorkerLauncher>, slow_entries_ms: u64) -> Env {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join("etat");
     // Clés générées et scellées par phrase de passe (comme au premier démarrage).
@@ -143,6 +147,7 @@ async fn setup_with(launcher: Arc<dyn synco_ai_runtime::launcher::WorkerLauncher
     let (good, good_entries) = delegation_record(&kex, &fpr, keys.runtime_id(), USER, "d-good", &user_key, 0);
     let (bad, bad_entries) = delegation_record(&kex, &fpr, keys.runtime_id(), BAD_USER, "d-bad", &bad_key, 3_600);
     api.with(|st| {
+        st.slow_entries_ms = slow_entries_ms;
         st.paired = true;
         st.certificate = certificate;
         st.delegations = vec![good, bad];
@@ -652,5 +657,47 @@ async fn relais_signed_request_borne_et_decoupe() {
         assert_eq!(st.conversations[SESSION].messages.len(), 300, "corps de requête réassemblé");
         assert!(st.signature_failures.is_empty(), "{:?}", st.signature_failures);
     });
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+}
+
+// ---------------------------------------------------------------------------
+// Une délégation révoquée ne « ressuscite » pas (chargement en cours)
+// ---------------------------------------------------------------------------
+
+async fn vault_has(env: &Env, user: &str) -> bool {
+    env.running.runtime.state.lock().await.vault.get(user).is_some()
+}
+
+/// Scénario A : `delegation.revoked` arrive pendant le chargement des entrées.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn revocation_pendant_le_chargement() {
+    let env = setup_full(Arc::new(InProcessStubLauncher), 800).await;
+    wait_until("entrées demandées", || env.api.with(|st| st.entries_requested > 0)).await;
+    env.api.push(
+        json!({ "type": "delegation.revoked", "userId": USER, "delegationId": "d-good", "reason": "user_revoked" }),
+    );
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    assert!(!vault_has(&env, USER).await, "délégation révoquée réinstallée");
+    // Et elle n'est pas rouverte par une relecture ultérieure.
+    env.running.runtime.load_delegations().await.unwrap();
+    tokio::time::sleep(Duration::from_millis(1_000)).await;
+    assert!(!vault_has(&env, USER).await);
+    env.api
+        .with(|st| assert!(!st.delegation_status.contains_key("d-good"), "aucun statut pour une délégation révoquée"));
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+}
+
+/// Scénario B : désappairage pendant le chargement des entrées.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn desappairage_pendant_le_chargement() {
+    let env = setup_full(Arc::new(InProcessStubLauncher), 800).await;
+    wait_until("entrées demandées", || env.api.with(|st| st.entries_requested > 0)).await;
+    env.api.with(|st| st.paired = false);
+    env.api.push(json!({ "type": "runtime.unpaired" }));
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    let st = env.running.runtime.state.lock().await;
+    assert!(st.org_id.is_none());
+    assert!(st.vault.users().is_empty(), "clés installées après le désappairage");
+    drop(st);
     synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }

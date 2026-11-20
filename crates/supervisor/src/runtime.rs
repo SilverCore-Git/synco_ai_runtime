@@ -75,6 +75,8 @@ pub enum DelegationFailure {
     Transient,
     /// Mandat, épinglage, enveloppe ou contexte refusés : `unusable`.
     Unusable(&'static str),
+    /// Révoquée, ou désappairage / réappairage pendant le chargement : rien n'est installé.
+    Stale,
 }
 
 impl Runtime {
@@ -163,13 +165,20 @@ impl Runtime {
                 self.state.lock().await.alert(now_secs(), code);
                 let _ = self.api.delegation_status(&record.delegation_id, false).await;
             }
-            Err(DelegationFailure::Transient) => {}
+            Err(DelegationFailure::Transient | DelegationFailure::Stale) => {}
         }
         result
     }
 
     async fn open_delegation_inner(self: &Arc<Self>, record: &DelegationRecord) -> Result<(), DelegationFailure> {
         let unusable = DelegationFailure::Unusable("delegation_unusable");
+        let generation = {
+            let st = self.state.lock().await;
+            if st.org_id.is_none() || st.revoked_delegations.contains_key(&record.delegation_id) {
+                return Err(DelegationFailure::Stale);
+            }
+            st.generation
+        };
         let scope = Scope::parse(&record.scope).map_err(|_| unusable)?;
         let ctx = DelegationContext {
             user_id: record.user_id.clone(),
@@ -194,7 +203,10 @@ impl Runtime {
             .collect();
         let (org_id, trusted) = {
             let mut st = self.state.lock().await;
-            let org = st.org_id.clone().ok_or(unusable)?;
+            if st.generation != generation {
+                return Err(DelegationFailure::Stale);
+            }
+            let org = st.org_id.clone().ok_or(DelegationFailure::Stale)?;
             let trusted = st
                 .pins
                 .check_or_pin(&record.user_id, sign_key.public_sign_key.as_deref(), &chain, now_secs())
@@ -238,6 +250,14 @@ impl Runtime {
         let new_ids: BTreeSet<KeyId> = opened.key_ids().into_iter().collect();
         let old_ids: BTreeSet<KeyId> = {
             let mut st = self.state.lock().await;
+            // Vérifié sous le même verrou que l'installation : une révocation ou un désappairage
+            // survenus pendant les appels réseau ci-dessus l'emportent (la délégation est effacée).
+            if st.generation != generation
+                || st.org_id.is_none()
+                || st.revoked_delegations.contains_key(&record.delegation_id)
+            {
+                return Err(DelegationFailure::Stale);
+            }
             st.vault.install(opened).into_iter().collect()
         };
         // Délégation remplacée : les workers de l'utilisateur suivent (retraits puis ajouts).
@@ -250,10 +270,11 @@ impl Runtime {
     /// Lit les nouvelles entrées d'une délégation ouverte (synchro P11) et les transmet aux
     /// workers de **son** utilisateur.
     pub async fn fetch_entries(self: &Arc<Self>, delegation_id: &str) {
-        let mut after = {
+        let (mut after, generation) = {
             let mut st = self.state.lock().await;
+            let generation = st.generation;
             match st.vault.by_delegation_mut(delegation_id) {
-                Some(d) => d.cursor().map(str::to_owned),
+                Some(d) => (d.cursor().map(str::to_owned), generation),
                 None => return,
             }
         };
@@ -262,6 +283,9 @@ impl Runtime {
         loop {
             let Ok(page) = self.api.entries(delegation_id, after.as_deref()).await else { break };
             let mut st = self.state.lock().await;
+            if st.generation != generation {
+                return;
+            }
             let Some(d) = st.vault.by_delegation_mut(delegation_id) else { return };
             user = Some(d.user_id().to_owned());
             for e in &page.entries {
@@ -332,6 +356,9 @@ impl Runtime {
     pub async fn revoke_user_delegation(self: &Arc<Self>, user: &str, code: &'static str) {
         let sessions: Vec<String> = {
             let mut st = self.state.lock().await;
+            if let Some(id) = st.vault.get(user).map(|d| d.delegation_id().to_owned()) {
+                st.mark_delegation_revoked(&id, now_secs());
+            }
             st.vault.remove_user(user);
             st.alert(now_secs(), code);
             st.convs.iter().filter(|(_, c)| c.user_id == user).map(|(s, _)| s.clone()).collect()
@@ -411,7 +438,11 @@ impl Runtime {
                 }
             }
             ApiEvent::DelegationRevoked { user_id, delegation_id, .. } => {
-                let owner = self.state.lock().await.vault.get(&user_id).map(|d| d.delegation_id() == delegation_id);
+                let owner = {
+                    let mut st = self.state.lock().await;
+                    st.mark_delegation_revoked(&delegation_id, now_secs());
+                    st.vault.get(&user_id).map(|d| d.delegation_id() == delegation_id)
+                };
                 if owner != Some(false) {
                     self.revoke_user_delegation(&user_id, "delegation_revoked").await;
                 }
@@ -599,6 +630,7 @@ impl Runtime {
             self.stop_conversation(&s, ShutdownReason::Unpaired, "revoked").await;
         }
         let mut st = self.state.lock().await;
+        st.generation = st.generation.saturating_add(1);
         st.vault.clear();
         st.auths.clear();
         st.policy = None;

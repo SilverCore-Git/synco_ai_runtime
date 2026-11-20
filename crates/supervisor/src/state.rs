@@ -317,6 +317,12 @@ pub struct State {
     pub alerts: VecDeque<(u64, &'static str)>,
     /// Conversations en attente vues au dernier relevé.
     pub queued_seen: usize,
+    /// Génération d'appairage : augmentée à chaque appairage et désappairage. Un chargement de
+    /// délégation commencé dans une génération n'installe rien dans une autre.
+    pub generation: u64,
+    /// Délégations révoquées (identifiant → expiration de l'entrée, s) : jamais réinstallées, même
+    /// par un chargement commencé avant la révocation.
+    pub revoked_delegations: HashMap<String, u64>,
 }
 
 impl State {
@@ -336,6 +342,8 @@ impl State {
             next_client: 1,
             alerts: VecDeque::new(),
             queued_seen: 0,
+            generation: 0,
+            revoked_delegations: HashMap::new(),
         }
     }
 
@@ -346,6 +354,12 @@ impl State {
         while self.alerts.len() > 100 {
             self.alerts.pop_front();
         }
+    }
+
+    /// Marque une délégation révoquée (gardée 31 jours, au-delà de toute expiration possible).
+    pub fn mark_delegation_revoked(&mut self, delegation_id: &str, now: u64) {
+        self.revoked_delegations.insert(delegation_id.to_owned(), now.saturating_add(31 * 86_400));
+        self.revoked_delegations.retain(|_, exp| *exp > now);
     }
 
     /// Workers occupant une place (en cours ou en lancement).

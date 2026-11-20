@@ -131,8 +131,8 @@ async fn session(rt: &Arc<Runtime>, mut socket: Socket) -> Attempt {
             }
         })
     };
-    // Relecture complète après (re)connexion.
-    {
+    // Relecture complète après (re)connexion ; annulée à la fin de la session.
+    let reload = {
         let rt = Arc::clone(rt);
         tokio::spawn(async move {
             if let Err(e) = rt.load_delegations().await {
@@ -141,8 +141,8 @@ async fn session(rt: &Arc<Runtime>, mut socket: Socket) -> Attempt {
             if let Err(e) = rt.scan_pending().await {
                 tracing::warn!(error = %e, "conversations en attente non relues");
             }
-        });
-    }
+        })
+    };
     let mut presence = tokio::time::interval(Duration::from_secs(30));
     let result = loop {
         tokio::select! {
@@ -177,7 +177,11 @@ async fn session(rt: &Arc<Runtime>, mut socket: Socket) -> Attempt {
         }
     };
     drop(tx);
-    let _ = tokio::time::timeout(Duration::from_secs(5), processor).await;
+    reload.abort();
+    let processor_abort = processor.abort_handle();
+    if tokio::time::timeout(Duration::from_secs(5), processor).await.is_err() {
+        processor_abort.abort();
+    }
     let _ = socket.close(None).await;
     result
 }

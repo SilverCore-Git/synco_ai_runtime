@@ -130,6 +130,17 @@ async fn setup_llm(
     policy: Option<Value>,
     llm_base_url: &str,
 ) -> Env {
+    setup_hops(launcher, slow_entries_ms, policy, llm_base_url, 0).await
+}
+
+/// Comme `setup_llm`, avec `listen.trust_proxy_hops = listen_hops` (le `[dashboard]` reste par défaut).
+async fn setup_hops(
+    launcher: Arc<dyn synco_ai_runtime::launcher::WorkerLauncher>,
+    slow_entries_ms: u64,
+    policy: Option<Value>,
+    llm_base_url: &str,
+    listen_hops: usize,
+) -> Env {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join("etat");
     // Clés générées et scellées par phrase de passe (comme au premier démarrage).
@@ -194,7 +205,7 @@ log_level = "debug"
 [listen]
 public = "127.0.0.1:0"
 dashboard = "127.0.0.1:0"
-trust_proxy_hops = 0
+trust_proxy_hops = {listen_hops}
 [limits]
 idle_shutdown_secs = 1
 shutdown_grace_secs = 2
@@ -1373,4 +1384,35 @@ async fn dashboard_sans_contenu_de_conversation() {
     env.api.with(|st| {
         assert!(st.conversations[SESSION].messages.iter().any(|m| m.to_string().contains(MARKER)));
     });
+}
+
+/// Câblage de `dashboard.trust_proxy_hops` : le dashboard ne reprend PAS `listen.trust_proxy_hops`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn dashboard_ignore_listen_trust_proxy_hops() {
+    let env = setup_hops(Arc::new(InProcessStubLauncher), 0, None, "http://127.0.0.1:9/v1", 1).await;
+    assert_eq!(env.running.runtime.config.listen.trust_proxy_hops, 1);
+    assert_eq!(env.running.runtime.config.dashboard.trust_proxy_hops, 0);
+    let addr = env.running.dashboard_addr.expect("dashboard démarré");
+    let base = format!("http://{addr}");
+    let client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+    let attempt = |i: usize, password: String| {
+        let r = client
+            .post(format!("{base}/api/login"))
+            .header("origin", &base)
+            .header("x-forwarded-for", format!("203.0.113.{i}"))
+            .header("x-forwarded-proto", "https")
+            .header("content-type", "application/json")
+            .body(json!({ "password": password }).to_string());
+        async move { r.send().await.unwrap() }
+    };
+    // Un X-Forwarded-Proto forgé sur une connexion directe ne pose pas `Secure`.
+    let ok = attempt(0, DASH_PW.into()).await;
+    assert_eq!(ok.status(), 200);
+    assert!(!ok.headers()["set-cookie"].to_str().unwrap().contains("Secure"));
+    let mut codes = Vec::new();
+    for i in 0..8 {
+        codes.push(attempt(i, "faux".into()).await.status().as_u16());
+    }
+    assert_eq!(codes, [401, 401, 401, 401, 401, 429, 429, 429], "X-Forwarded-For ignoré : une seule adresse");
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }

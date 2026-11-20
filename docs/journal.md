@@ -763,3 +763,27 @@ contre une vraie API de dev ; bascule d'une conversation (recette manuelle `docs
 `writable-cgroups=true` (cgroup du conteneur inscriptible, plus simple, incompatible `userns-remap`/rootless) ? (2) Accepter
 `DAC_OVERRIDE` en Podman, ou faire écrire au superviseur dans un cgroup qui n'appartient pas au root du conteneur (changement de
 code hors lot) ? (3) Monter `rustls` ≥ 0.23.46 et `rustix` 1.1.6 (autre lot).
+
+## 2026-11-20 — L09 : corrections après revue
+
+- **I1** : la phrase de passe est affichée une fois à la création (à noter dans un coffre). Le pilote de secrets Podman `file`
+  la stocke en base64 sous le même `$HOME` que `keys.sealed` : documenté honnêtement (modèle de menace, `--showsecret`),
+  alternatives citées (pilotes `pass`/`shell`, saisie au démarrage vérifiée dans `seal.rs` : terminal sans écho si
+  `passphrase_file` est absent, donc `-it`, sans redémarrage automatique ; `systemd-creds`). **Question de fond non tranchée,
+  posée à l'utilisateur.**
+- **I2** : config, phrase de passe et sauvegardes se créent hors du dépôt (`~/.config/synco-ai-runtime/`, `~/sauvegardes/`) ;
+  `.gitignore` et `.dockerignore` couvrent les noms de secrets et d'archives.
+- **I3** : variante Docker marquée « non testée, non prise en charge en l'état » ; limites établies **par lecture** (capacité
+  ambiante, ancêtre commun du cgroup, délégation limitée à quatre entrées, plafonds posés par l'hôte, fuite de
+  `--cgroupns=host`) ; recette corrigée mais qui ne résout pas l'ancêtre commun ; `writable-cgroups=true` présenté comme piste
+  avec le même problème de propriété. Aucun code modifié.
+- **I4** : l'audit de la CI est bloquant ; six `--ignore` nommés (rustls 0.23.44 ×5, rustix 1.1.5), à retirer après la montée.
+  Commande vérifiée avec cargo-audit 0.22.2 (rc 0 ; rc 1 si un avis n'est pas ignoré). J'ai ajouté `--deny unsound`.
+- **M1** : `sandbox-check` essaie `kill(-1, 0)` (via `test_kill_process_group(1)`) : `ESRCH` constaté (`kill_all_esrch`) ;
+  `kill` est bien dans la liste blanche seccomp. Nouveau test `superviseur_pid_1_pas_de_faux_positif` (hôte) ; mutation
+  (contrôle `kill0_same_pid` retiré) : le test échoue (`escaped … kill0_ok:1`), restauré.
+- **M2** : `label=disable` désactive tout le confinement SELinux (`spc_t`) ; `:Z` nécessaire sans lui ;
+  `container_manage_cgroup` non testé. **M3** : sept lignes `ok`. **M4** : réseaux séparés ; passerelle `read_only` +
+  `cap_drop: ALL` + `no-new-privileges` (vérifié avec l'image de la passerelle existante `localhost/synco-ai-gateway:l04`, pas
+  reconstruite : `/health` répond) ; Ollama : seulement `no-new-privileges` (root, non testé). **M5** : limite de
+  `trust_proxy_hops = 1` sur hôte partagé. **M6** : profil AppArmor en `abi <abi/4.0>` + `unix,` (non testé).

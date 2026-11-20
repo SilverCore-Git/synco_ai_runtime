@@ -138,7 +138,7 @@ podman run -d --name synco-ai-runtime \
 **Avec `podman compose`** (fournisseur `docker-compose` ou `podman-compose`, socket `systemctl --user start
 podman.socket`) : [`compose.example.yml`](../compose.example.yml) (testé avec Docker Compose 5.6 sur Podman). Le profil
 `gateway` ajoute la passerelle Synco AI et Ollama (`podman compose --profile gateway up -d`). Les secrets de Compose
-ignorent `uid` et `mode` : suivre les commentaires du fichier (`chown 10001` de `passphrase.txt` via `podman unshare`).
+ignorent `uid` et `mode` : suivre les commentaires du fichier (`chown 10001` de `~/.config/synco-ai-runtime/passphrase.txt` via `podman unshare`).
 
 ### 2.3 Appairage pas à pas
 
@@ -199,12 +199,12 @@ Deux éléments, **à conserver séparément, hors de ce `$HOME`** (l'un sans l'
 
 | Élément | Où | Sauvegarde |
 |---|---|---|
-| `keys.sealed` (clé privée du runtime scellée : Argon2id + AES-256-GCM) | volume `synco-ai-runtime-state` | `podman volume export synco-ai-runtime-state > etat.tar` (contient aussi `dashboard.pass` et l'historique) |
+| `keys.sealed` (clé privée du runtime scellée : Argon2id + AES-256-GCM) | volume `synco-ai-runtime-state` | `podman volume export synco-ai-runtime-state > ~/sauvegardes/etat.tar` (**hors du dépôt**, droits 0600) (contient aussi `dashboard.pass` et l'historique) |
 | Phrase de passe | secret Podman `synco-ai-runtime-passphrase` (pilote `file` : en base64 dans `secretsdata.json`, visible par `podman secret inspect --showsecret`) | notée dans un coffre **à la création** (étape 3, affichée une fois) ; ne pas compter sur le secret Podman comme seule copie |
 
 Sans la clé **ou** sans la phrase : le runtime est perdu pour son identité actuelle. Il faut `reset-keys --yes` (nouvelle
 identité, **nouvel appairage**, les délégations existantes sont perdues). Restauration :
-service arrêté, `podman volume create synco-ai-runtime-state`, `podman volume import synco-ai-runtime-state etat.tar`, puis
+service arrêté, `podman volume create synco-ai-runtime-state`, `podman volume import synco-ai-runtime-state ~/sauvegardes/etat.tar`, puis
 **rendre la racine du volume à l'utilisateur du runtime** (l'import la laisse en root 0755, vérifié) :
 
 ```bash
@@ -265,12 +265,12 @@ docker run -d --name synco-ai-runtime --restart unless-stopped \
   --security-opt apparmor=synco-ai-runtime \
   --cgroupns=host -v /sys/fs/cgroup/synco-ai-runtime:/run/synco-cgroup:rw \
   -v synco-ai-runtime-state:/var/lib/synco-ai-runtime \
-  -v "$PWD/config.toml:/etc/synco-ai-runtime/config.toml:ro" \
-  -v "$PWD/passphrase.txt:/run/secrets/synco-ai-runtime-passphrase:ro" \
+  -v "$HOME/.config/synco-ai-runtime/config.toml:/etc/synco-ai-runtime/config.toml:ro" \
+  -v "$HOME/.config/synco-ai-runtime/passphrase.txt:/run/secrets/synco-ai-runtime-passphrase:ro" \
   -p 127.0.0.1:8790:8790 -p 127.0.0.1:8791:8791 \
   synco-ai-runtime
 # config.toml : [sandbox] cgroup_root = "/run/synco-cgroup"
-# passphrase.txt : chmod 0400 puis chown 10001:10001 (le runtime exige ce propriétaire).
+# passphrase.txt (hors du dépôt) : chmod 0400 puis chown 10001:10001 (le runtime exige ce propriétaire).
 ```
 
 Points à vérifier sur un vrai Docker (non résolus) :

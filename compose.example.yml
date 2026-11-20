@@ -1,9 +1,11 @@
 # Synco AI Runtime : exemple Compose. Copier en compose.yml puis adapter.
 #
-#   cp compose.example.yml compose.yml
-#   cp deploy/config.container.example.toml config.toml        # puis l'éditer
-#   (umask 077; head -c 32 /dev/urandom | base64 > passphrase.txt)   # phrase de scellement de la clé
-#   chmod 0400 passphrase.txt && podman unshare chown 10001:10001 passphrase.txt   # voir « secrets » plus bas
+#   cp compose.example.yml compose.yml                      # compose.yml est ignoré par git
+#   # Config et secrets HORS du dépôt (jamais de secret à la racine du dépôt) :
+#   mkdir -p ~/.config/synco-ai-runtime && chmod 0700 ~/.config/synco-ai-runtime
+#   cp deploy/config.container.example.toml ~/.config/synco-ai-runtime/config.toml   # puis l'éditer
+#   (umask 077; PP=$(head -c 32 /dev/urandom | base64 | tr -d '\n'); echo "à noter dans un coffre : $PP"; printf '%s' "$PP" > ~/.config/synco-ai-runtime/passphrase.txt)
+#   chmod 0400 ~/.config/synco-ai-runtime/passphrase.txt && podman unshare chown 10001:10001 ~/.config/synco-ai-runtime/passphrase.txt   # voir « secrets »
 #   podman compose up -d --build        # chemin officiel (Podman rootless)
 #   # ou : docker compose up -d --build  (variante avancée : lire docs/deploiement.md §Docker d'abord)
 #
@@ -43,11 +45,11 @@ services:
       - "127.0.0.1:8791:8791"     # dashboard
     volumes:
       - runtime_state:/var/lib/synco-ai-runtime     # clé scellée, historique, dashboard.pass
-      - ./config.toml:/etc/synco-ai-runtime/config.toml:ro
+      - ${HOME}/.config/synco-ai-runtime/config.toml:/etc/synco-ai-runtime/config.toml:ro
     secrets:
       # Montés sous /run/secrets/<nom>. Compose ignore uid/gid/mode hors Swarm : c'est le propriétaire
       # du fichier HÔTE qui compte, et le runtime exige uid 10001 et droits 0400/0600 pour la phrase
-      # de passe. Podman rootless : `chmod 0400 passphrase.txt && podman unshare chown 10001:10001 passphrase.txt` ; Docker :
+      # de passe. Podman rootless : `chmod 0400 passphrase.txt && podman unshare chown 10001:10001 ~/.config/synco-ai-runtime/passphrase.txt` ; Docker :
       # `chmod 0400 passphrase.txt && sudo chown 10001:10001 passphrase.txt`. (chmod AVANT chown.)
       - synco-ai-runtime-passphrase
       # Clé d'un fournisseur LLM (config.toml : api_key_file = "/run/secrets/openai-api-key"), même
@@ -107,6 +109,6 @@ volumes:
 
 secrets:
   synco-ai-runtime-passphrase:
-    file: ./passphrase.txt
+    file: ${HOME}/.config/synco-ai-runtime/passphrase.txt
   # openai-api-key:
-  #   file: ./openai-api-key.txt
+  #   file: ${HOME}/.config/synco-ai-runtime/openai-api-key.txt

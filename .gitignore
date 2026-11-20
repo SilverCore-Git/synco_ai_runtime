@@ -1,1 +1,22 @@
 /target
+
+# Secrets et états locaux : ne JAMAIS les créer dans le dépôt (voir docs/deploiement.md : ~/.config/synco-ai-runtime/).
+# Filet de sécurité si l'un d'eux atterrit quand même ici.
+/compose.yml
+/config.toml
+/passphrase*
+/*.passphrase
+/*api-key*
+/openai-api-key.txt
+*.tar
+*.tar.gz
+*.tgz
+keys.sealed
+keys.cred
+dashboard.pass
+*.pem
+*.key
+*.cred
+*.secret
+.env
+.env.*

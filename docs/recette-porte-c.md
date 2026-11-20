@@ -58,7 +58,7 @@ Hôte : ____________  noyau : ______  Podman : ______  Version du runtime (commi
 
 ## F. Fin de recette : désappairage et sauvegarde
 
-- [ ] `podman volume export synco-ai-runtime-state > etat.tar` réussit ; la restauration ([`deploiement.md §2.5`](deploiement.md)) sur un volume neuf redonne la même empreinte.
+- [ ] `podman volume export synco-ai-runtime-state > ~/sauvegardes/etat.tar` réussit ; la restauration ([`deploiement.md §2.5`](deploiement.md)) sur un volume neuf redonne la même empreinte.
 - [ ] `podman exec synco-ai-runtime synco-ai-runtime unpair` : Synco montre le runtime « désappairé » ; les conversations repassent en local ; les workers s'arrêtent.
 - [ ] Réappairage possible avec le même identifiant (mêmes clés) ; `reset-keys --yes` donne une nouvelle empreinte et impose un nouvel appairage.
 

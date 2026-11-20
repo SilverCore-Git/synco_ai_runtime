@@ -98,7 +98,7 @@ dans les deux cas. Refus du navigateur : `403 forbidden`, `403 ai_disabled`,
 `409 gateway_not_configured` (`aiRuntimeTickets.ts:53-69`) ; refus du runtime : ceux du canal
 (04 §8) et `409 gateway_not_configured` (`synco_api/src/routes/runtimeInternal/runtime.ts:128-143`).
 
-## 5. Vérification (ordre)
+## 5. Vérification (ordre) (révisé après L05, 2026-11-20)
 
 Identique à `sct1` (`synco_cdn/docs/plan/02-tickets.md` « Vérification ») :
 
@@ -111,8 +111,8 @@ Identique à `sct1` (`synco_cdn/docs/plan/02-tickets.md` « Vérification ») :
    sinon `ticket_invalid`.
 5. `iat − 30 s ≤ maintenant < exp + 30 s` → sinon `ticket_expired` (ou `ticket_invalid` si pas encore
    valide) ; `exp − iat ≤ durée maximale` (§6) → sinon `ticket_invalid`. **`exp < iat` est refusé**
-   (`ticket_invalid`) par la crate du runtime ; la référence TypeScript l'admettrait : plus strict, sans effet sur une API honnête (révisé après L05, 2026-11-20 ;
-   `crates/runtime-protocol/src/ticket.rs:263-267`).
+   (`ticket_invalid`) par la crate du runtime ; la référence TypeScript l'admettrait : plus strict, sans effet sur une API honnête (révisé après L05,
+   2026-11-20 ; `crates/runtime-protocol/src/ticket.rs:263-267`).
 6. `op` correspond à la route → sinon `ticket_wrong_operation`.
 7. Destinataire : runtime : `rt` = son `runtimeId` ; passerelle : `gw` = son URL publique configurée →
    sinon `ticket_wrong_audience`.

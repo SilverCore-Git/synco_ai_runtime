@@ -55,7 +55,7 @@ trames de ≤ 64 Kio.
 |---|---|---|
 | `init` | `sessionId`, `userId`, `orgId`, `runtimeId`, `authId`, `leaseEpoch`, `apiBaseUrl`, `llm` (§3.1), `limits` (§3.2), `toolPolicy` (D5 : `{ "<outil>": "auto" \| "ask" \| "deny" }`), `logLevel` | Première trame, suivie des trames de clés, puis `start` |
 | `start` | — | Le worker peut commencer (toutes les clés initiales reçues) |
-| `inbox` | `items` : éléments de boîte de réception tels que reçus (05 §6.2, champs encore chiffrés) | Message, décision ou annulation arrivés par WebSocket |
+| `inbox` | `items` : éléments de boîte de réception tels que reçus (05 §6.2, champs encore chiffrés) | Message, décision ou annulation arrivés par WebSocket. **Révisé après L05, 2026-11-20** : un même élément peut arriver **deux fois** au worker (`GET …/inbox` à la reprise, puis `inbox` en direct, 04 §4.2) ; **L07 déduplique la boîte par `id`** (`docs/journal.md`, L05, écart 10) |
 | `keys` | (trame `0x02`) | Clé ajoutée (synchro P11) ou retirée (révocation) |
 | `shutdown` | `graceMs`, `reason` (`idle` \| `revoked` \| `unpaired` \| `sigterm` \| `limit`) | Arrêt demandé : terminer l'étape en cours si `graceMs > 0`, enregistrer, quitter |
 | `net_response` | dépend de L06 | Réponse d'un accès réseau relayé par le superviseur, si L06 choisit ce modèle |

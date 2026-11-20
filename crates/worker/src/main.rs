@@ -1,12 +1,14 @@
-//! Binaire du worker. Le lancement isolé (pipe hérité sur le descripteur 3, bac à sable) est le
-//! travail de L06 : en attendant, le superviseur exécute le bouchon de protocole dans sa propre
-//! tâche (`InProcessStubLauncher`) et ce binaire refuse de démarrer.
+//! Binaire autonome du worker : **non utilisé** en fonctionnement.
+//!
+//! Depuis L06, le worker s'exécute dans le binaire du superviseur relancé par le bac à sable
+//! (`synco-ai-runtime __sandbox-helper` puis `__sandbox-worker`) : la racine du worker est vide et
+//! seccomp interdit `execve`, donc aucun autre binaire ne peut y être exécuté (docs/plan/10 §2).
 
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     eprintln!(
-        "synco-ai-runtime-worker {} : lancement isolé non disponible avant le lot L06 (bac à sable).",
+        "synco-ai-runtime-worker {} : le worker est lancé par le superviseur (synco-ai-runtime), dans son bac à sable.",
         env!("CARGO_PKG_VERSION")
     );
     ExitCode::from(2)

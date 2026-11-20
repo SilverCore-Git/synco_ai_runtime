@@ -277,65 +277,83 @@ fn is_gcm1(v: &Value) -> Option<&str> {
     v.as_str().filter(|s| s.starts_with(VERSION_PREFIX))
 }
 
-fn dec_text(ck: &SymmetricKey, sid: &str, mid: &str, field: &str, v: &Value) -> Option<String> {
+/// Mode de lecture d'un historique.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Read {
+    /// Schéma `conv-gcm1-v1` (tout historique d'une conversation en mode runtime) : un champ de
+    /// contenu qui n'est pas `gcm1:` est **illisible**, jamais repris en clair (sinon l'API
+    /// pourrait injecter du contenu ou un appel d'outil non authentifié par `CK`).
+    Strict,
+    /// Anciens schémas (`null`, `gateway-aes-gcm-v1`) : clair accepté tel quel. Jamais utilisé par
+    /// la boucle d'agent.
+    Tolerant,
+}
+
+fn dec_text(ck: &SymmetricKey, sid: &str, mid: &str, field: &str, v: &Value, mode: Read) -> Option<String> {
     match v {
         Value::Null => None,
         Value::String(s) if s.starts_with(VERSION_PREFIX) => {
             Some(session::decrypt_field(ck, sid, mid, field, s).unwrap_or_else(|_| UNREADABLE.to_owned()))
         }
-        Value::String(s) => Some(s.clone()),
+        Value::String(s) if mode == Read::Tolerant => Some(s.clone()),
+        _ if mode == Read::Strict => Some(UNREADABLE.to_owned()),
         _ => None,
     }
 }
 
-fn dec_json(ck: &SymmetricKey, sid: &str, mid: &str, field: &str, v: &Value, unreadable: Value) -> Value {
+/// `None` : illisible.
+fn dec_json(ck: &SymmetricKey, sid: &str, mid: &str, field: &str, v: &Value, mode: Read) -> Option<Value> {
     match is_gcm1(v) {
-        Some(s) => session::decrypt_field(ck, sid, mid, field, s)
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or(unreadable),
+        Some(s) => session::decrypt_field(ck, sid, mid, field, s).ok().and_then(|t| serde_json::from_str(&t).ok()),
+        None if mode == Read::Strict => None,
         // Ancien format : arguments en chaîne JSON ou déjà en objet.
-        None => match v {
+        None => Some(match v {
             Value::String(s) => serde_json::from_str(s).unwrap_or_else(|_| v.clone()),
             other => other.clone(),
-        },
+        }),
     }
 }
 
-/// Lit un message (tolérant). `None` pour une entrée sans `id` ni rôle reconnu.
+/// Lit un message. `None` pour une entrée sans `id` ni rôle reconnu. En lecture stricte, un appel
+/// d'outil dont les arguments sont illisibles passe au statut `error` (jamais exécuté).
 #[must_use]
-pub fn decode_message(ck: &SymmetricKey, sid: &str, v: &Value) -> Option<Message> {
+pub fn decode_message(ck: &SymmetricKey, sid: &str, v: &Value, mode: Read) -> Option<Message> {
     let mut o = v.as_object()?.clone();
     let id = o.remove("id")?.as_str()?.to_owned();
     let role = Role::parse(o.remove("role")?.as_str()?)?;
     let created_at = o.remove("createdAt").and_then(|c| c.as_str().map(str::to_owned)).unwrap_or_default();
     let mut m = Message::new(id, role, created_at);
     if let Some(c) = o.remove("content") {
-        m.content = dec_text(ck, sid, &m.id, "content", &c);
+        m.content = dec_text(ck, sid, &m.id, "content", &c, mode);
         if m.content.as_deref() != Some(UNREADABLE) {
             m.content_sealed = is_gcm1(&c).map(str::to_owned);
         }
     }
     if let Some(t) = o.remove("thinking") {
-        m.thinking = dec_text(ck, sid, &m.id, "thinking", &t);
+        m.thinking = dec_text(ck, sid, &m.id, "thinking", &t, mode);
     }
     if let Some(calls) = o.remove("toolCalls").and_then(|c| c.as_array().cloned()) {
         for c in calls {
             let Some(id) = c.get("id").and_then(Value::as_str).map(str::to_owned) else { continue };
             let args = c.get("arguments").cloned().unwrap_or(Value::Null);
+            let arguments = dec_json(ck, sid, &m.id, &format!("tool_call_arguments:{id}"), &args, mode);
+            let status = ToolStatus::parse(c.get("status").and_then(Value::as_str).unwrap_or("error"));
             m.tool_calls.push(ToolCall {
-                arguments: dec_json(ck, sid, &m.id, &format!("tool_call_arguments:{id}"), &args, json!({})),
+                status: if arguments.is_none() && mode == Read::Strict { ToolStatus::Error } else { status },
+                arguments: arguments.unwrap_or_else(|| json!({})),
                 id,
                 name: c.get("name").and_then(Value::as_str).unwrap_or_default().to_owned(),
                 category: c.get("category").and_then(Value::as_str).unwrap_or("server").to_owned(),
                 mutating: c.get("mutating").and_then(Value::as_bool).unwrap_or(true),
-                status: ToolStatus::parse(c.get("status").and_then(Value::as_str).unwrap_or("error")),
             });
         }
     }
     m.tool_call_id = o.remove("toolCallId").and_then(|c| c.as_str().map(str::to_owned));
     if let Some(r) = o.remove("toolResult") {
-        m.tool_result = Some(dec_json(ck, sid, &m.id, "tool_result", &r, json!({ "error": "Résultat illisible." })));
+        m.tool_result = Some(
+            dec_json(ck, sid, &m.id, "tool_result", &r, mode)
+                .unwrap_or_else(|| json!({ "error": "Résultat illisible." })),
+        );
     }
     m.usage = o.remove("usage").filter(|u| !u.is_null());
     m.extra = o;
@@ -344,8 +362,8 @@ pub fn decode_message(ck: &SymmetricKey, sid: &str, v: &Value) -> Option<Message
 
 /// Lit tout l'historique.
 #[must_use]
-pub fn decode_messages(ck: &SymmetricKey, sid: &str, v: &Value) -> Vec<Message> {
-    v.as_array().map(|a| a.iter().filter_map(|m| decode_message(ck, sid, m)).collect()).unwrap_or_default()
+pub fn decode_messages(ck: &SymmetricKey, sid: &str, v: &Value, mode: Read) -> Vec<Message> {
+    v.as_array().map(|a| a.iter().filter_map(|m| decode_message(ck, sid, m, mode)).collect()).unwrap_or_default()
 }
 
 /// Chiffre `pendingToolCall`.
@@ -360,21 +378,17 @@ pub fn encode_pending(ck: &SymmetricKey, sid: &str, p: &PendingToolCall) -> Resu
     }))
 }
 
-/// Lit `pendingToolCall` (tolérant).
+/// Lit `pendingToolCall`. En lecture stricte, des arguments illisibles (ou en clair) font
+/// ignorer l'appel en attente.
 #[must_use]
-pub fn decode_pending(ck: &SymmetricKey, sid: &str, v: &Value) -> Option<PendingToolCall> {
+pub fn decode_pending(ck: &SymmetricKey, sid: &str, v: &Value, mode: Read) -> Option<PendingToolCall> {
     let o = v.as_object()?;
+    let args =
+        dec_json(ck, sid, PENDING_MESSAGE_ID, "pending_tool_call_args", o.get("args").unwrap_or(&Value::Null), mode);
     Some(PendingToolCall {
         id: o.get("id")?.as_str()?.to_owned(),
         name: o.get("name")?.as_str()?.to_owned(),
-        args: dec_json(
-            ck,
-            sid,
-            PENDING_MESSAGE_ID,
-            "pending_tool_call_args",
-            o.get("args").unwrap_or(&Value::Null),
-            json!({}),
-        ),
+        args: if mode == Read::Strict { args? } else { args.unwrap_or_else(|| json!({})) },
         category: o.get("category").and_then(Value::as_str).unwrap_or("server").to_owned(),
         mutating: o.get("mutating").and_then(Value::as_bool).unwrap_or(true),
         interactive: o.get("interactive").and_then(Value::as_bool).unwrap_or(false),
@@ -423,7 +437,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(args, r#"{"title":"secret"}"#);
-        let mut back = decode_messages(&ck, SID, &Value::Array(enc.clone()));
+        let mut back = decode_messages(&ck, SID, &Value::Array(enc.clone()), Read::Strict);
         // Chiffré d'origine gardé et réécrit tel quel.
         assert_eq!(back[0].content_sealed.as_deref(), enc[0]["content"].as_str());
         assert_eq!(encode_message(&ck, SID, &back[0]).unwrap()["content"], enc[0]["content"]);
@@ -441,11 +455,19 @@ mod tests {
             { "role": "user" },
             { "id": "z", "role": "system", "content": "?" }
         ]);
-        let m = decode_messages(&ck, SID, &v);
+        let m = decode_messages(&ck, SID, &v, Read::Tolerant);
         assert_eq!(m.len(), 2);
         assert_eq!(m[0].content.as_deref(), Some("en clair (ancien format)"));
         assert_eq!(m[1].content.as_deref(), Some(UNREADABLE));
         assert_eq!(m[1].tool_calls[0].arguments, json!({ "q": 1 }));
+        // Schéma conv-gcm1-v1 : le clair est illisible, l'appel aux arguments en clair n'est plus
+        // exécutable.
+        let m = decode_messages(&ck, SID, &v, Read::Strict);
+        assert_eq!(m[0].content.as_deref(), Some(UNREADABLE));
+        assert_eq!(m[1].tool_calls[0].arguments, json!({}));
+        assert_eq!(m[1].tool_calls[0].status, ToolStatus::Error);
+        let forged = json!({ "id": "c1", "name": "create_task", "args": { "title": "x" }, "category": "server", "mutating": true });
+        assert_eq!(decode_pending(&ck, SID, &forged, Read::Strict), None);
         let p = PendingToolCall {
             id: "c1".into(),
             name: "create_task".into(),
@@ -456,6 +478,6 @@ mod tests {
         };
         let e = encode_pending(&ck, SID, &p).unwrap();
         assert!(e["args"].as_str().unwrap().starts_with("gcm1:"));
-        assert_eq!(decode_pending(&ck, SID, &e), Some(p));
+        assert_eq!(decode_pending(&ck, SID, &e, Read::Strict), Some(p));
     }
 }

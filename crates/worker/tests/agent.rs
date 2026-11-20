@@ -619,7 +619,12 @@ async fn outil_e2ee_create_thread_enveloppe_rt1_et_entree() {
 #[test]
 fn fixture_croise_relu_par_le_worker() {
     let f: Value = serde_json::from_str(include_str!("fixtures/transcript-from-worker.json")).unwrap();
-    let msgs = synco_ai_runtime_worker::transcript::decode_messages(&ck(), SID, &f["messages"]);
+    let msgs = synco_ai_runtime_worker::transcript::decode_messages(
+        &ck(),
+        SID,
+        &f["messages"],
+        synco_ai_runtime_worker::transcript::Read::Strict,
+    );
     assert_eq!(msgs.len(), f["expectedClear"].as_array().unwrap().len());
     for (m, e) in msgs.iter().zip(f["expectedClear"].as_array().unwrap()) {
         assert_eq!(m.content.as_deref(), e["content"].as_str());

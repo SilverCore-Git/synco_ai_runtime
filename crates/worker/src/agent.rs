@@ -320,6 +320,7 @@ impl Agent {
             &self.ck,
             &self.init.session_id,
             head.body.get("messages").unwrap_or(&Value::Null),
+            transcript::Read::Strict,
         );
         self.saved_len = self.messages.len();
         self.rev = head.body.get("rev").and_then(Value::as_u64).unwrap_or(0);
@@ -329,6 +330,7 @@ impl Agent {
             &self.ck,
             &self.init.session_id,
             head.body.get("pendingToolCall").unwrap_or(&Value::Null),
+            transcript::Read::Strict,
         );
         self.awaiting_key = head.body.get("awaitingKey").and_then(Value::as_str).map(str::to_owned);
         self.conv_tokens = self
@@ -344,7 +346,7 @@ impl Agent {
         self.fetch_inbox().await?;
         let (rerun, unknown) = self.recover();
 
-        // Un résultat inconnu est donné au modèle, qui décide de la suite (08 §5).
+        // Un résultat inconnu (ou un appel clos) est donné au modèle, qui décide de la suite (08 §5).
         let mut need_model = unknown > 0;
         let has_work = !self.queue.is_empty() || !rerun.is_empty() || !self.events.is_empty();
         if has_work {
@@ -464,42 +466,56 @@ impl Agent {
     /// (confirmés, en attente d'une clé) rendus à exécuter.
     fn recover(&mut self) -> (Vec<String>, usize) {
         let answered: HashSet<String> = self.messages.iter().filter_map(|m| m.tool_call_id.clone()).collect();
+        // Statut et `mutating` d'un appel sont en clair dans l'historique (servis par l'API) : seul
+        // le manifeste dit si l'outil est mutant, et seul `pendingToolCall` (arguments chiffrés sous
+        // `CK`) autorise à relancer un appel mutant `accepted` (clé arrivée après `awaiting_key`).
+        let mutating: std::collections::HashMap<String, bool> =
+            self.specs.iter().map(|s| (s.name.clone(), s.mutating)).collect();
+        let pending = self.pending.clone();
         let mut rerun = Vec::new();
-        let mut unknown = Vec::new();
+        let mut closed: Vec<(String, String, Value)> = Vec::new();
         for m in &mut self.messages {
             for tc in &mut m.tool_calls {
                 if answered.contains(&tc.id) {
                     continue;
                 }
+                let is_mutating = mutating.get(&tc.name).copied().unwrap_or(true);
+                let confirmed = pending.as_ref().is_some_and(|p| p.id == tc.id && p.name == tc.name);
                 match tc.status {
-                    ToolStatus::Executing if tc.mutating => {
+                    ToolStatus::Executing if is_mutating => {
                         tc.status = ToolStatus::Error;
-                        unknown.push((tc.id.clone(), tc.name.clone()));
+                        closed.push((
+                            tc.id.clone(),
+                            tc.name.clone(),
+                            json!({ "error": "unknown_outcome", "note": UNKNOWN_OUTCOME_NOTE }),
+                        ));
                     }
-                    ToolStatus::Executing | ToolStatus::Accepted => rerun.push(tc.id.clone()),
+                    ToolStatus::Executing => rerun.push(tc.id.clone()),
+                    ToolStatus::Accepted if !is_mutating || confirmed => rerun.push(tc.id.clone()),
+                    ToolStatus::Accepted => {
+                        tc.status = ToolStatus::Error;
+                        closed.push((tc.id.clone(), tc.name.clone(), json!({ "error": "tool_call_unverified" })));
+                    }
                     _ => {}
                 }
             }
         }
-        let unknown_count = unknown.len();
-        for (id, name) in unknown {
+        let count = closed.len();
+        for (id, name, result) in closed {
+            let unknown = result.get("error").and_then(Value::as_str) == Some("unknown_outcome");
             let mut t = Message::new(uuid(), Role::Tool, now());
             t.tool_call_id = Some(id);
-            t.tool_result = Some(json!({ "error": "unknown_outcome", "note": UNKNOWN_OUTCOME_NOTE }));
+            t.tool_result = Some(result);
             self.messages.push(t);
-            let code: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_').take(64).collect();
-            let code = code.to_ascii_lowercase();
-            self.events.push(if code.is_empty() {
-                json!({ "type": "tool_unknown_outcome" })
-            } else {
-                json!({ "type": "tool_unknown_outcome", "code": code })
-            });
+            if unknown {
+                self.events.push(unknown_event(&name));
+            }
         }
         if self.pending.as_ref().is_some_and(|p| rerun.contains(&p.id)) {
             self.pending = None;
             self.awaiting_key = None;
         }
-        (rerun, unknown_count)
+        (rerun, count)
     }
 
     // ------------------------------------------------------------------
@@ -1374,6 +1390,21 @@ impl Agent {
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
+    }
+}
+
+/// Évènement de journal `tool_unknown_outcome` (`code` = nom de l'outil, 04 §4.2).
+fn unknown_event(name: &str) -> Value {
+    let code: String = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .take(64)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    if code.is_empty() {
+        json!({ "type": "tool_unknown_outcome" })
+    } else {
+        json!({ "type": "tool_unknown_outcome", "code": code })
     }
 }
 

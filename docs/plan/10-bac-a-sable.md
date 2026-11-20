@@ -183,12 +183,13 @@ démarrage est **refusé** (`cgroup_swap_uncontrolled`) sauf si aucun espace d'�
 cgroup est vide. Métriques (06 §5, L08) : `WorkerProcess::usage()` lit `memory.current`,
 `memory.peak`, `cpu.stat usage_usec`.
 
-**Écart avec 09 §2 : `memory.high` n'est pas appliqué** (écrit `max`). Sans espace d'échange, la
-mémoire anonyme n'est pas récupérable : sous `memory.high` = 448 Mio, le worker de test était encore
-vivant après 120 s, ralenti indéfiniment (5 141 évènements `high`, aucun OOM), au lieu d'être tué à
-`memory.max`. `worker_memory_high_mib` reste lu mais ignoré, et `--check-config` avertit s'il est présent.
-**Question ouverte à la porte C** (00 §6, Q22) : retirer `memory.high` de D6 (recommandation, avis du
-relecteur concordant) ou l'appliquer autrement ; non tranché ici, le code n'applique que `memory.max`.
+**D6 révisée le 2026-11-21 (porte C, Q22 tranchée) : `memory.high` est retiré, `memory.max` seul
+s'applique.** Sans espace d'échange, la mémoire anonyme n'est pas récupérable : sous `memory.high` =
+448 Mio, le worker de test était encore vivant après 120 s, ralenti indéfiniment (5 141 évènements
+`high`, aucun OOM), au lieu d'être tué à `memory.max`. Le worker qui dépasse `memory.max` est tué par
+l'OOM du noyau (avec son assistant, `memory.oom.group`). Le code du superviseur écrit encore
+`memory.high = max` et lit `limits.worker_memory_high_mib` (ignoré, `--check-config` avertit) : ce
+nettoyage appartient à un lot du superviseur (journal, L07c).
 
 ## 6. Repli si une fonction noyau manque
 

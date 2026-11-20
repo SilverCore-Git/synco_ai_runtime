@@ -369,6 +369,12 @@ impl Config {
             if id == "gateway" && (p.api_key_file.is_some() || p.api_key_env.is_some()) {
                 return Err(invalid("llm.providers.gateway : pas de clé, la passerelle reçoit un ticket sgt1"));
             }
+            // B1 : l'URL d'un fournisseur (et donc la destination de sa clé) vient de cette
+            // configuration, jamais de la politique fournie par l'API ; seule `gateway` (sans clé)
+            // peut prendre l'URL publique de la politique.
+            if id != "gateway" && p.base_url.is_none() {
+                return Err(invalid(format!("llm.providers.{id}.base_url : obligatoire")));
+            }
             if let Some(url) = &p.base_url {
                 let ok = reqwest::Url::parse(url).is_ok_and(|u| {
                     u.scheme() == "https"
@@ -527,6 +533,11 @@ allowed_origins = ["https://app.example.com"]
             "pas de clé pour la passerelle"
         );
         assert!(Config::parse(&format!("{MIN}\n[llm.providers.inconnu]\n")).is_err());
+        // B1 : un fournisseur (avec ou sans clé) sans URL configurée est refusé ; la passerelle peut
+        // prendre l'URL de la politique.
+        assert!(Config::parse(&format!("{MIN}\n[llm.providers.openai]\napi_key_env = \"X\"\n")).is_err());
+        assert!(Config::parse(&format!("{MIN}\n[llm.providers.custom]\n")).is_err());
+        assert!(Config::parse(&format!("{MIN}\n[llm.providers.gateway]\n")).is_ok());
         let open = "[listen]\npublic = \"0.0.0.0:8790\"\ndashboard = \"127.0.0.1:8791\"\ntrust_proxy_hops = 1\n";
         assert!(Config::parse(&format!("{MIN}\n{open}")).is_err(), "écoute non locale refusée");
         let c = Config::parse(&format!("{MIN}\n{open}allow_non_loopback_plain_http = true\n")).unwrap();

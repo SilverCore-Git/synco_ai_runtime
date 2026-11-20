@@ -112,6 +112,14 @@ async fn setup_with(launcher: Arc<dyn synco_ai_runtime::launcher::WorkerLauncher
 }
 
 async fn setup_full(launcher: Arc<dyn synco_ai_runtime::launcher::WorkerLauncher>, slow_entries_ms: u64) -> Env {
+    setup_policy(launcher, slow_entries_ms, None).await
+}
+
+async fn setup_policy(
+    launcher: Arc<dyn synco_ai_runtime::launcher::WorkerLauncher>,
+    slow_entries_ms: u64,
+    policy: Option<Value>,
+) -> Env {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join("etat");
     // Clés générées et scellées par phrase de passe (comme au premier démarrage).
@@ -148,6 +156,7 @@ async fn setup_full(launcher: Arc<dyn synco_ai_runtime::launcher::WorkerLauncher
     let (bad, bad_entries) = delegation_record(&kex, &fpr, keys.runtime_id(), BAD_USER, "d-bad", &bad_key, 3_600);
     api.with(|st| {
         st.slow_entries_ms = slow_entries_ms;
+        st.policy = policy;
         st.paired = true;
         st.certificate = certificate;
         st.delegations = vec![good, bad];
@@ -172,6 +181,8 @@ trust_proxy_hops = 0
 [limits]
 idle_shutdown_secs = 1
 shutdown_grace_secs = 2
+[llm.providers.openai]
+base_url = "http://127.0.0.1:9/v1"
 "#,
         api.url(),
         state_dir.display()
@@ -810,4 +821,61 @@ async fn wait_until_async(
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     panic!("délai dépassé");
+}
+
+fn policy(default_provider: &str, gateway_url: Option<&str>) -> Value {
+    json!({
+        "v": 1, "orgId": ORG, "defaultProvider": default_provider, "reasoningEffort": "medium",
+        "providers": [{ "id": default_provider, "modelId": "m", "gatewayUrl": gateway_url }],
+        "runtime": { "enabled": true, "maxDelegationDays": 7, "toolPolicy": {},
+            "limits": { "maxStepsPerTurn": 10, "maxTokensPerConversation": 1000, "maxTokensPerTurn": 500,
+                "maxTurnDurationSecs": 60, "maxOutputTokensPerCall": 100 } }
+    })
+}
+
+/// B1 : un fournisseur absent de la configuration du runtime (ici `mistral`, un identifiant inconnu,
+/// ou une passerelle dont l'URL de la politique vise une adresse de métadonnées) n'obtient ni
+/// worker ni clé : la conversation passe en `failed` (`provider_error`) et le bail est rendu.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn fournisseur_non_configure_refuse() {
+    for p in [
+        policy("mistral", None),
+        policy("evil", Some("https://gw.example.com")),
+        policy("gateway", Some("https://169.254.169.254")),
+    ] {
+        let env = setup_policy(Arc::new(InProcessStubLauncher), 0, Some(p.clone())).await;
+        wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+        authorize(&env).await;
+        let mut ws = connect(&env, SESSION, ORIGIN).await.unwrap();
+        let ready = hello(&mut ws, &ticket(&env, json!({}))).await;
+        assert_eq!(ready["t"], "ready", "{ready}");
+        let msg_id = "3c2b1a09-8f7e-4d6c-9b5a-493827161504";
+        let content = session::encrypt_field(
+            &SymmetricKey::from_bytes(CK),
+            SESSION,
+            msg_id,
+            &FieldName::Content,
+            "x",
+            &mut OsRandom,
+        )
+        .unwrap();
+        ws.send(Message::Text(
+            json!({ "v": 1, "t": "message", "id": msg_id, "content": content, "createdAt": "2026-11-19T10:00:00.000Z" })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+        wait_until("conversation en échec", || {
+            env.api.with(|st| st.conversations[SESSION].statuses.iter().any(|s| s == "failed"))
+        })
+        .await;
+        env.api.with(|st| {
+            let c = &st.conversations[SESSION];
+            assert_eq!(c.errors, vec!["provider_error".to_owned()], "{p}");
+            assert!(!c.statuses.iter().any(|s| s == "running"), "aucun worker lancé : {p}");
+            assert!(c.lease_released);
+        });
+        synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+    }
 }

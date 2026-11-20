@@ -23,7 +23,9 @@ use runtime_protocol::pipe::{
     SupervisorMsg, WorkerLimits, WorkerMsg,
 };
 use synco_ai_runtime::config::{Config, ProviderSecret};
-use synco_ai_runtime::launcher::{LlmRoute, ResourceLimits, WorkerExit, WorkerLauncher, WorkerProcess, WorkerSpec};
+use synco_ai_runtime::launcher::{
+    LlmBudget, LlmRoute, ResourceLimits, WorkerExit, WorkerLauncher, WorkerProcess, WorkerSpec,
+};
 use synco_ai_runtime::sandbox::proxy::LlmProxy;
 use synco_ai_runtime::sandbox::{Layer, Mode, RawWorker, SandboxLauncher, SandboxSettings};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -312,7 +314,9 @@ async fn mandataire_llm_injecte_la_cle() {
     let run = run_dir();
     let l = launcher(&run, Mode::Sandboxed, LlmProxy::new(secrets).unwrap()).await;
     let t = Duration::from_secs(30);
-    let route = |provider: &str| Some(LlmRoute { provider: provider.into(), base_url: base.clone() });
+    let route = |provider: &str| {
+        Some(LlmRoute { provider: provider.into(), base_url: base.clone(), budget: LlmBudget::default() })
+    };
     let args = |m: &str, p: &str| vec![m.to_owned(), p.to_owned(), "Bearer forge-par-le-worker".to_owned()];
     let r =
         l.run_case("proxy", args("POST", "/chat/completions"), &limits(), route("openai"), vec![], t).await.unwrap();

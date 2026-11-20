@@ -58,8 +58,53 @@ pub struct WorkerSpec {
 pub struct LlmRoute {
     /// Identifiant du fournisseur (`openai`, `mistral`, `gemini`, `custom`, `gateway`).
     pub provider: String,
-    /// URL de base (`https://…`), celle d'`init.llm.baseUrl`.
+    /// URL de base (`https://…`), celle d'`init.llm.baseUrl` : configuration du runtime, ou, pour
+    /// `gateway` seulement, URL publique de la politique de l'org.
     pub base_url: String,
+    /// Quotas appliqués par le mandataire (D6, `init.limits`).
+    pub budget: LlmBudget,
+}
+
+/// Quotas d'appels LLM d'un worker, appliqués par le mandataire (D6 ; valeurs d'`init.limits`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LlmBudget {
+    /// Appels au fournisseur par fenêtre de `max_turn_duration_secs` (≈ par tour).
+    pub max_steps_per_turn: u64,
+    /// Tokens par fenêtre de `max_turn_duration_secs` (≈ par tour).
+    pub max_tokens_per_turn: u64,
+    /// Tokens sur toute la vie du worker (borne de la conversation).
+    pub max_tokens_per_conversation: u64,
+    /// Fenêtre (s) ; aussi durée maximale d'un appel (avec le plafond de 10 min).
+    pub max_turn_duration_secs: u64,
+    /// Tokens de sortie par appel (estimation avant l'appel).
+    pub max_output_tokens_per_call: u64,
+}
+
+impl Default for LlmBudget {
+    /// Valeurs de 09 §2.
+    fn default() -> Self {
+        Self {
+            max_steps_per_turn: 25,
+            max_tokens_per_turn: 300_000,
+            max_tokens_per_conversation: 2_000_000,
+            max_turn_duration_secs: 1_800,
+            max_output_tokens_per_call: 4_096,
+        }
+    }
+}
+
+impl LlmBudget {
+    /// Depuis les plafonds transmis au worker.
+    #[must_use]
+    pub const fn from_limits(l: &runtime_protocol::pipe::WorkerLimits) -> Self {
+        Self {
+            max_steps_per_turn: l.max_steps_per_turn,
+            max_tokens_per_turn: l.max_tokens_per_turn,
+            max_tokens_per_conversation: l.max_tokens_per_conversation,
+            max_turn_duration_secs: l.max_turn_duration_secs,
+            max_output_tokens_per_call: l.max_output_tokens_per_call,
+        }
+    }
 }
 
 /// Fin d'un worker.

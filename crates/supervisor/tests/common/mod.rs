@@ -52,6 +52,8 @@ pub struct Conversation {
     pub messages: Vec<Value>,
     pub inbox: Vec<(String, Value, bool)>,
     pub statuses: Vec<String>,
+    /// Codes d'erreur des statuts écrits (`error`).
+    pub errors: Vec<String>,
     pub lease_released: bool,
 }
 
@@ -79,6 +81,8 @@ pub struct MockState {
     /// Requêtes d'entrées reçues (avant le délai).
     pub entries_requested: u32,
     pub presences: u32,
+    /// `GET /llm-policy` remplacé (défaut : `openai`, `gpt-test`).
+    pub policy: Option<Value>,
 }
 
 pub struct MockApi {
@@ -253,6 +257,7 @@ async fn channel(
                 error(404, "rt_unknown")
             }
         }
+        ("GET", ["llm-policy"]) if st.policy.is_some() => axum::Json(st.policy.clone().unwrap()).into_response(),
         ("GET", ["llm-policy"]) => axum::Json(json!({
             "v": 1, "orgId": ORG, "defaultProvider": "openai", "reasoningEffort": "medium",
             "providers": [{ "id": "openai", "modelId": "gpt-test" }],
@@ -306,6 +311,9 @@ async fn channel(
                 }
                 ("POST", ["status"]) => {
                     conv.statuses.push(json_body["status"].as_str().unwrap_or("?").to_owned());
+                    if let Some(e) = json_body["error"].as_str() {
+                        conv.errors.push(e.to_owned());
+                    }
                     axum::Json(json!({ "rev": conv.rev })).into_response()
                 }
                 ("GET", ["inbox"]) => {
@@ -347,6 +355,9 @@ async fn channel(
                     conv.messages = json_body["messages"].as_array().cloned().unwrap_or_default();
                     conv.rev += 1;
                     conv.statuses.push(json_body["status"].as_str().unwrap_or("?").to_owned());
+                    if let Some(e) = json_body["error"].as_str() {
+                        conv.errors.push(e.to_owned());
+                    }
                     axum::Json(json!({ "rev": conv.rev })).into_response()
                 }
                 _ => error(404, "not_found"),

@@ -105,10 +105,23 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
         let st = rt.state.lock().await;
         rt.build_init(&st, session_id, &user_id, &auth_id, lease.lease_epoch)
     };
-    let Some((init, keys)) = prepared else {
-        let _ = rt.api.release_lease(session_id, &auth_id, lease.lease_epoch).await;
-        release_slot(Arc::clone(rt), session_id.to_owned()).await;
-        return Err("init_unavailable");
+    let (init, keys, llm) = match prepared {
+        Ok(p) => p,
+        Err(code) => {
+            if code != "init_unavailable" {
+                // Fournisseur LLM non configuré dans le runtime (ou URL de passerelle refusée) : la
+                // conversation échoue clairement au lieu d'être relancée en boucle. Code de l'API
+                // le plus proche (08 §6) ; la cause exacte est dans le journal du runtime.
+                tracing::warn!(code, "conversation refusée : fournisseur LLM non utilisable");
+                let _ = rt
+                    .api
+                    .write_status(session_id, &auth_id, lease.lease_epoch, "failed", Some("provider_error"))
+                    .await;
+            }
+            let _ = rt.api.release_lease(session_id, &auth_id, lease.lease_epoch).await;
+            release_slot(Arc::clone(rt), session_id.to_owned()).await;
+            return Err(code);
+        }
     };
     let l = &rt.config.limits;
     let spec = WorkerSpec {
@@ -120,10 +133,7 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
             cpu_max_percent: l.worker_cpu_percent,
             pids_max: l.worker_pids_max,
         },
-        llm: (!init.llm.base_url.is_empty()).then(|| crate::launcher::LlmRoute {
-            provider: init.llm.provider.as_str().to_owned(),
-            base_url: init.llm.base_url.clone(),
-        }),
+        llm,
     };
     let spawned = match rt.launcher.spawn(spec).await {
         Ok(s) => s,

@@ -14,6 +14,7 @@
 //! Aucun corps ni en-tête n'est journalisé.
 
 use std::collections::BTreeMap;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -38,6 +39,7 @@ pub const TOTAL_TIMEOUT: Duration = Duration::from_secs(600);
 /// Mandataire partagé (clés des fournisseurs, client HTTP).
 pub struct LlmProxy {
     http: reqwest::Client,
+    public_http: reqwest::Client,
     secrets: BTreeMap<String, ProviderSecret>,
 }
 
@@ -52,6 +54,87 @@ struct RouteCtx {
     route: LlmRoute,
     base: String,
     in_flight: Arc<tokio::sync::Semaphore>,
+}
+
+/// Adresse non publique (boucle locale, privée, lien local, métadonnées, ULA, non spécifiée,
+/// multidiffusion, documentation…).
+#[must_use]
+pub fn ip_is_private(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_multicast()
+                || v4.is_documentation()
+                || o[0] == 0
+                || (o[0] == 100 && (o[1] & 0xc0) == 64) // 100.64.0.0/10 (CGNAT)
+                || (o[0] == 198 && (o[1] & 0xfe) == 18) // 198.18.0.0/15
+                || o[0] >= 240
+        }
+        IpAddr::V6(v6) => {
+            let seg = v6.segments();
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || (seg[0] & 0xfe00) == 0xfc00 // ULA
+                || (seg[0] & 0xffc0) == 0xfe80 // lien local
+                || v6.to_ipv4_mapped().is_some_and(|v4| ip_is_private(IpAddr::V4(v4)))
+                || (seg[0] == 0x2001 && seg[1] == 0x0db8)
+        }
+    }
+}
+
+/// URL de passerelle venue de la **politique de l'org** (donc de l'API) : `https` seulement, nom
+/// d'hôte public (jamais `localhost`, `.local`, `.internal`, adresse IP privée, de lien local ou de
+/// métadonnées). La résolution est filtrée en plus à la connexion ([`PublicOnlyResolver`]).
+#[must_use]
+pub fn gateway_url_allowed(url: &str) -> bool {
+    let Ok(u) = reqwest::Url::parse(url) else { return false };
+    let host = u.host_str().unwrap_or_default();
+    let host_ok = match host.trim_start_matches('[').trim_end_matches(']').parse::<IpAddr>() {
+        Ok(ip) => !ip_is_private(ip),
+        Err(_) => {
+            let d = host.trim_end_matches('.').to_ascii_lowercase();
+            d.contains('.')
+                && !(d == "localhost"
+                    || d.ends_with(".localhost")
+                    || d.ends_with(".local")
+                    || d.ends_with(".internal")
+                    || d.ends_with(".home.arpa")
+                    || d.ends_with(".lan"))
+        }
+    };
+    u.scheme() == "https"
+        && host_ok
+        && u.port().is_none_or(|p| p == 443)
+        && u.username().is_empty()
+        && u.password().is_none()
+        && u.query().is_none()
+        && u.fragment().is_none()
+}
+
+/// Résolveur qui écarte toute adresse non publique (passerelle désignée par l'API : pas de
+/// requête vers le réseau interne de l'hébergeur, B1).
+#[derive(Debug, Clone, Copy)]
+pub struct PublicOnlyResolver;
+
+impl reqwest::dns::Resolve for PublicOnlyResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let host = name.as_str().to_owned();
+        Box::pin(async move {
+            let addrs: Vec<SocketAddr> =
+                tokio::net::lookup_host((host.as_str(), 0)).await?.filter(|a| !ip_is_private(a.ip())).collect();
+            if addrs.is_empty() {
+                return Err("proxy_private_address".into());
+            }
+            let addrs: reqwest::dns::Addrs = Box::new(addrs.into_iter());
+            Ok(addrs)
+        })
+    }
 }
 
 /// URL de base admise : `https://…`, ou `http://` vers la boucle locale (développement, tests),
@@ -84,18 +167,23 @@ fn refuse(status: StatusCode, code: &'static str) -> Response {
     (status, [(header::CONTENT_TYPE, "application/json")], format!("{{\"error\":\"{code}\"}}")).into_response()
 }
 
+fn client(public_only: bool) -> Result<reqwest::Client, &'static str> {
+    let mut b = reqwest::Client::builder()
+        .timeout(TOTAL_TIMEOUT)
+        .read_timeout(READ_TIMEOUT)
+        .connect_timeout(Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(concat!("synco-ai-runtime/", env!("CARGO_PKG_VERSION")));
+    if public_only {
+        b = b.dns_resolver(Arc::new(PublicOnlyResolver)).https_only(true).no_proxy();
+    }
+    b.build().map_err(|_| "llm_proxy_client")
+}
+
 impl LlmProxy {
     /// Mandataire avec les clés des fournisseurs (lues de la configuration, D1).
     pub fn new(secrets: BTreeMap<String, ProviderSecret>) -> Result<Arc<Self>, &'static str> {
-        let http = reqwest::Client::builder()
-            .timeout(TOTAL_TIMEOUT)
-            .read_timeout(READ_TIMEOUT)
-            .connect_timeout(Duration::from_secs(10))
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent(concat!("synco-ai-runtime/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(|_| "llm_proxy_client")?;
-        Ok(Arc::new(Self { http, secrets }))
+        Ok(Arc::new(Self { http: client(false)?, public_http: client(true)?, secrets }))
     }
 
     /// Sert `route` sur `listener` jusqu'à l'abandon de la tâche rendue. Refus si l'URL de base
@@ -105,7 +193,12 @@ impl LlmProxy {
         listener: tokio::net::UnixListener,
         route: LlmRoute,
     ) -> Result<tokio::task::JoinHandle<()>, &'static str> {
-        if !base_url_allowed(&route.base_url) {
+        let ok = if route.provider == "gateway" {
+            base_url_allowed(&route.base_url) || gateway_url_allowed(&route.base_url)
+        } else {
+            base_url_allowed(&route.base_url)
+        };
+        if !ok {
             return Err("llm_route_refused");
         }
         let ctx = Arc::new(RouteCtx {
@@ -151,14 +244,15 @@ async fn handle(
         return refuse(StatusCode::TOO_MANY_REQUESTS, "proxy_busy");
     };
     let url = format!("{}{}", ctx.base, path);
-    let mut req =
-        ctx.proxy.http.request(if method == Method::POST { reqwest::Method::POST } else { reqwest::Method::GET }, url);
+    let gateway = ctx.route.provider == "gateway";
+    let http = if gateway && !base_url_allowed(&ctx.route.base_url) { &ctx.proxy.public_http } else { &ctx.proxy.http };
+    let mut req = http.request(if method == Method::POST { reqwest::Method::POST } else { reqwest::Method::GET }, url);
     for name in [header::CONTENT_TYPE, header::ACCEPT] {
         if let Some(v) = headers.get(&name) {
             req = req.header(name.as_str(), v.as_bytes());
         }
     }
-    if ctx.route.provider == "gateway" {
+    if gateway {
         if let Some(v) = headers.get(header::AUTHORIZATION) {
             let mut v = v.clone();
             v.set_sensitive(true);
@@ -201,6 +295,36 @@ async fn handle(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn url_de_passerelle_publique_seulement() {
+        assert!(gateway_url_allowed("https://gateway.example.com"));
+        assert!(gateway_url_allowed("https://gateway.example.com/"));
+        for bad in [
+            "http://gateway.example.com",
+            "https://localhost",
+            "https://127.0.0.1",
+            "https://10.0.0.5",    // check-secrets:allow (adresse refusée par le test)
+            "https://192.168.1.1", // check-secrets:allow (adresse refusée par le test)
+            "https://172.16.0.1",  // check-secrets:allow (adresse refusée par le test)
+            "https://169.254.169.254",
+            "https://100.64.0.1",
+            "https://[::1]",
+            "https://[fd00::1]",
+            "https://[fe80::1]",
+            "https://[::ffff:127.0.0.1]",
+            "https://metadata.google.internal", // check-secrets:allow (adresse refusée par le test)
+            "https://nas.local",
+            "https://intranet",
+            "https://gateway.example.com:8443",
+            "https://u:p@gateway.example.com",
+            "https://gateway.example.com/?x=1",
+        ] {
+            assert!(!gateway_url_allowed(bad), "{bad}");
+        }
+        assert!(ip_is_private("169.254.169.254".parse().unwrap()));
+        assert!(!ip_is_private("1.1.1.1".parse().unwrap()));
+    }
 
     #[test]
     fn urls_et_chemins() {

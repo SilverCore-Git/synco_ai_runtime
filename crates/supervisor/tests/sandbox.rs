@@ -52,7 +52,7 @@ async fn launcher(run: &tempfile::TempDir, mode: Mode, proxy: Arc<LlmProxy>) -> 
 }
 
 fn no_proxy() -> Arc<LlmProxy> {
-    LlmProxy::new(BTreeMap::new()).unwrap()
+    LlmProxy::new(BTreeMap::new(), Default::default()).unwrap()
 }
 
 fn init() -> Init {
@@ -312,7 +312,7 @@ async fn mandataire_llm_injecte_la_cle() {
     let (base, seen) = fake_provider().await;
     let secrets = BTreeMap::from([("openai".to_owned(), ProviderSecret(Zeroizing::new(b"sk-runtime".to_vec())))]);
     let run = run_dir();
-    let l = launcher(&run, Mode::Sandboxed, LlmProxy::new(secrets).unwrap()).await;
+    let l = launcher(&run, Mode::Sandboxed, LlmProxy::new(secrets, Default::default()).unwrap()).await;
     let t = Duration::from_secs(30);
     let route = |provider: &str| {
         Some(LlmRoute { provider: provider.into(), base_url: base.clone(), budget: LlmBudget::default() })

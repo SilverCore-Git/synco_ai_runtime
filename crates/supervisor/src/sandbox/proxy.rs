@@ -15,6 +15,10 @@
 //! - borne la mémoire qu'un worker peut lui faire consommer (I1) : 4 connexions par socket, place
 //!   prise **avant** la lecture du corps, corps ≤ [`MAX_REQUEST_BYTES`] lu en 30 s au plus, octets en
 //!   tampon plafonnés par worker et pour tout le runtime ;
+//! - applique les quotas de D6 (I3) : débit d'appels, appels et tokens par tour (fenêtre
+//!   `maxTurnDurationSecs`), tokens sur la vie du worker, débit et tokens pour tout le runtime ;
+//!   tokens comptés d'après `usage` renvoyé par le fournisseur, sinon estimés (octets / 4) ; durée
+//!   d'un appel ≤ min(`maxTurnDurationSecs`, 10 min).
 //!
 //! Refus : statut HTTP et corps `{"error":"proxy_<code>"}`, sans appel au fournisseur. Aucun corps ni
 //! en-tête n'est journalisé.
@@ -22,9 +26,9 @@
 use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::body::{Body, Bytes};
 use axum::extract::{Request, State};
@@ -36,7 +40,8 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use zeroize::Zeroizing;
 
 use crate::config::ProviderSecret;
-use crate::launcher::LlmRoute;
+use crate::launcher::{LlmBudget, LlmRoute};
+use crate::ratelimit::TokenBucket;
 
 /// Corps de requête maximal : l'historique d'une conversation est plafonné à 8 Mio sérialisés
 /// (09 §4) ; une requête de chat (historique, définitions d'outils, résultats d'outils ≤ 256 Kio
@@ -54,12 +59,74 @@ pub const BODY_READ_TIMEOUT: Duration = Duration::from_secs(30);
 pub const READ_TIMEOUT: Duration = Duration::from_secs(120);
 /// Durée totale maximale d'un appel (09 §2).
 pub const TOTAL_TIMEOUT: Duration = Duration::from_secs(600);
+/// Débit d'appels par worker (par seconde, rafale).
+pub const WORKER_CALLS_PER_SEC: (u32, u32) = (2, 5);
+/// Corps de réponse JSON gardé pour y lire `usage`.
+const USAGE_JSON_MAX: usize = 1024 * 1024;
+/// Ligne SSE gardée pour y lire `usage`.
+const USAGE_LINE_MAX: usize = 256 * 1024;
 
-/// Mandataire partagé (clés des fournisseurs, clients HTTP, tampons du runtime).
+/// Quotas pour tout le runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeQuota {
+    /// Appels par seconde (tous workers).
+    pub calls_per_sec: u32,
+    /// Rafale.
+    pub calls_burst: u32,
+    /// Tokens par heure (tous workers).
+    pub tokens_per_hour: u64,
+}
+
+impl RuntimeQuota {
+    /// Depuis la configuration : 8 workers × 300 000 tokens par tour (30 min) → 2 tours par heure
+    /// pour chacun.
+    #[must_use]
+    pub fn from_config(config: &crate::config::Config) -> Self {
+        let l = &config.limits;
+        let workers = u64::try_from(l.max_workers).unwrap_or(u64::MAX);
+        let turns_per_hour = 3_600u64.checked_div(l.max_turn_duration_secs).unwrap_or(1).max(1);
+        Self {
+            calls_per_sec: 20,
+            calls_burst: 40,
+            tokens_per_hour: workers.saturating_mul(l.max_tokens_per_turn).saturating_mul(turns_per_hour),
+        }
+    }
+}
+
+impl Default for RuntimeQuota {
+    fn default() -> Self {
+        Self { calls_per_sec: 20, calls_burst: 40, tokens_per_hour: 8 * 300_000 * 2 }
+    }
+}
+
+#[derive(Debug)]
+struct Window {
+    start: Instant,
+    calls: u64,
+    tokens: u64,
+}
+
+impl Window {
+    fn roll(&mut self, now: Instant, len: Duration) {
+        if now.saturating_duration_since(self.start) >= len {
+            *self = Self { start: now, calls: 0, tokens: 0 };
+        }
+    }
+}
+
+#[derive(Debug)]
+struct RuntimeState {
+    bucket: TokenBucket,
+    hour: Window,
+}
+
+/// Mandataire partagé (clés des fournisseurs, clients HTTP, quotas et tampons du runtime).
 pub struct LlmProxy {
     http: reqwest::Client,
     public_http: reqwest::Client,
     secrets: BTreeMap<String, ProviderSecret>,
+    quota: RuntimeQuota,
+    runtime: Mutex<RuntimeState>,
     global_bytes: Arc<Semaphore>,
 }
 
@@ -69,11 +136,19 @@ impl core::fmt::Debug for LlmProxy {
     }
 }
 
+#[derive(Debug)]
+struct WorkerQuota {
+    bucket: TokenBucket,
+    turn: Window,
+    tokens_total: u64,
+}
+
 struct RouteCtx {
     proxy: Arc<LlmProxy>,
     route: LlmRoute,
     base: String,
     bytes: Arc<Semaphore>,
+    quota: Mutex<WorkerQuota>,
 }
 
 /// Adresse non publique (boucle locale, privée, lien local, métadonnées, ULA, non spécifiée,
@@ -255,11 +330,16 @@ impl axum::serve::Listener for LimitedListener {
 
 impl LlmProxy {
     /// Mandataire avec les clés des fournisseurs (lues de la configuration, D1).
-    pub fn new(secrets: BTreeMap<String, ProviderSecret>) -> Result<Arc<Self>, &'static str> {
+    pub fn new(secrets: BTreeMap<String, ProviderSecret>, quota: RuntimeQuota) -> Result<Arc<Self>, &'static str> {
         Ok(Arc::new(Self {
             http: client(false)?,
             public_http: client(true)?,
             secrets,
+            quota,
+            runtime: Mutex::new(RuntimeState {
+                bucket: TokenBucket::new(quota.calls_per_sec, quota.calls_burst),
+                hour: Window { start: Instant::now(), calls: 0, tokens: 0 },
+            }),
             global_bytes: Arc::new(Semaphore::new(GLOBAL_BUFFER_BYTES)),
         }))
     }
@@ -279,11 +359,17 @@ impl LlmProxy {
         if !ok {
             return Err("llm_route_refused");
         }
+        let (rate, burst) = WORKER_CALLS_PER_SEC;
         let ctx = Arc::new(RouteCtx {
             proxy: Arc::clone(self),
             base: route.base_url.trim_end_matches('/').to_owned(),
             route,
             bytes: Arc::new(Semaphore::new(WORKER_BUFFER_BYTES)),
+            quota: Mutex::new(WorkerQuota {
+                bucket: TokenBucket::new(rate, burst),
+                turn: Window { start: Instant::now(), calls: 0, tokens: 0 },
+                tokens_total: 0,
+            }),
         });
         let app = axum::Router::new().fallback(handle).with_state(ctx);
         let listener = LimitedListener { inner: listener, slots: Arc::new(Semaphore::new(MAX_CONNECTIONS_PER_WORKER)) };
@@ -302,6 +388,134 @@ impl LlmProxy {
         let mut v = HeaderValue::from_bytes(&raw).ok()?;
         v.set_sensitive(true);
         Some(v)
+    }
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn estimate_tokens(bytes: usize) -> u64 {
+    u64::try_from(bytes / 4).unwrap_or(u64::MAX)
+}
+
+/// Vérifie les quotas et réserve l'appel ; `Err` = code de refus (429).
+fn admit(ctx: &RouteCtx, body_len: usize) -> Result<(), &'static str> {
+    let now = Instant::now();
+    let b: LlmBudget = ctx.route.budget;
+    let estimate = estimate_tokens(body_len).saturating_add(b.max_output_tokens_per_call);
+    let mut rt = lock(&ctx.proxy.runtime);
+    rt.hour.roll(now, Duration::from_secs(3_600));
+    if rt.hour.tokens.saturating_add(estimate) > ctx.proxy.quota.tokens_per_hour {
+        return Err("proxy_runtime_token_budget");
+    }
+    let mut q = lock(&ctx.quota);
+    q.turn.roll(now, Duration::from_secs(b.max_turn_duration_secs.max(1)));
+    if q.turn.calls >= b.max_steps_per_turn {
+        return Err("proxy_call_budget");
+    }
+    if q.turn.tokens.saturating_add(estimate) > b.max_tokens_per_turn
+        || q.tokens_total.saturating_add(estimate) > b.max_tokens_per_conversation
+    {
+        return Err("proxy_token_budget");
+    }
+    if !q.bucket.take(now) {
+        return Err("proxy_rate_limited");
+    }
+    if !rt.bucket.take(now) {
+        return Err("proxy_runtime_rate_limited");
+    }
+    q.turn.calls = q.turn.calls.saturating_add(1);
+    rt.hour.calls = rt.hour.calls.saturating_add(1);
+    Ok(())
+}
+
+fn charge(ctx: &RouteCtx, tokens: u64) {
+    let mut q = lock(&ctx.quota);
+    q.turn.tokens = q.turn.tokens.saturating_add(tokens);
+    q.tokens_total = q.tokens_total.saturating_add(tokens);
+    drop(q);
+    let mut rt = lock(&ctx.proxy.runtime);
+    rt.hour.tokens = rt.hour.tokens.saturating_add(tokens);
+}
+
+/// Lit `usage` (`total_tokens`, sinon `prompt_tokens + completion_tokens`) dans un objet JSON.
+#[must_use]
+pub fn usage_tokens(v: &serde_json::Value) -> Option<u64> {
+    let u = v.get("usage")?;
+    u.get("total_tokens").and_then(serde_json::Value::as_u64).or_else(|| {
+        let p = u.get("prompt_tokens").and_then(serde_json::Value::as_u64)?;
+        let c = u.get("completion_tokens").and_then(serde_json::Value::as_u64).unwrap_or(0);
+        Some(p.saturating_add(c))
+    })
+}
+
+/// Compteur d'une réponse : octets relayés et `usage` repéré (lignes SSE `data: {…}` ou corps JSON
+/// entier, chacun borné). Facture à la fin du flux ou à son abandon.
+struct Meter {
+    ctx: Arc<RouteCtx>,
+    req_bytes: usize,
+    resp_bytes: usize,
+    line: Vec<u8>,
+    line_overflow: bool,
+    json: Option<Vec<u8>>,
+    usage: Option<u64>,
+}
+
+impl Meter {
+    fn feed(&mut self, chunk: &[u8]) {
+        self.resp_bytes = self.resp_bytes.saturating_add(chunk.len());
+        if let Some(j) = &mut self.json {
+            if j.len().saturating_add(chunk.len()) <= USAGE_JSON_MAX {
+                j.extend_from_slice(chunk);
+            } else {
+                self.json = None;
+            }
+        }
+        for &b in chunk {
+            if b == b'\n' {
+                if !self.line_overflow {
+                    let line = std::mem::take(&mut self.line);
+                    self.scan_line(&line);
+                }
+                self.line.clear();
+                self.line_overflow = false;
+            } else if self.line.len() < USAGE_LINE_MAX {
+                self.line.push(b);
+            } else {
+                self.line_overflow = true;
+            }
+        }
+    }
+
+    fn scan_line(&mut self, line: &[u8]) {
+        let Some(data) = line.strip_prefix(b"data:") else { return };
+        if !data.windows(7).any(|w| w == b"\"usage\"") {
+            return;
+        }
+        if let Some(t) =
+            serde_json::from_slice::<serde_json::Value>(data.trim_ascii()).ok().as_ref().and_then(usage_tokens)
+        {
+            self.usage = Some(self.usage.map_or(t, |u| u.max(t)));
+        }
+    }
+
+    fn tokens(&self) -> u64 {
+        let from_json = self
+            .json
+            .as_deref()
+            .and_then(|j| serde_json::from_slice::<serde_json::Value>(j).ok())
+            .as_ref()
+            .and_then(usage_tokens);
+        // Estimation bornée si le fournisseur ne renvoie pas `usage` : (requête + réponse) / 4.
+        self.usage.or(from_json).unwrap_or_else(|| estimate_tokens(self.req_bytes.saturating_add(self.resp_bytes)))
+    }
+}
+
+impl Drop for Meter {
+    fn drop(&mut self) {
+        let tokens = self.tokens();
+        charge(&self.ctx, tokens);
     }
 }
 
@@ -360,11 +574,16 @@ async fn handle(State(ctx): State<Arc<RouteCtx>>, req: Request) -> Response {
         Ok(b) => b,
         Err((status, code)) => return refuse(status, code),
     };
+    if let Err(code) = admit(&ctx, body.len()) {
+        tracing::info!(code, provider = %ctx.route.provider, "appel LLM refusé (quota)");
+        return refuse(StatusCode::TOO_MANY_REQUESTS, code);
+    }
     let gateway = ctx.route.provider == "gateway";
     let http = if gateway && !base_url_allowed(&ctx.route.base_url) { &ctx.proxy.public_http } else { &ctx.proxy.http };
     let url = format!("{}{}", ctx.base, path);
     let method = if parts.method == Method::POST { reqwest::Method::POST } else { reqwest::Method::GET };
-    let mut up = http.request(method, url);
+    let timeout = TOTAL_TIMEOUT.min(Duration::from_secs(ctx.route.budget.max_turn_duration_secs.max(1)));
+    let mut up = http.request(method, url).timeout(timeout);
     for name in [header::CONTENT_TYPE, header::ACCEPT] {
         if let Some(v) = parts.headers.get(&name) {
             up = up.header(name.as_str(), v.as_bytes());
@@ -379,6 +598,7 @@ async fn handle(State(ctx): State<Arc<RouteCtx>>, req: Request) -> Response {
     } else if let Some(v) = ctx.proxy.bearer(&ctx.route.provider) {
         up = up.header(header::AUTHORIZATION.as_str(), v);
     }
+    let req_bytes = body.len();
     if parts.method == Method::POST {
         up = up.body(body);
     }
@@ -392,19 +612,39 @@ async fn handle(State(ctx): State<Arc<RouteCtx>>, req: Request) -> Response {
     };
     // Corps de la requête envoyé : ses octets ne sont plus en tampon.
     drop(permits);
+    let mut meter = Meter {
+        ctx: Arc::clone(&ctx),
+        req_bytes,
+        resp_bytes: 0,
+        line: Vec::new(),
+        line_overflow: false,
+        json: None,
+        usage: None,
+    };
     let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     tracing::debug!(code = "llm_proxy_response", status = status.as_u16(), provider = %ctx.route.provider, "appel LLM relayé");
     let mut out = Response::builder().status(status);
+    let is_json = resp
+        .headers()
+        .get(header::CONTENT_TYPE.as_str())
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("application/json"));
+    if is_json {
+        meter.json = Some(Vec::new());
+    }
     for name in [header::CONTENT_TYPE, header::RETRY_AFTER] {
         if let Some(v) = resp.headers().get(name.as_str()) {
             out = out.header(name.as_str(), v.as_bytes());
         }
     }
-    // Corps relayé en flux.
-    let stream = futures_util::stream::unfold(Some(resp), |state| async move {
-        let mut resp = state?;
+    // Corps relayé en flux ; tokens facturés à la fin (ou à l'abandon) par `Meter`.
+    let stream = futures_util::stream::unfold(Some((resp, meter)), |state| async move {
+        let (mut resp, mut meter) = state?;
         match resp.chunk().await {
-            Ok(Some(b)) => Some((Ok::<Bytes, std::io::Error>(b), Some(resp))),
+            Ok(Some(b)) => {
+                meter.feed(&b);
+                Some((Ok::<Bytes, std::io::Error>(b), Some((resp, meter))))
+            }
             Ok(None) => None,
             Err(_) => Some((Err(std::io::Error::other("proxy_upstream_body")), None)),
         }
@@ -477,5 +717,15 @@ mod tests {
         ] {
             assert!(!allowed_request("openai", &m, p), "{m} {p}");
         }
+    }
+
+    #[test]
+    fn lecture_de_usage() {
+        let v: serde_json::Value = serde_json::from_str(r#"{"usage":{"total_tokens":42}}"#).unwrap();
+        assert_eq!(usage_tokens(&v), Some(42));
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"usage":{"prompt_tokens":10,"completion_tokens":5}}"#).unwrap();
+        assert_eq!(usage_tokens(&v), Some(15));
+        assert_eq!(usage_tokens(&serde_json::json!({})), None);
     }
 }

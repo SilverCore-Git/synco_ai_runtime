@@ -104,7 +104,7 @@ async fn send_chunk(s: &mut UnixStream, n: usize) -> std::io::Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn corps_trop_grand_refuse_sans_appel() {
     let (base, calls) = provider(None).await;
-    let proxy = LlmProxy::new(BTreeMap::new()).unwrap();
+    let proxy = LlmProxy::new(BTreeMap::new(), Default::default()).unwrap();
     let srv = serve(&proxy, &base, LlmBudget::default());
     // Taille annoncée au-delà du plafond : refus immédiat.
     let mut s = UnixStream::connect(&srv.socket).await.unwrap();
@@ -129,7 +129,7 @@ async fn corps_trop_grand_refuse_sans_appel() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn connexions_bornees() {
     let (base, _calls) = provider(Some(10)).await;
-    let proxy = LlmProxy::new(BTreeMap::new()).unwrap();
+    let proxy = LlmProxy::new(BTreeMap::new(), Default::default()).unwrap();
     let srv = serve(&proxy, &base, LlmBudget::default());
     let mut holders = Vec::new();
     for _ in 0..MAX_CONNECTIONS_PER_WORKER {
@@ -152,7 +152,7 @@ async fn connexions_bornees() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tampons_bornes() {
     let (base, _calls) = provider(Some(10)).await;
-    let proxy = LlmProxy::new(BTreeMap::new()).unwrap();
+    let proxy = LlmProxy::new(BTreeMap::new(), Default::default()).unwrap();
     let srv = serve(&proxy, &base, LlmBudget::default());
     let mut tasks = Vec::new();
     for _ in 0..MAX_CONNECTIONS_PER_WORKER {
@@ -181,7 +181,7 @@ async fn tampons_bornes() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn chemins_hors_liste() {
     let (base, calls) = provider(None).await;
-    let proxy = LlmProxy::new(BTreeMap::new()).unwrap();
+    let proxy = LlmProxy::new(BTreeMap::new(), Default::default()).unwrap();
     let srv = serve(&proxy, &base, LlmBudget::default());
     for (m, p) in [
         ("GET", "/files"),
@@ -195,4 +195,82 @@ async fn chemins_hors_liste() {
         assert!(r.starts_with("HTTP/1.1 404") || r.starts_with("HTTP/1.1 405"), "{m} {p} : {r}");
     }
     assert_eq!(*calls.lock().unwrap(), 0);
+}
+
+fn budget(steps: u64, turn_tokens: u64, max_output: u64) -> LlmBudget {
+    LlmBudget {
+        max_steps_per_turn: steps,
+        max_tokens_per_turn: turn_tokens,
+        max_tokens_per_conversation: 1_000_000,
+        max_turn_duration_secs: 600,
+        max_output_tokens_per_call: max_output,
+    }
+}
+
+fn status(r: &str) -> &str {
+    r.get(9..12).unwrap_or("")
+}
+
+/// I3 : appels par tour (`maxStepsPerTurn`) comptés par le mandataire.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn quota_d_appels() {
+    let (base, calls) = provider(Some(1)).await;
+    let proxy = LlmProxy::new(BTreeMap::new(), Default::default()).unwrap();
+    let srv = serve(&proxy, &base, budget(2, 1_000_000, 0));
+    for _ in 0..2 {
+        assert_eq!(status(&simple(&srv.socket, "POST", "/chat/completions", "{}").await), "200");
+    }
+    let r = simple(&srv.socket, "POST", "/chat/completions", "{}").await;
+    assert!(r.contains("429") && r.contains("proxy_call_budget"), "{r}");
+    assert_eq!(*calls.lock().unwrap(), 2);
+}
+
+/// I3 : tokens par tour d'après `usage` renvoyé par le fournisseur (+ sortie maximale estimée).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn quota_de_tokens_d_apres_usage() {
+    let (base, calls) = provider(Some(900)).await;
+    let proxy = LlmProxy::new(BTreeMap::new(), Default::default()).unwrap();
+    let srv = serve(&proxy, &base, budget(25, 1_000, 200));
+    assert_eq!(status(&simple(&srv.socket, "POST", "/chat/completions", "{}").await), "200");
+    let r = simple(&srv.socket, "POST", "/chat/completions", "{}").await;
+    assert!(r.contains("429") && r.contains("proxy_token_budget"), "{r}");
+    assert_eq!(*calls.lock().unwrap(), 1);
+}
+
+/// I3 : sans `usage`, estimation bornée (octets / 4) de la requête et de la réponse.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn quota_de_tokens_estime() {
+    let (base, calls) = provider(None).await;
+    let proxy = LlmProxy::new(BTreeMap::new(), Default::default()).unwrap();
+    let srv = serve(&proxy, &base, budget(25, 1_500, 0));
+    let body = format!("{{\"x\":\"{}\"}}", "a".repeat(4_000));
+    assert_eq!(status(&simple(&srv.socket, "POST", "/chat/completions", &body).await), "200");
+    let r = simple(&srv.socket, "POST", "/chat/completions", &body).await;
+    assert!(r.contains("proxy_token_budget"), "{r}");
+    assert_eq!(*calls.lock().unwrap(), 1);
+}
+
+/// I3 : quota du runtime partagé entre workers, et débit d'appels par worker.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn quota_du_runtime_et_debit() {
+    let (base, calls) = provider(Some(800)).await;
+    let quota =
+        synco_ai_runtime::sandbox::proxy::RuntimeQuota { calls_per_sec: 100, calls_burst: 100, tokens_per_hour: 1_000 };
+    let proxy = LlmProxy::new(BTreeMap::new(), quota).unwrap();
+    let a = serve(&proxy, &base, budget(25, 1_000_000, 0));
+    let b = serve(&proxy, &base, budget(25, 1_000_000, 0));
+    assert_eq!(status(&simple(&a.socket, "POST", "/chat/completions", "{}").await), "200");
+    assert_eq!(status(&simple(&a.socket, "POST", "/chat/completions", "{}").await), "200");
+    let r = simple(&b.socket, "POST", "/chat/completions", "{}").await;
+    assert!(r.contains("proxy_runtime_token_budget"), "{r}");
+    assert_eq!(*calls.lock().unwrap(), 2);
+    // Débit par worker : rafale de 5, puis refus.
+    let proxy = LlmProxy::new(BTreeMap::new(), Default::default()).unwrap();
+    let (base, _) = provider(Some(0)).await;
+    let c = serve(&proxy, &base, budget(100, 1_000_000, 0));
+    let mut codes = Vec::new();
+    for _ in 0..7 {
+        codes.push(simple(&c.socket, "GET", "/models", "").await);
+    }
+    assert!(codes.iter().any(|r| r.contains("proxy_rate_limited")), "{codes:?}");
 }

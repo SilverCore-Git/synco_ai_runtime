@@ -283,7 +283,9 @@ async fn aller_retour_avec_bac_a_sable() {
         run_dir: run.path().join("w"),
     };
     let launcher =
-        SandboxLauncher::new(&settings, Mode::Sandboxed, LlmProxy::new(BTreeMap::new()).unwrap()).await.unwrap();
+        SandboxLauncher::new(&settings, Mode::Sandboxed, LlmProxy::new(BTreeMap::new(), Default::default()).unwrap())
+            .await
+            .unwrap();
     aller_retour(setup_with(Arc::new(launcher)).await).await;
 }
 

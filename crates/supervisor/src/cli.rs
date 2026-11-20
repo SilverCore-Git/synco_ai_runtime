@@ -19,7 +19,10 @@ use std::sync::Arc;
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::launcher::ResourceLimits;
-use crate::sandbox::{Mode, SandboxLauncher, proxy::LlmProxy};
+use crate::sandbox::{
+    Mode, SandboxLauncher,
+    proxy::{LlmProxy, RuntimeQuota},
+};
 use crate::seal;
 
 /// Fichier de configuration par défaut.
@@ -222,7 +225,8 @@ pub async fn execute(args: Args) -> Result<()> {
         }
         Command::SandboxCheck => {
             seal::ensure_state_dir(&config.state_dir)?;
-            let proxy = LlmProxy::new(Default::default()).map_err(|e| Error::Config(e.into()))?;
+            let proxy = LlmProxy::new(Default::default(), RuntimeQuota::from_config(&config))
+                .map_err(|e| Error::Config(e.into()))?;
             let launcher = build_launcher(&config, false, proxy).await?;
             out(&format!(
                 "bac à sable : sonde réussie ; cgroup délégué : {}",
@@ -243,7 +247,8 @@ pub async fn execute(args: Args) -> Result<()> {
         Command::Run => {
             // Bac à sable vérifié AVANT de desceller les clés : sans lui, refus de démarrer.
             let secrets = config.read_provider_secrets()?;
-            let proxy = LlmProxy::new(secrets).map_err(|e| Error::Config(e.into()))?;
+            let proxy =
+                LlmProxy::new(secrets, RuntimeQuota::from_config(&config)).map_err(|e| Error::Config(e.into()))?;
             let launcher = build_launcher(&config, args.insecure_no_sandbox, proxy).await?;
             tracing::info!(code = "worker_launcher", launcher = launcher_name(&launcher), "lanceur de workers prêt");
             let (keys, created) = seal::load_or_create(&config.state_dir, &backend)?;

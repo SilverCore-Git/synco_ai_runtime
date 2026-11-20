@@ -1,0 +1,27 @@
+# Contexte de construction minimal : ni dépôt git, ni artefacts, ni documentation.
+.git
+.github
+.githooks
+target
+docs
+scripts
+deploy
+*.md
+# Secrets et états locaux : jamais dans le contexte de construction.
+compose.yml
+config.toml
+passphrase*
+*.passphrase
+*api-key*
+*.tar
+*.tar.gz
+*.tgz
+keys.sealed
+keys.cred
+dashboard.pass
+*.pem
+*.key
+*.cred
+*.secret
+.env
+.env.*

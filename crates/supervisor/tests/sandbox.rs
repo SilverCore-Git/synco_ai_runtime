@@ -276,6 +276,23 @@ async fn racine_vide_sans_seccomp() {
     let pid = vec![std::process::id().to_string()];
     let p = l.run_case("list_procs", pid, &limits(), None, vec![Layer::Seccomp], t).await.unwrap();
     assert!(p.line.starts_with("blocked") && p.line.contains("pid=1") && p.line.contains("kill0_failed"), "{}", p.line);
+    assert!(p.line.contains("kill_all_esrch"), "{}", p.line);
+}
+
+/// Superviseur PID 1 (conteneur) : le PID passé est celui du worker lui-même (1 dans son espace de noms) ;
+/// `kill(1, 0)` réussit trivialement et ne doit pas être pris pour une évasion (`kill0_same_pid`).
+#[tokio::test]
+#[ignore = "noyau : espaces de noms, cgroup délégué (tests/sandbox-host.sh)"]
+async fn superviseur_pid_1_pas_de_faux_positif() {
+    let run = run_dir();
+    let l = launcher(&run, Mode::Sandboxed, no_proxy()).await;
+    let t = Duration::from_secs(30);
+    let p = l.run_case("list_procs", vec!["1".to_owned()], &limits(), None, vec![Layer::Seccomp], t).await.unwrap();
+    assert!(
+        p.line.starts_with("blocked") && p.line.contains("kill0_same_pid") && p.line.contains("kill_all_esrch"),
+        "{}",
+        p.line
+    );
 }
 
 async fn ping(io: &mut tokio::net::UnixStream) {

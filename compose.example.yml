@@ -1,0 +1,129 @@
+# Synco AI Runtime : exemple Compose. Copier en compose.yml puis adapter.
+#
+#   cp compose.example.yml compose.yml                      # compose.yml est ignoré par git
+#   # Config et secrets HORS du dépôt (jamais de secret à la racine du dépôt) :
+#   mkdir -p ~/.config/synco-ai-runtime && chmod 0700 ~/.config/synco-ai-runtime
+#   cp deploy/config.container.example.toml ~/.config/synco-ai-runtime/config.toml   # puis l'éditer
+#   (umask 077; PP=$(head -c 32 /dev/urandom | base64 | tr -d '\n'); echo "à noter dans un coffre : $PP"; printf '%s' "$PP" > ~/.config/synco-ai-runtime/passphrase.txt)
+#   chmod 0400 ~/.config/synco-ai-runtime/passphrase.txt && podman unshare chown 10001:10001 ~/.config/synco-ai-runtime/passphrase.txt   # voir « secrets »
+#   podman compose up -d --build        # chemin officiel (Podman rootless)
+#   # ou : docker compose up -d --build  (variante avancée : lire docs/deploiement.md §Docker d'abord)
+#
+# Variante avec la passerelle Synco AI et Ollama (profil « gateway ») :
+#   podman compose --profile gateway up -d --build
+#   podman compose exec ollama ollama pull llama3.1:8b
+#
+# Le mandataire TLS (nginx ou Caddy, deploy/) tourne SUR L'HÔTE et relaie vers 127.0.0.1:8790 et
+# 8791 : les ports ne sont publiés que sur la boucle locale. Ne jamais les publier sur 0.0.0.0.
+name: synco-ai-runtime
+
+services:
+  synco-ai-runtime:
+    build: .
+    image: localhost/synco-ai-runtime:latest
+    restart: unless-stopped
+    networks: [runtime_net]       # réseau propre : le runtime n'est pas sur celui de la passerelle / d'Ollama
+    # Le superviseur doit être le processus 1 ET seul dans son cgroup : PAS de `init: true`, pas de
+    # `command:` qui lance un shell. Le service est lancé tel que l'image le définit.
+    user: "10001:10001"
+    read_only: true               # /tmp et /run sont des tmpfs (Podman, Docker) ; état = volume
+    cap_drop: [ALL]
+    cap_add:
+      # Seule capacité conservée : DAC_OVERRIDE, pour écrire dans le cgroup du conteneur, dont le
+      # propriétaire est le root du conteneur (cgroup v2, Podman rootless). Voir docs/deploiement.md.
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+      # Rend le cgroup privé du conteneur inscriptible (Podman). Docker ne le comprend pas :
+      # utiliser la variante cgroup délégué de docs/deploiement.md.
+      - unmask=/sys/fs/cgroup
+      # Hôte SELinux (Fedora, RHEL) : sans cette ligne SELinux interdit l'écriture dans le cgroup. ATTENTION :
+      # elle désactive TOUT le confinement SELinux du conteneur (spc_t) ; la retirer exige `:Z` sur les montages.
+      # Alternative moins large : `setsebool -P container_manage_cgroup on` sur l'hôte (non testée).
+      # À retirer sur un hôte sans SELinux.
+      - label=disable
+    ports:
+      - "127.0.0.1:8790:8790"     # WebSocket et fiche publique (derrière le mandataire TLS)
+      - "127.0.0.1:8791:8791"     # dashboard
+    volumes:
+      - runtime_state:/var/lib/synco-ai-runtime     # clé scellée, historique, dashboard.pass
+      - ${HOME}/.config/synco-ai-runtime/config.toml:/etc/synco-ai-runtime/config.toml:ro
+    secrets:
+      # Montés sous /run/secrets/<nom>. Compose ignore uid/gid/mode hors Swarm : c'est le propriétaire
+      # du fichier HÔTE qui compte, et le runtime exige uid 10001 et droits 0400/0600 pour la phrase
+      # de passe. Podman rootless : `chmod 0400 passphrase.txt && podman unshare chown 10001:10001 ~/.config/synco-ai-runtime/passphrase.txt` ; Docker :
+      # `chmod 0400 passphrase.txt && sudo chown 10001:10001 passphrase.txt`. (chmod AVANT chown.)
+      - synco-ai-runtime-passphrase
+      # Clé d'un fournisseur LLM (config.toml : api_key_file = "/run/secrets/openai-api-key"), même
+      # propriétaire :
+      # - openai-api-key
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/8790"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    # Variante avec la passerelle : les deux services ci-dessous. L'URL de la passerelle saisie
+    # dans Synco doit être joignable (HTTPS) depuis ce conteneur.
+
+  # --- Profil « gateway » : passerelle Synco AI + Ollama --------------------------------------
+  ollama:
+    profiles: [gateway]
+    # docker.io/ollama/ollama:0.40.16 (publié le 2026-11-09), épinglé par digest d'index.
+    image: docker.io/ollama/ollama@sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592
+    restart: unless-stopped
+    # Ne JAMAIS publier 11434 : Ollama n'a aucune authentification, c'est le rôle de la passerelle.
+    networks: [gateway_net]       # joignable par la passerelle seulement (pas par le runtime)
+    security_opt: ["no-new-privileges:true"]
+    # (Ollama tourne en root pour son volume /root/.ollama : pas de cap_drop ici, non testé.)
+    volumes:
+      - ollama_data:/root/.ollama
+    # GPU NVIDIA (NVIDIA Container Toolkit ; Podman : `devices: [nvidia.com/gpu=all]` via CDI) :
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  synco-ai-gateway:
+    profiles: [gateway]
+    build:
+      # Dépôt Synco_AI_Gateway cloné à côté de celui-ci (ou autre chemin).
+      context: ${SYNCO_AI_GATEWAY_SRC:-../Synco_AI_Gateway}
+      dockerfile: Dockerfile.gateway-only
+    restart: unless-stopped
+    depends_on: [ollama]
+    networks: [gateway_net]
+    # Durcissement vérifié avec l'image de la passerelle (Dockerfile.gateway-only, utilisateur sans privilèges) :
+    # elle démarre et répond /health en lecture seule et sans aucune capacité.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    ports:
+      - "127.0.0.1:8787:8787"     # derrière le mandataire TLS (vhost distinct)
+    environment:
+      PORT: "8787"
+      ALLOWED_ORIGIN: "https://app.example.com"
+      OLLAMA_URL: "http://ollama:11434"
+      SYNCO_API_URL: "https://api.example.com"
+      # URL publique de la passerelle, exactement celle saisie dans les paramètres IA de l'org.
+      SYNCO_GATEWAY_URL: "https://gateway.example.com"
+      SYNCO_ALLOWED_ORGS: "identifiant-de-votre-organisation"
+      SYNCO_ALLOWED_MODELS: "llama3.1:8b"
+      RUST_LOG: info
+
+networks:
+  runtime_net: {}
+  gateway_net: {}
+
+volumes:
+  runtime_state:
+  ollama_data:
+
+secrets:
+  synco-ai-runtime-passphrase:
+    file: ${HOME}/.config/synco-ai-runtime/passphrase.txt
+  # openai-api-key:
+  #   file: ${HOME}/.config/synco-ai-runtime/openai-api-key.txt

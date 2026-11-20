@@ -737,3 +737,85 @@ le gros du report concernait `06`, `04`, `03` et `00`.
 
 **Vérifié** : `cargo fmt --all --check` avant chaque commit, `check-secrets` du hook, `git diff --cached
 --name-only` limité à `docs/plan/` et `docs/journal.md`. Pas de compilation ni de test.
+
+## 2026-11-20 — L09 : packaging, déploiement, CI
+
+**Fait** : `Dockerfile` (multi-étapes, images de base épinglées par digest d'index, utilisateur 10001, `HEALTHCHECK`,
+volume d'état, `ENTRYPOINT` exec sans script), `compose.example.yml` (profil `gateway` : passerelle + Ollama), Quadlet Podman
+rootless, variante Docker (profil seccomp dérivé de moby, profil AppArmor), vhosts nginx et Caddy, unité systemd de référence
+complétée (pas de doublon), CI, `README.md`, `docs/deploiement.md`, `docs/recette-porte-c.md`.
+
+**Images de base** (digests de l'index multi-architectures, relevés par `skopeo inspect --raw | sha256sum` et recoupés avec
+l'API Docker Hub) :
+`rust:1.98.1-slim-bookworm` → `sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d1601d30db1c1f62757e730` (publié le 2026-09-19) ;
+`debian:bookworm-20261027-slim` → `sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3` (2026-10-28) ;
+`ollama/ollama:0.40.16` → `sha256:910d0d8107b538fb0894e63163eb195de0cc7aefcbc666dc62d3b18f71124592` (2026-11-09, 11 jours : > 7).
+CI : `actions/checkout` v7.0.1 (2026-07-20) par SHA `3d3c42e5aac5ba805825da76410c181273ba90b1` ; `cargo-audit` 0.22.2 (2026-06-05).
+Aucune dépendance Rust ajoutée.
+
+**Constats du bac à sable sous Podman rootless (tous mesurés)** :
+
+1. SELinux (Fedora) : `container_t` n'a pas le droit d'écrire dans cgroupfs, même en root du conteneur (`mkdir` refusé) →
+   `--security-opt label=disable` (testé). Le booléen `container_manage_cgroup` serait plus étroit : **non testé** (root requis).
+2. Le cgroup du conteneur appartient au root du conteneur, même avec `--userns=keep-id` : l'uid 10001 ne peut pas y écrire.
+3. Lancer en uid 0 ne convient pas : `uid_map` d'un espace de noms imbriqué mappant l'uid 0 exige `CAP_SETFCAP`
+   (`Operation not permitted` avec `--cap-drop=all`).
+   → **uid 10001 + `--cap-add=DAC_OVERRIDE`** (seule capacité ; DAC pour le cgroup) + `unmask=/sys/fs/cgroup`. Le profil seccomp
+   par défaut de Podman suffit (testé) ; sous le profil moby brut, `userns_unavailable` (testé) ; profil dérivé : OK sous Podman.
+4. `sandbox-check` lancé sur le volume d'un runtime en marche **supprimerait** les répertoires de sockets des workers
+   (`clean_run_dir`) : la doc impose un volume anonyme jetable.
+
+**Correctif de code (commit séparé, `28476d6`)** : `sandbox-check` signalait `list_procs : escaped` quand le superviseur est le
+processus 1 du conteneur : dans son espace de noms de PID, le worker est lui-même le PID 1, donc `kill(1, 0)` réussit sur
+lui-même (faux positif). Le test est ignoré quand le PID du superviseur égale celui du worker (`kill0_same_pid`). Sur l'hôte
+(`sandbox-host.sh` : 10/10, aller-retour OK) et dans le conteneur, plus de faux positif ; la couche réelle n'est pas affaiblie
+(le test `tests/sandbox.rs` attend toujours `kill0_failed` avec un PID différent).
+
+**Écarts** :
+
+- Image « non root » : oui (10001), mais en Podman rootless le superviseur a besoin de `DAC_OVERRIDE` (point 2) ; documenté.
+- Compose ignore `uid`/`gid`/`mode` des secrets hors Swarm : la phrase de passe doit appartenir à l'uid 10001 sur l'hôte
+  (`podman unshare chown`, `chown` en Docker), documenté dans le fichier. `podman run --secret` et Quadlet gèrent `uid`/`mode`.
+- `systemd-creds encrypt` refuse à un utilisateur non root : la première commande `pair` du mode systemd se lance en root
+  (documenté dans l'unité et le guide).
+- Quadlet utilise un volume nommé qui hérite uid 10001 / mode 0700 de l'image ; un `podman volume import` laisse la racine en
+  root 0755 (restauration : `chown`, documentée).
+- Audit : `cargo audit` (0.22.2) échoue aujourd'hui sur **5 avis `rustls` 0.23.44** (RUSTSEC-2026-0285, -0346, -0347, -0348,
+  -0349 ; corrigés en ≥ 0.23.46, publié le 2026-10-14) et 1 avis `unsound` sur `rustix` 1.1.5 (RUSTSEC-2026-0486 ; 1.1.6 du
+  2026-10-27). La montée des versions épinglées est une modification de dépendances que je n'ai pas faite (hors lot) : l'étape
+  d'audit de la CI est en `continue-on-error` en attendant (commentaire explicite) : **à retirer après la montée**.
+- Pas de `rust-toolchain.toml` dans le contexte d'image : la toolchain est celle de l'image `rust:1.98.1` (même version).
+
+**Non vérifié** : Docker (socket inaccessible : permission refusée) — recette, profil AppArmor, `--cgroupns=host` + cgroup délégué
+et l'option `--security-opt writable-cgroups=true` (présente dans les sources de moby 29.9.2) ; unité systemd **système** ;
+SELinux avec le booléen ; mandataire en conditions réelles (seuls `nginx -t` et `caddy validate` ont été exécutés) ; appairage
+contre une vraie API de dev ; bascule d'une conversation (recette manuelle `docs/recette-porte-c.md`).
+
+**Questions** : (1) Docker : garder le sous-arbre délégué + `cgroup_root` (décision actuelle, plus lourde) ou adopter
+`writable-cgroups=true` (cgroup du conteneur inscriptible, plus simple, incompatible `userns-remap`/rootless) ? (2) Accepter
+`DAC_OVERRIDE` en Podman, ou faire écrire au superviseur dans un cgroup qui n'appartient pas au root du conteneur (changement de
+code hors lot) ? (3) Monter `rustls` ≥ 0.23.46 et `rustix` 1.1.6 (autre lot).
+
+## 2026-11-20 — L09 : corrections après revue
+
+- **I1** : la phrase de passe est affichée une fois à la création (à noter dans un coffre). Le pilote de secrets Podman `file`
+  la stocke en base64 sous le même `$HOME` que `keys.sealed` : documenté honnêtement (modèle de menace, `--showsecret`),
+  alternatives citées (pilotes `pass`/`shell`, saisie au démarrage vérifiée dans `seal.rs` : terminal sans écho si
+  `passphrase_file` est absent, donc `-it`, sans redémarrage automatique ; `systemd-creds`). **Question de fond non tranchée,
+  posée à l'utilisateur.**
+- **I2** : config, phrase de passe et sauvegardes se créent hors du dépôt (`~/.config/synco-ai-runtime/`, `~/sauvegardes/`) ;
+  `.gitignore` et `.dockerignore` couvrent les noms de secrets et d'archives.
+- **I3** : variante Docker marquée « non testée, non prise en charge en l'état » ; limites établies **par lecture** (capacité
+  ambiante, ancêtre commun du cgroup, délégation limitée à quatre entrées, plafonds posés par l'hôte, fuite de
+  `--cgroupns=host`) ; recette corrigée mais qui ne résout pas l'ancêtre commun ; `writable-cgroups=true` présenté comme piste
+  avec le même problème de propriété. Aucun code modifié.
+- **I4** : l'audit de la CI est bloquant ; six `--ignore` nommés (rustls 0.23.44 ×5, rustix 1.1.5), à retirer après la montée.
+  Commande vérifiée avec cargo-audit 0.22.2 (rc 0 ; rc 1 si un avis n'est pas ignoré). J'ai ajouté `--deny unsound`.
+- **M1** : `sandbox-check` essaie `kill(-1, 0)` (via `test_kill_process_group(1)`) : `ESRCH` constaté (`kill_all_esrch`) ;
+  `kill` est bien dans la liste blanche seccomp. Nouveau test `superviseur_pid_1_pas_de_faux_positif` (hôte) ; mutation
+  (contrôle `kill0_same_pid` retiré) : le test échoue (`escaped … kill0_ok:1`), restauré.
+- **M2** : `label=disable` désactive tout le confinement SELinux (`spc_t`) ; `:Z` nécessaire sans lui ;
+  `container_manage_cgroup` non testé. **M3** : sept lignes `ok`. **M4** : réseaux séparés ; passerelle `read_only` +
+  `cap_drop: ALL` + `no-new-privileges` (vérifié avec l'image de la passerelle existante `localhost/synco-ai-gateway:l04`, pas
+  reconstruite : `/health` répond) ; Ollama : seulement `no-new-privileges` (root, non testé). **M5** : limite de
+  `trust_proxy_hops = 1` sur hôte partagé. **M6** : profil AppArmor en `abi <abi/4.0>` + `unix,` (non testé).

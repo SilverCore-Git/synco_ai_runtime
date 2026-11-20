@@ -105,6 +105,12 @@ fn list_procs(stream: UnixStream, args: &[String]) -> u8 {
                 detail.push(format!("open_ok:/proc/{pid}/{file}"));
             }
         }
+        // Superviseur processus 1 d'un conteneur : dans son propre espace de noms de PID, le worker est
+        // lui-même le PID 1, donc `kill(1, 0)` réussit trivialement et ne prouve rien (faux positif).
+        if *pid == std::process::id().to_string() {
+            detail.push("kill0_same_pid".into());
+            continue;
+        }
         let signalled = pid
             .parse::<i32>()
             .ok()
@@ -118,6 +124,21 @@ fn list_procs(stream: UnixStream, args: &[String]) -> u8 {
             Some(false) => detail.push("kill0_failed".into()),
             None => detail.push("bad_pid".into()),
         }
+    }
+    // `kill(-1, 0)` vise tous les processus visibles (hors PID 1 et soi) : dans l'espace de noms de PID
+    // du worker, il n'y en a aucun (ESRCH attendu). Tout autre résultat montre un processus voisin.
+    // (`test_kill_process_group` avec le PID 1 envoie `kill(-1, 0)`.)
+    match rustix::process::Pid::from_raw(1).map(rustix::process::test_kill_process_group) {
+        Some(Err(rustix::io::Errno::SRCH)) => detail.push("kill_all_esrch".into()),
+        Some(Ok(())) => {
+            escaped = true;
+            detail.push("kill_all_ok".into());
+        }
+        Some(Err(e)) => {
+            escaped = true;
+            detail.push(format!("kill_all:errno{}", e.raw_os_error()));
+        }
+        None => detail.push("bad_pid".into()),
     }
     finish(stream, escaped, &detail.join(" "))
 }

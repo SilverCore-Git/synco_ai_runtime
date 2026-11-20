@@ -1,0 +1,55 @@
+# Configuration du Synco AI Runtime DANS UN CONTENEUR (Podman, Docker). Monter ce fichier en lecture
+# seule sur /etc/synco-ai-runtime/config.toml. Référence complète et commentée de toutes les
+# options : crates/supervisor/synco-ai-runtime.example.toml. Vérification :
+#   podman run --rm … synco-ai-runtime --check-config
+#
+# Aucun secret dans ce fichier : la phrase de passe vient d'un secret Podman/Docker monté en
+# fichier, les clés des fournisseurs LLM aussi (api_key_file).
+
+# URL publique canonique (https, sans barre finale) : celle que le mandataire TLS sert. Elle entre
+# dans le certificat signé par l'admin Synco : la changer impose une recertification.
+public_url = "https://runtime.example.com"
+
+# Origine de l'API Synco (https, sans chemin), jointe depuis le conteneur.
+api_url = "https://api.example.com"
+
+# Volume d'état (clé scellée keys.sealed, historique du dashboard, dashboard.pass). Doit rester
+# court : <state_dir>/workers/w-<n>-<pid>/llm.sock tient en 108 octets (run_dir <= 72 octets).
+state_dir = "/var/lib/synco-ai-runtime"
+
+# Origines admises pour le WebSocket : l'app web Synco et les applications Capacitor / Tauri.
+allowed_origins = ["https://app.example.com", "capacitor://localhost", "tauri://localhost"]
+
+log_level = "info"
+
+[listen]
+# Dans un conteneur, le port publié doit écouter sur une adresse non locale du conteneur. Le runtime
+# refuse alors de démarrer sans l'option ci-dessous : ELLE N'EST SÛRE QUE SI le port n'est publié
+# que sur la boucle locale de l'hôte (-p 127.0.0.1:8790:8790) ou sur un réseau interne où seul le
+# mandataire TLS arrive (compose.example.yml). Ne jamais publier 8790/8791 sur 0.0.0.0.
+public = "0.0.0.0:8790"
+dashboard = "0.0.0.0:8791"
+allow_non_loopback_plain_http = true
+# Un seul mandataire TLS devant le runtime.
+trust_proxy_hops = 1
+
+[key_sealing]
+# Pas de systemd-creds dans le conteneur : clé scellée par phrase de passe (Argon2id + AES-256-GCM),
+# lue dans un fichier de secret monté (propriétaire = uid 10001, droits 0400).
+mode = "passphrase"
+passphrase_file = "/run/secrets/synco-ai-runtime-passphrase"
+
+[dashboard]
+# Nom d'hôte du dashboard derrière le mandataire (vhost nginx/Caddy de deploy/). Sans mot de passe
+# (`synco-ai-runtime dashboard-password`), le dashboard ne démarre pas.
+allowed_hosts = ["runtime-admin.example.com"]
+# Un mandataire TLS devant le dashboard, qui ÉCRASE X-Forwarded-For et X-Forwarded-Proto.
+trust_proxy_hops = 1
+
+# Fournisseurs LLM : décommenter ceux de votre organisation. La clé vient d'un secret monté.
+# [llm.providers.openai]
+# base_url = "https://api.openai.com/v1"
+# api_key_file = "/run/secrets/openai-api-key"
+#
+# Passerelle Synco AI (Ollama) : aucune clé, le worker obtient un ticket sgt1 par l'API.
+# [llm.providers.gateway]

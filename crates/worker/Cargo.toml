@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 license-file = "../../LICENSE"
-description = "Worker du Synco AI Runtime (une conversation). L05 : bouchon de protocole ; L06 (bac à sable) et L07 (boucle d'agent) le remplissent."
+description = "Worker du Synco AI Runtime : boucle d'agent durable d'une conversation (L07), dans le bac à sable du superviseur (L06)."
 
 [lib]
 name = "synco_ai_runtime_worker"
@@ -25,6 +25,11 @@ hyper.workspace = true
 hyper-util.workspace = true
 http-body-util.workspace = true
 bytes.workspace = true
+rsa.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "io-util", "time", "sync", "net"] }
 
 [lints]
 workspace = true

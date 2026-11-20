@@ -29,15 +29,14 @@ pub const EXIT_ERROR: u8 = 1;
 /// Exécute le worker sur `pipe` jusqu'à sa fin ; rend le code de sortie du processus.
 #[must_use]
 pub fn run(pipe: UnixStream, llm_socket: Option<PathBuf>) -> u8 {
-    // L07 remplacera le bouchon par la boucle d'agent, qui utilisera `env.llm_socket`.
-    let _env = WorkerEnv { llm_socket };
+    let env = WorkerEnv { llm_socket };
     if pipe.set_nonblocking(true).is_err() {
         return EXIT_ERROR;
     }
     let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else { return EXIT_ERROR };
     rt.block_on(async move {
         let Ok(io) = tokio::net::UnixStream::from_std(pipe) else { return EXIT_ERROR };
-        match crate::stub::run(io).await {
+        match crate::agent::run(io, env.llm_socket, crate::agent::AgentOptions::default()).await {
             Ok(_) => EXIT_OK,
             Err(_) => EXIT_ERROR,
         }

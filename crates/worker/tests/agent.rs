@@ -984,3 +984,53 @@ async fn reference_d_envoi_validee() {
         }
     }
 }
+
+#[tokio::test]
+async fn fournisseur_mistral_outil_et_identifiants_de_neuf_caracteres() {
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.with(|st| {
+        st.tool_data.insert("list_spaces".into(), json!([{ "id": "s1", "name": "Marketing" }]));
+    });
+    api.deposit_message(M1, "Liste les espaces");
+    llm.push(Script::ok(sse_tool("D681PevKs", "list_spaces", &json!({}), (10, 3))));
+    llm.push(Script::ok(sse_text(&["Un espace."], (20, 3))));
+    let mut ini = init(1);
+    ini.llm.provider = runtime_protocol::pipe::LlmProvider::Mistral;
+    ini.llm.model = "mistral-small-latest".into();
+    let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Idle);
+    let reqs = llm.requests();
+    assert_eq!(reqs[0]["max_tokens"], 4096);
+    assert!(reqs[0].get("stream_options").is_none() && reqs[0].get("max_completion_tokens").is_none());
+    // L'identifiant tiré par le worker (`call_<hex>`) est traduit en 9 caractères alphanumériques.
+    let second = &reqs[1];
+    let call_id = second["messages"][2]["tool_calls"][0]["id"].as_str().unwrap();
+    assert!(call_id.len() == 9 && call_id.bytes().all(|b| b.is_ascii_alphanumeric()), "{call_id}");
+    let tool = second["messages"].as_array().unwrap().iter().find(|m| m["role"] == "tool").unwrap();
+    assert_eq!(tool["tool_call_id"], call_id);
+    assert_eq!(tool["name"], "list_spaces");
+    // L'identifiant enregistré reste celui du worker.
+    let msgs = api.clear_messages();
+    assert!(msgs[1]["toolCalls"][0]["id"].as_str().unwrap().starts_with("call_"));
+}
+
+#[tokio::test]
+async fn fournisseur_gemini_tour_simple() {
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.deposit_message(M1, "Bonjour");
+    llm.push(Script::ok(sse_text(&["Salut", " !"], (5, 2))));
+    let mut ini = init(1);
+    ini.llm.provider = runtime_protocol::pipe::LlmProvider::Gemini;
+    ini.llm.model = "gemini-2.5-flash".into();
+    let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Idle);
+    let req = &llm.requests()[0];
+    assert_eq!(req["reasoning_effort"], "medium");
+    assert_eq!(req["max_tokens"], 4096);
+    assert!(req.get("parallel_tool_calls").is_none());
+    let msgs = api.clear_messages();
+    assert_eq!(msgs[1]["content"], "Salut !");
+    assert_eq!(msgs[1]["usage"]["totalTokens"], 7);
+}

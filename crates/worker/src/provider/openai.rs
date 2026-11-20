@@ -51,12 +51,6 @@ impl OpenAiCompatible {
     pub const fn custom() -> Self {
         Self { flavor: Flavor::Custom, id: "custom" }
     }
-
-    /// Dialecte `custom` sous un autre identifiant (repli avant L07b).
-    #[must_use]
-    pub const fn custom_named(id: &'static str) -> Self {
-        Self { flavor: Flavor::Custom, id }
-    }
 }
 
 /// Modèle OpenAI à raisonnement (accepte `reasoning_effort`).
@@ -66,7 +60,7 @@ pub fn is_openai_reasoning_model(model: &str) -> bool {
     ["o1", "o3", "o4", "gpt-5"].iter().any(|p| m == *p || m.starts_with(&format!("{p}-")))
 }
 
-const fn effort_str(e: ReasoningEffort) -> &'static str {
+pub(super) const fn effort_str(e: ReasoningEffort) -> &'static str {
     match e {
         ReasoningEffort::Low => "low",
         ReasoningEffort::Medium => "medium",
@@ -98,6 +92,37 @@ pub fn wire_messages(system: &str, messages: &[ChatMessage]) -> Vec<Value> {
         });
     }
     wire
+}
+
+/// Ajoute `name` à chaque message `tool` (Mistral et Gemini l'attendent : le nom de l'outil de l'appel
+/// auquel il répond, comme `toGeminiContents` retrouve `functionResponse.name`).
+pub(super) fn add_tool_names(wire: &mut [Value], messages: &[ChatMessage]) {
+    let mut names: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+    for m in messages {
+        if let ChatMessage::Assistant { tool_calls, .. } = m {
+            for tc in tool_calls {
+                names.insert(&tc.id, &tc.name);
+            }
+        }
+    }
+    for w in wire {
+        let Some(id) = w.get("tool_call_id").and_then(Value::as_str) else { continue };
+        let name = names.get(id).copied().unwrap_or("unknown_tool").to_owned();
+        crate::json_set(w, "name", json!(name));
+    }
+}
+
+/// Outils au format OpenAI (`tools` du corps).
+pub(super) fn wire_tools(req: &ChatRequest) -> Value {
+    Value::Array(
+        req.tools
+            .iter()
+            .map(|t| {
+                json!({ "type": "function", "function": {
+                "name": t.name, "description": t.description, "parameters": t.parameters } })
+            })
+            .collect(),
+    )
 }
 
 impl LlmAdapter for OpenAiCompatible {
@@ -177,9 +202,27 @@ struct PartialCall {
     arguments: String,
 }
 
+/// Particularités du dialecte lues par [`SseDecoder`] (Mistral, Gemini).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DecodeOptions {
+    /// Balises `<thought>` (Gemini) au lieu de `<think>`.
+    pub thought_tags: bool,
+    /// `delta.content` peut être une liste de morceaux `thinking` / `text` (Mistral, Magistral).
+    pub list_content: bool,
+    /// `delta.extra_content.google.thought == true` : le contenu est du raisonnement (Gemini).
+    pub thought_flag: bool,
+    /// Appels d'outils sans `index` fiable (Gemini) : rangés par identifiant, sinon un nouveau nom
+    /// ouvre un nouvel appel.
+    pub calls_by_id: bool,
+    /// Un flux fermé sans `finish_reason` ni `[DONE]` est un flux coupé : [`LlmError::BadStream`].
+    pub strict_end: bool,
+}
+
 /// Décodeur SSE `data: {…}` d'un flux `chat.completion.chunk`.
 #[derive(Default)]
 pub struct SseDecoder {
+    opts: DecodeOptions,
+    ended: bool,
     line: Vec<u8>,
     splitter: ThinkTagSplitter,
     calls: Vec<PartialCall>,
@@ -201,6 +244,85 @@ fn u(v: &Value, k: &str) -> Option<u64> {
 }
 
 impl SseDecoder {
+    /// Décodeur d'un dialecte particulier.
+    #[must_use]
+    pub fn with_options(opts: DecodeOptions) -> Self {
+        let splitter = if opts.thought_tags { ThinkTagSplitter::thought_tags() } else { ThinkTagSplitter::default() };
+        Self { opts, splitter, ..Self::default() }
+    }
+
+    fn text_piece(&mut self, c: &str, out: &mut Vec<LlmEvent>) -> Result<(), LlmError> {
+        self.count_text(c.len())?;
+        let s = self.splitter.push(c);
+        if !s.thinking.is_empty() {
+            out.push(LlmEvent::Thinking(s.thinking));
+        }
+        if !s.text.is_empty() {
+            out.push(LlmEvent::Text(s.text));
+        }
+        Ok(())
+    }
+
+    fn thinking_piece(&mut self, r: &str, out: &mut Vec<LlmEvent>) -> Result<(), LlmError> {
+        if r.is_empty() {
+            return Ok(());
+        }
+        self.count_text(r.len())?;
+        out.push(LlmEvent::Thinking(r.to_owned()));
+        Ok(())
+    }
+
+    /// `delta.content` sous forme de liste (Mistral) : `{type:"thinking",thinking:[{type:"text",text}]}`
+    /// et `{type:"text",text}`.
+    fn list_content(&mut self, parts: &[Value], out: &mut Vec<LlmEvent>) -> Result<(), LlmError> {
+        for part in parts {
+            match part.get("type").and_then(Value::as_str) {
+                Some("thinking") => match part.get("thinking") {
+                    Some(Value::String(t)) => self.thinking_piece(t, out)?,
+                    Some(Value::Array(items)) => {
+                        for item in items {
+                            let t = item.get("text").and_then(Value::as_str).or_else(|| item.as_str());
+                            if let Some(t) = t {
+                                self.thinking_piece(t, out)?;
+                            }
+                        }
+                    }
+                    _ => {}
+                },
+                Some("text") => {
+                    if let Some(t) = part.get("text").and_then(Value::as_str).filter(|t| !t.is_empty()) {
+                        self.text_piece(t, out)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Case de l'appel d'outil d'un morceau `tool_calls[pos]`.
+    fn call_slot(&mut self, tc: &Value, pos: usize) -> Option<usize> {
+        let index = if self.opts.calls_by_id {
+            let id = tc.get("id").and_then(Value::as_str).filter(|i| !i.is_empty());
+            let named =
+                tc.get("function").and_then(|f| f.get("name")).and_then(Value::as_str).is_some_and(|n| !n.is_empty());
+            match id.and_then(|id| self.calls.iter().position(|c| c.id == id)) {
+                Some(i) => i,
+                None if id.is_some() || named || self.calls.is_empty() => self.calls.len(),
+                None => self.calls.len().saturating_sub(1),
+            }
+        } else {
+            tc.get("index").and_then(Value::as_u64).and_then(|i| usize::try_from(i).ok()).unwrap_or(pos)
+        };
+        if index >= 16 {
+            return None;
+        }
+        while self.calls.len() <= index {
+            self.calls.push(PartialCall::default());
+        }
+        Some(index)
+    }
+
     fn count_text(&mut self, n: usize) -> Result<(), LlmError> {
         self.text_bytes = self.text_bytes.saturating_add(n);
         if self.text_bytes > super::MAX_STREAM_TEXT_BYTES { Err(LlmError::TooLarge) } else { Ok(()) }
@@ -210,11 +332,17 @@ impl SseDecoder {
         let text = String::from_utf8_lossy(line);
         let trimmed = text.trim();
         let Some(payload) = trimmed.strip_prefix("data:").map(str::trim) else { return Ok(()) };
-        if payload == "[DONE]" || payload.is_empty() {
+        if payload == "[DONE]" {
+            self.ended = true;
+            return Ok(());
+        }
+        if payload.is_empty() {
             return Ok(());
         }
         let Ok(json) = serde_json::from_str::<Value>(payload) else { return Ok(()) };
-        if json.get("error").is_some_and(|e| !e.is_null()) {
+        if json.get("error").is_some_and(|e| !e.is_null())
+            || json.get("object").and_then(Value::as_str) == Some("error")
+        {
             return Err(LlmError::BadStream);
         }
         if let Some(us) = json.get("usage").filter(|u| u.is_object()) {
@@ -234,26 +362,27 @@ impl SseDecoder {
                 out.push(LlmEvent::Thinking(r.to_owned()));
             }
         }
-        if let Some(c) = delta.get("content").and_then(Value::as_str).filter(|s| !s.is_empty()) {
-            self.count_text(c.len())?;
-            let s = self.splitter.push(c);
-            if !s.thinking.is_empty() {
-                out.push(LlmEvent::Thinking(s.thinking));
+        match delta.get("content") {
+            Some(Value::String(c)) if !c.is_empty() => {
+                let thought = self.opts.thought_flag
+                    && delta
+                        .get("extra_content")
+                        .and_then(|e| e.get("google"))
+                        .and_then(|g| g.get("thought"))
+                        .and_then(Value::as_bool)
+                        == Some(true);
+                if thought {
+                    self.thinking_piece(c, out)?;
+                } else {
+                    self.text_piece(c, out)?;
+                }
             }
-            if !s.text.is_empty() {
-                out.push(LlmEvent::Text(s.text));
-            }
+            Some(Value::Array(parts)) if self.opts.list_content => self.list_content(parts, out)?,
+            _ => {}
         }
         if let Some(tcs) = delta.get("tool_calls").and_then(Value::as_array) {
             for (pos, tc) in tcs.iter().enumerate() {
-                let index =
-                    tc.get("index").and_then(Value::as_u64).and_then(|i| usize::try_from(i).ok()).unwrap_or(pos);
-                if index >= 16 {
-                    continue;
-                }
-                while self.calls.len() <= index {
-                    self.calls.push(PartialCall::default());
-                }
+                let Some(index) = self.call_slot(tc, pos) else { continue };
                 if let Some(id) = tc.get("id").and_then(Value::as_str)
                     && let Some(call) = self.calls.get_mut(index)
                 {
@@ -279,6 +408,7 @@ impl SseDecoder {
         }
         if let Some(r) = choice.get("finish_reason").and_then(Value::as_str) {
             self.finish = Some(r.to_owned());
+            self.ended = true;
         }
         Ok(())
     }
@@ -307,6 +437,9 @@ impl StreamDecoder for SseDecoder {
         self.done = true;
         let rest = core::mem::take(&mut self.line);
         self.line(&rest, out)?;
+        if self.opts.strict_end && !self.ended {
+            return Err(LlmError::BadStream);
+        }
         let s = self.splitter.flush();
         if !s.thinking.is_empty() {
             out.push(LlmEvent::Thinking(s.thinking));

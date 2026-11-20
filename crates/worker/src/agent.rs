@@ -439,7 +439,7 @@ impl Agent {
                 let (Some(id), Some(kind)) = (i.get("id").and_then(Value::as_str), i.get("kind").cloned()) else {
                     continue;
                 };
-                if !runtime_protocol::ids::is_identifier(id.split(':').next_back().unwrap_or(id)) {
+                if !valid_inbox_id(id) {
                     continue;
                 }
                 after = Some(id.to_owned());
@@ -805,6 +805,13 @@ impl Agent {
             "upload" if p.interactive && p.name == "request_image_upload" => {
                 let r = frame.get("ref").and_then(Value::as_str).unwrap_or_default();
                 self.pending = None;
+                // La référence est recopiée dans une consigne au modèle : seulement un identifiant
+                // (00 §3.2), jamais un texte arbitraire venu de la boîte.
+                if !runtime_protocol::ids::is_identifier(r) {
+                    self.close_call(&p.id, &p.name, ToolStatus::Error, json!({ "error": "invalid_upload_ref" }))
+                        .await?;
+                    return Ok(Some(Flow::Continue));
+                }
                 let result = json!({ "id": r, "note": format!("Utilise EXACTEMENT '{r}' pour le paramètre 'logo' de create_space.") });
                 self.close_call(&p.id, &p.name, ToolStatus::Done, result).await?;
                 Ok(Some(Flow::Continue))
@@ -1528,6 +1535,19 @@ fn usage_json(u: Usage) -> Value {
     v
 }
 
+/// Identifiant d'élément de boîte bien formé (05 §6.2) : `<id>` ou `confirm|answer|upload|cancel:<id>`,
+/// `<id>` conforme à 00 §3.2. Il ne contient alors que `[A-Za-z0-9_:-]`, sûrs tels quels dans la
+/// requête `?after=` : un encodage pourcent n'y changerait rien, et le relais du superviseur refuse
+/// `%` dans un chemin (`worker_path_allowed`).
+fn valid_inbox_id(id: &str) -> bool {
+    match id.split_once(':') {
+        None => runtime_protocol::ids::is_identifier(id),
+        Some((kind, rest)) => {
+            matches!(kind, "confirm" | "answer" | "upload" | "cancel") && runtime_protocol::ids::is_identifier(rest)
+        }
+    }
+}
+
 /// Identifiant d'un élément de boîte arrivé par WebSocket (05 §6.2).
 fn inbox_id(frame: &Value) -> Option<String> {
     let t = frame.get("t")?.as_str()?;
@@ -1583,6 +1603,16 @@ mod tests {
 
     fn resp(status: u16, body: Value, relay: Option<&str>) -> ApiResponse {
         ApiResponse { status, body, relay_error: relay.map(str::to_owned) }
+    }
+
+    #[test]
+    fn identifiants_de_boite() {
+        for ok in ["3c2b1a09-8f7e-4d6c-9b5a-493827161504", "confirm:call_1", "cancel:abc", "upload:x"] {
+            assert!(valid_inbox_id(ok), "{ok}");
+        }
+        for bad in ["a&b:x", "confirm:a&b", "x?y", "autre:x", "confirm:", "a b", "confirm:x:y", ""] {
+            assert!(!valid_inbox_id(bad), "{bad}");
+        }
     }
 
     #[test]

@@ -73,3 +73,72 @@ des requêtes internes : L02 (`crates/runtime-protocol`, hors de cette crate).
 (segments `.`/`..`, hôtes numériques ou `0x…` refusés sauf IPv4 décimal pointé canonique) ; cas
 négatifs renforcés (kind hors liste déchiffrable mais refusé, rt1, scope) ; `seal_with_iv` interne.
 Remarques consignées au README : malléabilité ECDSA, `legacy-seal` additive (contrôle CI, L09).
+
+## 2026-11-20 — L05 : superviseur du runtime
+
+**Branche** : `syncoai/L05-superviseur` (depuis `feature/syncoai-refonte` à `4e3e1aa`).
+
+**Fait** :
+
+- `crates/runtime-protocol` : tickets `srt1` (02 §5), requêtes signées (04 §2, signature et
+  vérificateur à la règle de l'API), flux de notifications (04 §6, forme réelle de l'API), trames du
+  WebSocket client (05, désérialisation stricte), pipe superviseur ↔ worker (06 : cadrage, trames de
+  clés binaires `Zeroizing`, messages JSON stricts), réponses du canal. Vecteurs de synco_api
+  (`tickets-runtime.json`, `internal-requests.json`) copiés sans modification et rejoués.
+- `crates/supervisor` (binaire `synco-ai-runtime`) : clés `sig`/`kex`/`csk` générées au premier
+  démarrage et scellées (systemd-creds, `--user` possible, ou Argon2id + AES-256-GCM par phrase de
+  passe), configuration TOML commentée (`synco-ai-runtime.example.toml`, `--check-config`), commandes
+  `pair`, `unpair`, `reset-keys --yes` ; `/v1/identity`, `/v1/challenge` ; enregistrement toutes les
+  15 s jusqu'à l'appairage ; flux sortant signé (backoff 1 → 60 s, codes 4xxx) ; délégations ouvertes
+  par `accept_delegation` seulement, épinglage TOFU des clés de signature (Q3), clés en mémoire
+  cloisonnées par utilisateur et effacées à `exp`, révocation, remplacement, désappairage ;
+  WebSocket client (ticket vérifié localement, liste de révocation alimentée par `user.revoked` —
+  Q13 — et `conversation.revoked`, dépôt durable avant `queued`, rejeu / snapshot) ; lancement des
+  workers derrière `WorkerLauncher` (bail pris avant, `init` → `ready` → clés → `start`, relais
+  `signed_request` en liste fermée, débit borné, garde-fou de plantages) ; arrêt propre sur `SIGTERM`.
+- `crates/worker` : bouchon de protocole (aucun LLM) ; binaire inactif jusqu'à L06.
+
+**Interface pour L06** (`crates/supervisor/src/launcher.rs`) : implémenter
+`WorkerLauncher::spawn(WorkerSpec) -> SpawnedWorker { io, process }` — `io` = pipe d'octets (fd 3 du
+worker), `process` = `WorkerProcess { kill, wait, usage (cgroup), pid }` ; `WorkerSpec` porte
+`resources` (memory.max/high, cpu.max, pids.max) et `allowed_hosts`. Aucun secret ne passe par le
+lanceur. Brancher le lanceur dans `cli.rs` (`Command::Run`) à la place de `InProcessStubLauncher`.
+
+**Dépendances ajoutées** (épinglées, dates crates.io) : axum 0.8.9 (2026-04-14), tokio 1.54.1
+(2026-10-21), reqwest 0.13.4 (2026-05-25), tokio-tungstenite/tungstenite 0.29.0 (2026-03-17),
+tokio-rustls 0.26.5 (2026-09-04), rustls 0.23.44 (2026-09-07), rustls-platform-verifier 0.7.0
+(2026-04-12), ed25519-dalek 3.0.0 (2026-07-06), argon2 0.6.0 (2026-08-27), rustix 1.1.5
+(2026-09-16), toml 1.1.6 (2026-09-10), futures-util 0.3.34 (2026-08-11), tracing 0.1.44,
+tracing-subscriber 0.3.23 (2026-03-13), tempfile 3.27.0 (dev). Les 200 versions ajoutées au
+`Cargo.lock` ont toutes ≥ 7 jours (bumpalo, bytes, cc, mio, rand, rand_pcg, regex-automata,
+regex-syntax, smallvec ramenées à une version antérieure).
+
+**Vérifié** : `cargo test --workspace` (dont 3 tests d'intégration contre une API simulée qui vérifie
+chaque signature), `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check` ;
+test systemd-creds `--user` rejoué sur l'hôte (`host-spawn`). Mutations témoins : signature sur un
+autre chemin, org du ticket non vérifiée, propriétaire de l'autorisation non vérifié, clés non
+effacées au désappairage, `AUTH` mal formé dans la chaîne signée → tests en échec.
+
+**Écarts avec docs/plan (à reporter)** :
+1. 06 §1 : la longueur compte genre + charge ; les plafonds (1 Mio / 64 Kio) portent sur la charge.
+2. 06 §3–§4 : messages ajoutés `snapshot_request { requestId }` / `snapshot { requestId, event }`
+   (reprise hors tampon, 05 §3 : seul le worker peut produire le `snapshot` chiffré).
+3. 06 §3.2 : `limits` porte aussi `maxTokensPerTurn` et `maxOutputTokensPerCall` (09 §2).
+4. 06 §4 : `signed_request_response.status = 0` si le superviseur refuse ou si le réseau échoue ;
+   `headers` réduit à `content-type`. Débit dépassé → 429 `rt_rate_limited` sans appel.
+5. Autorisations connues persistées (`authorizations.json`, données publiques) : sans elles, après
+   un redémarrage, un client d'une conversation `idle` serait refusé (`pending` ne liste pas `idle`).
+6. 05 : un dépôt de boîte refusé par l'API ferme le WebSocket (`4429`, `4403`, `4404`, `4500`) faute
+   d'évènement `error` sans `epoch` ; inactivité de 60 s → fermeture `1000 idle_timeout` ;
+   `ready.rev` vaut 0 quand un worker tourne, `mode: reload` si l'API ne répond pas.
+7. 02 §5 : `exp < iat` refusé (la référence TS l'admettrait).
+8. D10 : endpoints servis en HTTP local derrière un mandataire TLS (pas de TLS natif) ; `api_url`
+   doit être une origine sans chemin (chemin signé = chemin envoyé).
+9. Mandat vérifié avec la clé courante puis les clés précédentes de la chaîne d'identité.
+10. Un élément de boîte peut arriver deux fois au worker (`GET …/inbox` + `inbox` en direct) : L07
+    déduplique par `id`.
+
+**Non vérifié (recette manuelle)** : vraie API (`AI_TICKET_*`) et vrai appairage depuis l'app (L10/L11) ;
+`wss://` derrière un mandataire avec certificat reconnu ; unité systemd avec
+`LoadCredentialEncrypted=` ; saisie de la phrase de passe au terminal ; reconnexion et `4409` avec deux
+instances ; arrêt `SIGTERM` avec un vrai worker (L06/L07) ; TPM2 sans `--user`.

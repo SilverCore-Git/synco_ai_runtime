@@ -1,0 +1,63 @@
+# Quadlet Podman (service systemd UTILISATEUR, rootless) : chemin officiel du Synco AI Runtime.
+# Installation (voir docs/deploiement.md §Podman) :
+#   mkdir -p ~/.config/containers/systemd ~/.config/synco-ai-runtime
+#   cp synco-ai-runtime.container ~/.config/containers/systemd/
+#   cp config.container.example.toml ~/.config/synco-ai-runtime/config.toml   # puis l'éditer
+#   podman build -t localhost/synco-ai-runtime:latest .
+#   (umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' | podman secret create synco-ai-runtime-passphrase -)
+#   systemctl --user daemon-reload && systemctl --user start synco-ai-runtime.service
+#   loginctl enable-linger "$USER"      # le service survit à la déconnexion et démarre au boot
+#
+# Capacités : toutes retirées sauf DAC_OVERRIDE (écriture dans le cgroup du conteneur, propriété
+# du root du conteneur). Le superviseur est le processus 1, seul dans son cgroup : pas de
+# script d'entrée, pas d'init (`Init=` laissé à sa valeur par défaut : désactivé).
+
+[Unit]
+Description=Synco AI Runtime (Podman rootless)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/synco-ai-runtime:latest
+ContainerName=synco-ai-runtime
+User=10001:10001
+ReadOnly=true
+
+DropCapability=all
+AddCapability=DAC_OVERRIDE
+NoNewPrivileges=true
+# Cgroup privé du conteneur rendu inscriptible : indispensable au bac à sable (cgroup v2 par worker).
+Unmask=/sys/fs/cgroup
+# Hôte SELinux (Fedora, RHEL) : sans cette ligne SELinux interdit l'écriture dans le cgroup.
+# Retirer sur un hôte sans SELinux. Alternative moins large, non testée :
+# `sudo setsebool -P container_manage_cgroup on`.
+SecurityLabelDisable=true
+
+# Ports publiés sur la boucle locale de l'hôte seulement : le mandataire TLS (nginx, Caddy) relaie.
+PublishPort=127.0.0.1:8790:8790
+PublishPort=127.0.0.1:8791:8791
+
+# État : clé scellée (keys.sealed), historique du dashboard, dashboard.pass. À SAUVEGARDER.
+Volume=synco-ai-runtime-state.volume:/var/lib/synco-ai-runtime
+Volume=%h/.config/synco-ai-runtime/config.toml:/etc/synco-ai-runtime/config.toml:ro
+
+# Phrase de passe de scellement de la clé (secret Podman, jamais dans ce fichier).
+Secret=synco-ai-runtime-passphrase,type=mount,target=synco-ai-runtime-passphrase,uid=10001,gid=10001,mode=0400
+# Clé d'un fournisseur LLM (config.toml : api_key_file = "/run/secrets/openai-api-key") :
+# Secret=openai-api-key,type=mount,target=openai-api-key,uid=10001,gid=10001,mode=0400
+
+# Podman n'exécute pas le HEALTHCHECK d'une image au format OCI : on le déclare ici.
+HealthCmd=bash -c 'echo > /dev/tcp/127.0.0.1/8790'
+HealthInterval=30s
+HealthTimeout=3s
+HealthRetries=3
+HealthStartPeriod=20s
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+# Délai d'arrêt > limits.shutdown_grace_secs (30 s par défaut).
+TimeoutStopSec=45s
+
+[Install]
+WantedBy=default.target

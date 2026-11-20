@@ -1,0 +1,4 @@
+# Volume nommé de l'état du runtime (Quadlet). Hérite du propriétaire (uid 10001) et du mode 0700
+# du répertoire de l'image à sa première utilisation.
+[Volume]
+VolumeName=synco-ai-runtime-state

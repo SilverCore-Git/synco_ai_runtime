@@ -28,7 +28,7 @@ pub struct UserPin {
     pub sign_key: String,
     /// Première vue (s).
     pub first_seen: u64,
-    /// Clés précédentes (transitions suivies).
+    /// Clés précédentes (historique de diagnostic, jamais utilisées pour vérifier un mandat).
     #[serde(default)]
     pub previous: Vec<String>,
 }
@@ -59,10 +59,13 @@ impl PinError {
     }
 }
 
-/// Clés de confiance d'un utilisateur, à essayer pour vérifier son mandat : la clé courante, puis
-/// les précédentes de la chaîne (un mandat signé avant une rotation reste vérifiable).
+/// La **seule** clé avec laquelle un mandat est vérifié (03 §4) : l'épinglée courante, ou
+/// l'aboutissement d'une chaîne valide partant d'elle. Jamais une clé précédente : une clé retirée
+/// (éventuellement compromise) ne doit pas pouvoir signer un mandat neuf. Une délégation déjà ouverte
+/// avant une rotation reste en mémoire jusqu'à `exp` ou révocation ; après un redémarrage, elle est
+/// `unusable` et le client la renouvelle (P11).
 #[derive(Debug, Clone)]
-pub struct TrustedKeys(pub Vec<EcPublicKey>);
+pub struct TrustedKey(pub EcPublicKey);
 
 /// Magasin des épingles.
 #[derive(Debug)]
@@ -110,16 +113,16 @@ impl PinStore {
         served_sign_key: Option<&str>,
         chain: &[IdentityTransition],
         now: u64,
-    ) -> core::result::Result<TrustedKeys, PinError> {
+    ) -> core::result::Result<TrustedKey, PinError> {
         let served = served_sign_key.and_then(|k| ec_canonical_json(k).ok()).ok_or(PinError::NoKey)?;
         let served_key = EcPublicKey::from_jwk(&served).map_err(|_| PinError::NoKey)?;
         let Some(pin) = self.file.users.get(user_id).cloned() else {
             self.file.users.insert(user_id.to_owned(), UserPin { sign_key: served, first_seen: now, previous: vec![] });
             self.persist();
-            return Ok(TrustedKeys(vec![served_key]));
+            return Ok(TrustedKey(served_key));
         };
         if pin.sign_key == served {
-            return Ok(TrustedKeys(trusted(&served_key, &pin.previous)));
+            return Ok(TrustedKey(served_key));
         }
         let path = identity_chain_path(user_id, &pin.sign_key, chain).map_err(|_| PinError::KeyChanged)?;
         let Some(pos) = path.iter().position(|k| k.public_sign_key == served) else {
@@ -128,10 +131,10 @@ impl PinStore {
         let mut previous = pin.previous;
         previous.push(pin.sign_key);
         previous.extend(path.iter().take(pos).map(|k| k.public_sign_key.clone()));
-        let keys = trusted(&served_key, &previous);
+        // `previous` : historique pour le diagnostic seulement, jamais une clé de confiance.
         self.file.users.insert(user_id.to_owned(), UserPin { sign_key: served, first_seen: pin.first_seen, previous });
         self.persist();
-        Ok(TrustedKeys(keys))
+        Ok(TrustedKey(served_key))
     }
 
     fn persist(&self) {
@@ -139,13 +142,6 @@ impl PinStore {
             tracing::warn!(code = "pins_not_saved", error = %e, "épingles non enregistrées");
         }
     }
-}
-
-/// Clé courante d'abord, puis les précédentes (plus récentes d'abord).
-fn trusted(current: &EcPublicKey, previous: &[String]) -> Vec<EcPublicKey> {
-    let mut out = vec![current.clone()];
-    out.extend(previous.iter().rev().filter_map(|k| EcPublicKey::from_jwk(k).ok()));
-    out
 }
 
 #[cfg(test)]
@@ -170,14 +166,14 @@ mod tests {
         let mut store = PinStore::in_memory();
         let (k1, k2, k3) = (key(), key(), key());
         assert!(store.check_or_pin("u1", Some(&jwk(&k1)), &[], 1).is_ok(), "première vue");
-        assert_eq!(store.check_or_pin("u1", Some(&jwk(&k1)), &[], 2).unwrap().0.len(), 1);
+        assert_eq!(store.check_or_pin("u1", Some(&jwk(&k1)), &[], 2).unwrap().0, k1.public_key().unwrap());
         // Clé changée sans chaîne : refus.
         assert_eq!(store.check_or_pin("u1", Some(&jwk(&k2)), &[], 3).unwrap_err(), PinError::KeyChanged);
         // Chaîne k1 → k2 → k3 signée par chaque ancienne clé : acceptée, l'épingle avance.
         let t1 = sign_identity_transition(&k1, "u1", 0, RSA, &jwk(&k2)).unwrap();
         let t2 = sign_identity_transition(&k2, "u1", 1, RSA, &jwk(&k3)).unwrap();
         let trusted = store.check_or_pin("u1", Some(&jwk(&k3)), &[t1.clone(), t2], 4).unwrap();
-        assert_eq!(trusted.0.len(), 3, "k3 puis k2 et k1");
+        assert_eq!(trusted.0, k3.public_key().unwrap(), "seule la clé courante");
         assert_eq!(store.get("u1").unwrap().sign_key, jwk(&k3));
         // Retour à k1 (ancienne clé) : refusé, l'épingle ne recule pas.
         assert_eq!(store.check_or_pin("u1", Some(&jwk(&k1)), &[t1], 5).unwrap_err(), PinError::KeyChanged);

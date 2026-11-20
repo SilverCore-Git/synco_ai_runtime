@@ -49,20 +49,17 @@ impl core::fmt::Debug for OpenDelegation {
 
 impl OpenDelegation {
     /// Mandat vérifié (03 §4) puis enveloppe de tête ouverte (03 §3), **exclusivement** par
-    /// `synco_e2ee::delegation::accept_delegation` : chaque clé de confiance de l'utilisateur est
-    /// essayée (courante, puis précédentes de sa chaîne d'identité).
+    /// `synco_e2ee::delegation::accept_delegation`, avec la seule clé de signature épinglée courante
+    /// de l'utilisateur (`pins::TrustedKey`) — jamais une clé précédente.
     pub fn accept(
         me: &RuntimeSelf<'_>,
         now: u64,
         ctx: DelegationContext,
-        trusted_user_keys: &[EcPublicKey],
+        user_sign_key: &EcPublicKey,
         wrap: &str,
         mandate_signature: &str,
     ) -> Result<Self, synco_e2ee::Error> {
-        let dk = trusted_user_keys
-            .iter()
-            .find_map(|key| delegation::accept_delegation(me, now, &ctx, key, wrap, mandate_signature).ok())
-            .ok_or(synco_e2ee::Error::DelegationUnusable)?;
+        let dk = delegation::accept_delegation(me, now, &ctx, user_sign_key, wrap, mandate_signature)?;
         Ok(Self { ctx, dk, keys: BTreeMap::new(), cursor: None, entries_rejected: 0 })
     }
 
@@ -327,7 +324,7 @@ mod tests {
         for (user, key, conv, thread_key) in [("a", &ka, "convA", [1u8; 32]), ("b", &kb, "convB", [2u8; 32])] {
             let c = ctx(user, &format!("d{user}"), 1_000, 1_000 + 86_400);
             let (wrap, sig, entries) = delegate(&f, key, &c, &[("conv", conv, [9; 32]), ("thread", "t1", thread_key)]);
-            let mut d = OpenDelegation::accept(&me(&f), 1_100, c, &[key.public_key().unwrap()], &wrap, &sig).unwrap();
+            let mut d = OpenDelegation::accept(&me(&f), 1_100, c, &key.public_key().unwrap(), &wrap, &sig).unwrap();
             for (kind, r, ct) in entries {
                 assert!(d.add_entry(&kind, &r, 1, &ct).is_some());
             }
@@ -349,7 +346,7 @@ mod tests {
         let user = EcSigningKey::generate(&mut OsRandom).unwrap();
         let c = ctx("a", "d1", 1_000, 1_000 + 86_400);
         let (wrap, sig, entries) = delegate(&f, &user, &c, &[("thread", "t1", [1; 32])]);
-        let pk = [user.public_key().unwrap()];
+        let pk = user.public_key().unwrap();
         // AAD de l'enveloppe : autre utilisateur, autre délégation, autre expiration.
         for bad in [
             DelegationContext { user_id: "b".into(), ..c.clone() },
@@ -360,7 +357,7 @@ mod tests {
             assert!(OpenDelegation::accept(&me(&f), 1_100, bad, &pk, &wrap, &sig).is_err());
         }
         // Mandat signé par une autre clé que celle épinglée.
-        let other = [EcSigningKey::generate(&mut OsRandom).unwrap().public_key().unwrap()];
+        let other = EcSigningKey::generate(&mut OsRandom).unwrap().public_key().unwrap();
         assert!(OpenDelegation::accept(&me(&f), 1_100, c.clone(), &other, &wrap, &sig).is_err());
         // Expirée ou trop longue.
         assert!(OpenDelegation::accept(&me(&f), c.exp, c.clone(), &pk, &wrap, &sig).is_err());
@@ -375,11 +372,32 @@ mod tests {
         assert!(d.add_entry("thread", "t1", 1, ct).is_some());
     }
 
+    /// Une clé retirée par une transition d'identité ne signe plus de mandat neuf (03 §4).
+    #[test]
+    fn mandat_neuf_signe_par_une_cle_retiree_refuse() {
+        use crate::pins::PinStore;
+        use synco_e2ee::identity::sign_identity_transition;
+        let f = fixture();
+        let (k1, k2) = (EcSigningKey::generate(&mut OsRandom).unwrap(), EcSigningKey::generate(&mut OsRandom).unwrap());
+        let jwk = |k: &EcSigningKey| k.public_key().unwrap().to_canonical();
+        let mut pins = PinStore::in_memory();
+        pins.check_or_pin("a", Some(&jwk(&k1)), &[], 1).unwrap();
+        let t = sign_identity_transition(&k1, "a", 0, r#"{"kty":"RSA","n":"AQAB","e":"AQAB"}"#, &jwk(&k2)).unwrap();
+        let trusted = pins.check_or_pin("a", Some(&jwk(&k2)), &[t], 2).unwrap();
+        let c = ctx("a", "d1", 1_000, 1_000 + 86_400);
+        // Mandat neuf signé par k1 (retirée) : refusé.
+        let (wrap, sig, _) = delegate(&f, &k1, &c, &[]);
+        assert!(OpenDelegation::accept(&me(&f), 1_100, c.clone(), &trusted.0, &wrap, &sig).is_err());
+        // Signé par k2 (courante) : accepté.
+        let (wrap, sig, _) = delegate(&f, &k2, &c, &[]);
+        assert!(OpenDelegation::accept(&me(&f), 1_100, c, &trusted.0, &wrap, &sig).is_ok());
+    }
+
     #[test]
     fn expiration_remplacement_effacement() {
         let f = fixture();
         let user = EcSigningKey::generate(&mut OsRandom).unwrap();
-        let pk = [user.public_key().unwrap()];
+        let pk = user.public_key().unwrap();
         let mut vault = Vault::default();
         let c1 = ctx("a", "d1", 1_000, 5_000);
         let (w, s, _) = delegate(&f, &user, &c1, &[]);

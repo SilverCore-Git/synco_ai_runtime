@@ -1,0 +1,39 @@
+{
+  "description": "Clé RSA-OAEP-SHA256 de TEST (membre fictif), générée par WebCrypto : sert seulement aux tests de create_thread et au test croisé TS. Aucune valeur réelle. shortPublicJwk : clé de 1024 bits, à refuser.",
+  "publicJwk": {
+    "alg": "RSA-OAEP-256",
+    "e": "AQAB",
+    "ext": true,
+    "key_ops": [
+      "encrypt"
+    ],
+    "kty": "RSA",
+    "n": "sXVsOGjl427NGOsmKOiF_OxT6ybU3WvVd1escClydxtZPMyVCPYQ8xB2aFjREGBBQoFghHulW9pzvMTtP0gL0zCp2aEs7j7BL5JGL0Xnz11ChgzHNTffpi5rCUuRvkDNJTEsG5QdwaTfbCKzRaJeP6DBeG72pr2KkJu7jnlKQpb_bws2JZ92nUdTV1OaPIQewthuCB1GneJlJ7CU906DixmSbvDh5TRM0rdgQ-cREzlNzQRAgtlFeYv8hlGHSK6lT2c-4EQ6bjKRWXJjaN5bN1x6JbuEjGsouDykA2pss6AAv9fV5NwkwqL7Vx8jplnOX3_HQFAG7-VZllgjElWBAQ"
+  },
+  "privateJwk": {
+    "alg": "RSA-OAEP-256",
+    "d": "Ne0sd1HtNjloCx_-RyUt_meksstomWbZBjy20pjNx4MgkZjL217HVM3WZaxDz9moSzj8pxXZ8LlIPX-MZxQSP9nEa7WObVHVrAqj2F7CbGH3QrwkVzhE9v-ZGEiGIA4aKSixsinHBx7-pCJBXzJRuL01vc7elln3_yzMCKY0Glq941SC392Es2Qoy8QLwcLjHj5bn7YlVXgFxXajLPnnjt6tFkc2F_NORt8UkxV-raXgPMyR64hEh0fOEAEY0lViCqVcvQhhUO2aaIRw6lFMkCeQ1pKRH8kwBFuxvcMjCJn8DxWSpiYNvFbyEp5kXqiqilcYLzeGr85xyzcx78bGRw",
+    "dp": "wqKa5xUtv2XK3N-2LTn47T3UcLfVoL2DvFaG9P3czd53FZH1ApL10OY9tjhNDjXzc5HSccWdE1j5aoxo2WR5jYObdyNSHa-JUmnNgHwDfltZH8RhY8VG2d9Tk6Py7G-OS5VQqt88iHRrNH3f6PKG7K2MXQrGMZqGx48MXcUdgRk",
+    "dq": "WO8mAQHfiaV3Ajp30_8WW0qw4NL_mVAMUot9zADMp2gt1hjlpO6XzC9BAoqgG6KMlwyoaGtU3eudkns-2n3aes-eTSLn7YWxrvjjvhxuyJVYNshE5qm_St2id1WFyzGN36QHZztu9o4C7FZUuGxjwTcsde61aBqvRIY4zabRYSE",
+    "e": "AQAB",
+    "ext": true,
+    "key_ops": [
+      "decrypt"
+    ],
+    "kty": "RSA",
+    "n": "sXVsOGjl427NGOsmKOiF_OxT6ybU3WvVd1escClydxtZPMyVCPYQ8xB2aFjREGBBQoFghHulW9pzvMTtP0gL0zCp2aEs7j7BL5JGL0Xnz11ChgzHNTffpi5rCUuRvkDNJTEsG5QdwaTfbCKzRaJeP6DBeG72pr2KkJu7jnlKQpb_bws2JZ92nUdTV1OaPIQewthuCB1GneJlJ7CU906DixmSbvDh5TRM0rdgQ-cREzlNzQRAgtlFeYv8hlGHSK6lT2c-4EQ6bjKRWXJjaN5bN1x6JbuEjGsouDykA2pss6AAv9fV5NwkwqL7Vx8jplnOX3_HQFAG7-VZllgjElWBAQ",
+    "p": "3JzCW8Y3K2xXyIIBgm-Qz_Jn87pkUBBQKg3LBuAKiU2uTaVV5YFo4PjbToAPDAnarHwRg3ZsLYGkPd6dHVV25Z32Bg0ukHyRlgA_YIJdPJTMWnPLQof0YN3KWfcjeaBgmt-XcLBs_J8fwiAlStYLS6jn-pOuck3tIVasTjbqeWs",
+    "q": "zeyZQQxOQAJSRHactkIVXe3gRFcfOZfbRBYk-FFDXdGYFFIoyjRbaY-IDELhz7B7PSc2dWW1s04_8lT1oefgrOFnJvBqqJInjJ0KMX5z0SZbR6NX-g3ySzlIZvbbZMmrWlGuxbSo5luwpTP2Svjf2gn221fxvCE00Es6NdSTrkM",
+    "qi": "gCPK-FO8v1DuFEN6Z_dBzV_i0L6-z_Gg2ny8xhRVqbr1X6g2aOQ4GYG62VM9Uucw_fBaFXCBW9BXi77ZOyDfGel1kH0eMAr3QbaFMDOy7xmDE6A1XUDszeVIX0Rxl0Dtm9ilclhMj0UmjgIjdx4GSvZ4bhR-Rw9p7JRVcBhFzzY"
+  },
+  "shortPublicJwk": {
+    "alg": "RSA-OAEP-256",
+    "e": "AQAB",
+    "ext": true,
+    "key_ops": [
+      "encrypt"
+    ],
+    "kty": "RSA",
+    "n": "rfB8_3W7qpekwDyg8r_AQVfCO5B5akyLMkjOibF5nXW7InerZ7RENwRRd1l3sOPYHYbMfhrdWg3hKVRCGm19pVbI_cA6xi4WmK_LSxy9TBTZ_qtoi1voNdpAXWRaGL9X_K1w6dqpQZsPlR-2OZG8S29C4PI1kiSxEvvSVGsOXLc"
+  }
+}

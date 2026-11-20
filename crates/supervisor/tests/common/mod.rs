@@ -81,6 +81,8 @@ pub struct MockState {
     /// Requêtes d'entrées reçues (avant le délai).
     pub entries_requested: u32,
     pub presences: u32,
+    /// Salons créés par `POST /e2ee/threads`.
+    pub threads_created: u32,
     /// `GET /llm-policy` remplacé (défaut : `openai`, `gpt-test`).
     pub policy: Option<Value>,
 }
@@ -267,6 +269,11 @@ async fn channel(
         }))
         .into_response(),
         ("POST", ["metrics"]) => axum::Json(json!({ "ok": true })).into_response(),
+        ("POST", ["e2ee", "threads"]) => {
+            st.threads_created += 1;
+            let id = format!("cm3threadmock{:012}", st.threads_created);
+            (StatusCode::CREATED, axum::Json(json!({ "id": id, "name": json_body["name"] }))).into_response()
+        }
         ("GET", ["delegations"]) => axum::Json(Value::Array(st.delegations.clone())).into_response(),
         ("GET", ["delegations", id, "entries"]) => {
             let entries = st.entries.get(*id).cloned().unwrap_or_default();

@@ -120,6 +120,15 @@ async fn setup_policy(
     slow_entries_ms: u64,
     policy: Option<Value>,
 ) -> Env {
+    setup_llm(launcher, slow_entries_ms, policy, "http://127.0.0.1:9/v1").await
+}
+
+async fn setup_llm(
+    launcher: Arc<dyn synco_ai_runtime::launcher::WorkerLauncher>,
+    slow_entries_ms: u64,
+    policy: Option<Value>,
+    llm_base_url: &str,
+) -> Env {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join("etat");
     // Clés générées et scellées par phrase de passe (comme au premier démarrage).
@@ -182,7 +191,7 @@ trust_proxy_hops = 0
 idle_shutdown_secs = 1
 shutdown_grace_secs = 2
 [llm.providers.openai]
-base_url = "http://127.0.0.1:9/v1"
+base_url = "{llm_base_url}"
 "#,
         api.url(),
         state_dir.display()
@@ -266,15 +275,82 @@ async fn authorize(env: &Env) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn aller_retour_client_superviseur_worker() {
-    aller_retour(setup().await).await;
+    aller_retour(setup().await, synco_ai_runtime_worker::stub::STUB_REPLY).await;
 }
 
-/// Même scénario avec le **vrai** bac à sable (L06) : le worker est un processus isolé, relancé
-/// depuis le binaire du superviseur. Sur l'hôte seulement, dans un cgroup délégué
-/// (`crates/supervisor/tests/sandbox-host.sh`).
+/// Réponse du fournisseur simulé derrière le mandataire LLM.
+const LLM_REPLY: &str = "Bonjour depuis le worker isolé (L07).";
+
+/// Fournisseur compatible OpenAI simulé (HTTP sur la boucle locale, admis par le mandataire) :
+/// vérifie la clé injectée par le mandataire et rejoue un flux SSE.
+async fn fake_provider() -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen2 = Arc::clone(&seen);
+    tokio::spawn(async move {
+        while let Ok((mut sock, _)) = listener.accept().await {
+            let seen = Arc::clone(&seen2);
+            tokio::spawn(async move {
+                let mut buf = Vec::new();
+                let mut tmp = [0u8; 8192];
+                loop {
+                    let n = sock.read(&mut tmp).await.unwrap_or(0);
+                    if n == 0 {
+                        return;
+                    }
+                    buf.extend_from_slice(&tmp[..n]);
+                    let text = String::from_utf8_lossy(&buf).to_string();
+                    if let Some(p) = text.find("\r\n\r\n") {
+                        let len: usize = text
+                            .get(..p)
+                            .unwrap()
+                            .lines()
+                            .find_map(|l| {
+                                l.to_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse().unwrap())
+                            })
+                            .unwrap_or(0);
+                        if buf.len() >= p + 4 + len {
+                            break;
+                        }
+                    }
+                }
+                seen.lock().unwrap().push(String::from_utf8_lossy(&buf).to_string());
+                let mut body = String::new();
+                for part in ["Bonjour depuis", " le worker isolé (L07)."] {
+                    body.push_str(&format!(
+                        "data: {}\n\n",
+                        json!({ "choices": [{ "index": 0, "delta": { "content": part } }] })
+                    ));
+                }
+                body.push_str(&format!(
+                    "data: {}\n\n",
+                    json!({ "choices": [{ "index": 0, "delta": {}, "finish_reason": "stop" }] })
+                ));
+                body.push_str(&format!("data: {}\n\n", json!({ "choices": [], "usage": { "prompt_tokens": 30, "completion_tokens": 9, "total_tokens": 39 } })));
+                body.push_str("data: [DONE]\n\n");
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = sock.write_all(head.as_bytes()).await;
+                let _ = sock.write_all(body.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            });
+        }
+    });
+    (base, seen)
+}
+
+/// Même scénario avec le **vrai** bac à sable (L06) et la **vraie** boucle d'agent (L07) : le
+/// worker est un processus isolé, relancé depuis le binaire du superviseur, qui appelle le
+/// fournisseur par le mandataire LLM (clé ajoutée par le superviseur). Sur l'hôte seulement, dans
+/// un cgroup délégué (`crates/supervisor/tests/sandbox-host.sh`).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "noyau : espaces de noms, cgroup délégué (tests/sandbox-host.sh)"]
 async fn aller_retour_avec_bac_a_sable() {
+    use synco_ai_runtime::config::ProviderSecret;
     use synco_ai_runtime::sandbox::{Mode, SandboxLauncher, SandboxSettings, proxy::LlmProxy};
     let run = tempfile::Builder::new().prefix("l06").tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
     let settings = SandboxSettings {
@@ -282,14 +358,31 @@ async fn aller_retour_avec_bac_a_sable() {
         cgroup_root: None,
         run_dir: run.path().join("w"),
     };
+    let (base, seen) = fake_provider().await;
+    let secrets = BTreeMap::from([("openai".to_owned(), ProviderSecret(Zeroizing::new(b"sk-test-l07".to_vec())))]);
     let launcher =
-        SandboxLauncher::new(&settings, Mode::Sandboxed, LlmProxy::new(BTreeMap::new(), Default::default()).unwrap())
+        SandboxLauncher::new(&settings, Mode::Sandboxed, LlmProxy::new(secrets, Default::default()).unwrap())
             .await
             .unwrap();
-    aller_retour(setup_with(Arc::new(launcher)).await).await;
+    // Plafonds réalistes : ceux de la politique par défaut du simulateur (1 000 tokens) sont
+    // inférieurs à la réservation du mandataire pour une vraie requête (prompt + outils).
+    let policy = json!({
+        "v": 1, "orgId": ORG, "defaultProvider": "openai", "reasoningEffort": "medium",
+        "providers": [{ "id": "openai", "modelId": "gpt-test" }],
+        "runtime": { "enabled": true, "maxDelegationDays": 7, "toolPolicy": {},
+            "limits": { "maxStepsPerTurn": 10, "maxTokensPerConversation": 200000, "maxTokensPerTurn": 100000,
+                "maxTurnDurationSecs": 60, "maxOutputTokensPerCall": 1000 } }
+    });
+    aller_retour(setup_llm(Arc::new(launcher), 0, Some(policy), &base).await, LLM_REPLY).await;
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(seen.len(), 1, "un appel au fournisseur");
+    let req = seen[0].to_lowercase();
+    assert!(req.starts_with("post /v1/chat/completions "), "{}", req.lines().next().unwrap_or_default());
+    assert!(req.contains("authorization: bearer sk-test-l07"), "clé ajoutée par le mandataire, jamais par le worker");
+    assert!(seen[0].contains("Bonjour"), "message déchiffré par le worker pour le fournisseur");
 }
 
-async fn aller_retour(env: Env) {
+async fn aller_retour(env: Env, expected: &str) {
     let rt = Arc::clone(&env.running.runtime);
     let http = reqwest::Client::new();
     let base = format!("http://{}", env.running.public_addr);
@@ -360,29 +453,35 @@ async fn aller_retour(env: Env) {
     .await
     .unwrap();
     assert_eq!(next_json(&mut ws).await, json!({ "v": 1, "t": "queued", "id": msg_id }));
-    let mut text = None;
+    let mut texts = Vec::new();
     let mut statuses = Vec::new();
     while statuses.last().map(String::as_str) != Some("idle") {
         let ev = next_json(&mut ws).await;
         assert_eq!(ev["epoch"], 1, "{ev}");
         match ev["t"].as_str().unwrap() {
             "status" => statuses.push(ev["status"].as_str().unwrap().to_owned()),
-            "text" => text = Some(ev),
-            other => panic!("évènement inattendu {other}"),
+            "text" => texts.push(ev),
+            "usage" | "thinking" => {}
+            other => panic!("évènement inattendu {other} : {ev}"),
         }
     }
     assert_eq!(statuses, ["running", "idle"]);
-    // Le delta est chiffré par CK avec l'AAD ws:text:<epoch>:<seq> : seul le client le lit.
-    let text = text.expect("delta de texte");
-    let clear = session::decrypt_field(
-        &ck,
-        SESSION,
-        text["messageId"].as_str().unwrap(),
-        &format!("ws:text:1:{}", text["seq"]),
-        text["delta"].as_str().unwrap(),
-    )
-    .unwrap();
-    assert_eq!(clear, synco_ai_runtime_worker::stub::STUB_REPLY);
+    // Les deltas sont chiffrés par CK avec l'AAD ws:text:<epoch>:<seq> : seul le client les lit.
+    assert!(!texts.is_empty(), "delta de texte");
+    let clear: String = texts
+        .iter()
+        .map(|text| {
+            session::decrypt_field(
+                &ck,
+                SESSION,
+                text["messageId"].as_str().unwrap(),
+                &format!("ws:text:1:{}", text["seq"]),
+                text["delta"].as_str().unwrap(),
+            )
+            .unwrap()
+        })
+        .collect();
+    assert_eq!(clear, expected);
 
     // Côté API : dépôt durable avant `queued`, historique écrit avec le message consommé, bail rendu.
     wait_until("bail rendu", || env.api.with(|st| st.conversations[SESSION].lease_released)).await;
@@ -399,7 +498,7 @@ async fn aller_retour(env: Env) {
             "content",
             reply["content"].as_str().unwrap(),
         );
-        assert_eq!(stored.unwrap(), synco_ai_runtime_worker::stub::STUB_REPLY);
+        assert_eq!(stored.unwrap(), expected);
         assert!(conv.statuses.contains(&"running".to_owned()));
         // Toutes les requêtes du canal sont signées correctement ; les routes de conversation
         // portent l'autorisation de CETTE conversation.
@@ -880,4 +979,184 @@ async fn fournisseur_non_configure_refuse() {
         });
         synco_ai_runtime::app::shutdown(&env.running.runtime).await;
     }
+}
+
+// ---------------------------------------------------------------------------
+// created_key (L07) : le vrai code du superviseur contre un worker scripté
+// ---------------------------------------------------------------------------
+
+type ScriptFn = Arc<dyn Fn(usize, tokio::io::DuplexStream) -> BoxFuture<'static, ()> + Send + Sync>;
+
+/// Lanceur dont chaque lancement exécute `script(rang, pipe)`.
+struct ScriptedEach {
+    script: ScriptFn,
+    n: std::sync::atomic::AtomicUsize,
+}
+
+impl WorkerLauncher for ScriptedEach {
+    fn spawn(&self, _spec: WorkerSpec) -> BoxFuture<'_, Result<SpawnedWorker, LaunchError>> {
+        Box::pin(async move {
+            let i = self.n.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let (ours, theirs) = tokio::io::duplex(1 << 20);
+            let task = tokio::spawn((self.script)(i, theirs));
+            Ok(SpawnedWorker { io: Box::new(ours), process: Box::new(Task(Some(task))) })
+        })
+    }
+    fn name(&self) -> &'static str {
+        "scripted-each"
+    }
+}
+
+type Rd = tokio::io::ReadHalf<tokio::io::DuplexStream>;
+type Wr = tokio::io::WriteHalf<tokio::io::DuplexStream>;
+
+async fn handshake(rd: &mut Rd, wr: &mut Wr) -> wire::Init {
+    let SupervisorMsg::Init(init) = read(rd).await else { panic!("init attendu") };
+    wire::write_json(wr, &WorkerMsg::Ready(wire::ReadyMsg { pid: 1, version: "test".into() })).await.unwrap();
+    while !matches!(read(rd).await, SupervisorMsg::Start(_)) {}
+    *init
+}
+
+/// `POST /e2ee/threads` relayé : id du salon créé.
+async fn create_thread(rd: &mut Rd, wr: &mut Wr, id: &str) -> String {
+    for p in SignedRequest::split(id, HttpMethod::Post, "/api/runtime/v1/e2ee/threads", br#"{"name":"t"}"#, true) {
+        wire::write_json(wr, &WorkerMsg::SignedRequest(p)).await.unwrap();
+    }
+    let (status, _, body) = response(rd, id).await;
+    assert_eq!(status, 201);
+    serde_json::from_slice::<Value>(&body).unwrap()["id"].as_str().unwrap().to_owned()
+}
+
+async fn created_key(rd: &mut Rd, wr: &mut Wr, thread: &str, key: [u8; 32]) -> wire::CreatedKeyMsg {
+    let frame = wire::KeyFrame {
+        op: wire::KeyOp::Add,
+        entries: vec![wire::KeyEntry {
+            kind: wire::KeyKind::Thread,
+            reference: thread.into(),
+            version: 1,
+            key: Zeroizing::new(key.to_vec()),
+        }],
+    };
+    wire::write_keys(wr, &frame.encode().unwrap()).await.unwrap();
+    loop {
+        if let SupervisorMsg::CreatedKey(c) = read(rd).await {
+            return c;
+        }
+    }
+}
+
+#[derive(Default)]
+struct CreatedReport {
+    first: Vec<(String, [u8; 32], wire::CreatedKeyMsg)>,
+    /// Le worker a pu continuer après la trame interdite (ne doit jamais arriver).
+    survived: bool,
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn created_key_reserve_aux_salons_crees_par_ce_worker() {
+    let report = Arc::new(std::sync::Mutex::new(CreatedReport::default()));
+    let (remove_tx, mut remove_rx) = tokio::sync::mpsc::channel::<tokio::sync::oneshot::Sender<()>>(1);
+    let (r2, remove_tx) = (Arc::clone(&report), Arc::new(remove_tx));
+    let script: ScriptFn = Arc::new(move |i, io| {
+        let report = Arc::clone(&r2);
+        let remove_tx = Arc::clone(&remove_tx);
+        Box::pin(async move {
+            let (mut rd, mut wr) = tokio::io::split(io);
+            handshake(&mut rd, &mut wr).await;
+            let push =
+                |t: &str, k: [u8; 32], c: wire::CreatedKeyMsg| report.lock().unwrap().first.push((t.to_owned(), k, c));
+            if i == 0 {
+                // a. Salon jamais créé par ce worker.
+                let c = created_key(&mut rd, &mut wr, "cm3threadautre0000000001", [1; 32]).await;
+                push("autre", [1; 32], c);
+                // b. Salon créé (2xx relayé) : enveloppe signée.
+                let t1 = create_thread(&mut rd, &mut wr, "c1").await;
+                let c = created_key(&mut rd, &mut wr, &t1, [2; 32]).await;
+                push(&t1, [2; 32], c);
+                // c. Une seule clé par salon.
+                let c = created_key(&mut rd, &mut wr, &t1, [3; 32]).await;
+                push("deuxieme", [3; 32], c);
+                // d. Plafond : 32 clés au plus par worker.
+                for n in 0..32u8 {
+                    let t = create_thread(&mut rd, &mut wr, &format!("p{n}")).await;
+                    let c = created_key(&mut rd, &mut wr, &t, [n; 32]).await;
+                    push(&format!("plafond{n}"), [n; 32], c);
+                }
+                wire::write_json(&mut wr, &WorkerMsg::Done(wire::DoneMsg { reason: wire::DoneReason::Idle }))
+                    .await
+                    .unwrap();
+            } else {
+                // e. Délégation retirée entre la création et la clé.
+                let t = create_thread(&mut rd, &mut wr, "d1").await;
+                let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+                remove_tx.send(ack_tx).await.unwrap();
+                ack_rx.await.unwrap();
+                let c = created_key(&mut rd, &mut wr, &t, [9; 32]).await;
+                push("delegation", [9; 32], c);
+                // f. Trame de clés non admissible (espace) : le worker est tué.
+                let bad = wire::KeyFrame {
+                    op: wire::KeyOp::Add,
+                    entries: vec![wire::KeyEntry {
+                        kind: wire::KeyKind::Space,
+                        reference: "s1".into(),
+                        version: 1,
+                        key: Zeroizing::new(vec![1; 32]),
+                    }],
+                };
+                wire::write_keys(&mut wr, &bad.encode().unwrap()).await.unwrap();
+                // Tué : cette tâche est interrompue avant d'obtenir une réponse.
+                let next = tokio::time::timeout(Duration::from_secs(3), create_thread(&mut rd, &mut wr, "apres")).await;
+                if next.is_ok() {
+                    report.lock().unwrap().survived = true;
+                }
+            }
+        })
+    });
+    let launcher = ScriptedEach { script, n: Default::default() };
+    let env = setup_with(Arc::new(launcher)).await;
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    authorize(&env).await;
+    let rt = Arc::clone(&env.running.runtime);
+    env.api.push(json!({ "type": "conversation.wake", "sessionId": SESSION, "authId": AUTH, "reason": "inbox" }));
+    wait_until("premier worker", || report.lock().unwrap().first.len() == 35).await;
+    for _ in 0..100 {
+        if rt.state.lock().await.convs.get(SESSION).is_some_and(|c| !c.worker.is_active()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    {
+        let r = report.lock().unwrap();
+        assert_eq!(r.first[0].2.error.as_deref(), Some("created_key_unknown_thread"));
+        let (t1, k1, ok) = &r.first[1];
+        let env1 = ok.envelope.as_ref().expect("enveloppe");
+        let sig = synco_e2ee::keys::KeyEnvelopeSignature {
+            commitment: env1.commitment.clone(),
+            signature: env1.signature.clone(),
+        };
+        synco_e2ee::keys::verify_rt1_envelope(&rt.keys.public().csk, k1, &format!("thread:{t1}"), 1, "d-good", &sig)
+            .expect("rt1 signée par la csk du runtime, délégation du propriétaire");
+        assert_eq!(env1.delegation_id, "d-good");
+        assert_eq!(r.first[2].2.error.as_deref(), Some("created_key_unknown_thread"), "une seule clé par salon");
+        let ok_count = r.first[3..].iter().filter(|(_, _, c)| c.envelope.is_some()).count();
+        assert_eq!(ok_count, 31, "32 clés au plus (1 + 31)");
+        assert_eq!(r.first[34].2.error.as_deref(), Some("created_key_limit"));
+    }
+    // Second worker : délégation retirée pendant qu'il travaille, puis trame interdite.
+    env.api.push(json!({ "type": "conversation.wake", "sessionId": SESSION, "authId": AUTH, "reason": "inbox" }));
+    let ack = tokio::time::timeout(Duration::from_secs(10), remove_rx.recv()).await.unwrap().unwrap();
+    rt.state.lock().await.vault.remove_user(USER);
+    ack.send(()).unwrap();
+    wait_until("second worker", || report.lock().unwrap().first.len() == 36).await;
+    assert_eq!(report.lock().unwrap().first[35].2.error.as_deref(), Some("delegation_unavailable"));
+    for _ in 0..100 {
+        if rt.state.lock().await.convs.get(SESSION).is_some_and(|c| !c.worker.is_active()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(rt.state.lock().await.convs.get(SESSION).is_some_and(|c| !c.worker.is_active()), "worker arrêté");
+    assert!(!report.lock().unwrap().survived, "trame de clés interdite : worker tué");
+    env.api.with(|st| assert_eq!(st.threads_created, 34, "aucune requête relayée après la trame interdite"));
+    synco_ai_runtime::app::shutdown(&rt).await;
 }

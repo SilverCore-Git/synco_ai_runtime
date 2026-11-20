@@ -527,6 +527,54 @@ pub enum SupervisorMsg {
     SignedRequestResponse(SignedResponse),
     /// Demande d'un `snapshot` pour un client qui reprend hors du tampon (extension L05, 05 §3).
     SnapshotRequest(SnapshotRequest),
+    /// Réponse à une clé de salon créée par le worker (extension L07, 03 §10, §10.1).
+    CreatedKey(CreatedKeyMsg),
+}
+
+/// Nombre maximal de clés créées qu'un worker peut faire sceller par le superviseur au cours de sa
+/// vie (extension L07) ; au-delà, `created_key` répond `created_key_limit`.
+pub const MAX_CREATED_KEYS_PER_WORKER: u32 = 32;
+
+/// Enveloppe `rt1` et entrée de délégation d'une clé créée par le worker (03 §10).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CreatedKeyEnvelope {
+    /// Délégation du propriétaire (`creatorId = rt1:<delegationId>`).
+    pub delegation_id: String,
+    /// `keyCommitment(clé, ctx, version)`, calculé par le superviseur depuis la clé elle-même.
+    pub commitment: String,
+    /// Signature `csk` (P1363, `b64`) des octets `synco-key-envelope-rt-v1|ctx|version|commitment|delegationId`.
+    pub signature: String,
+    /// Entrée `sre1.…` de la clé, chiffrée sous `DK` (03 §5), à poser par
+    /// `POST /delegations/:delegationId/entries`.
+    pub ciphertext: String,
+}
+
+/// `created_key` (extension L07) : réponse à une trame `0x02` **du worker** (une seule entrée,
+/// `op = ajouter`, `kind = thread`, version 1) qui annonce la clé d'un salon qu'il vient de créer
+/// (`create_thread`). Le worker n'a ni `csk` ni `DK` (mesure 7) : le superviseur signe l'enveloppe
+/// `rt1` et chiffre l'entrée, le worker les pose ensuite lui-même par `signed_request` (bail exigé).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CreatedKeyMsg {
+    /// Identifiant du salon.
+    #[serde(rename = "ref")]
+    pub reference: String,
+    /// Enveloppe et entrée (absentes en cas d'échec).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub envelope: Option<CreatedKeyEnvelope>,
+    /// Code machine d'échec : `created_key_limit`, `delegation_unavailable`, `created_key_failed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl KeyFrame {
+    /// Vrai si la trame est une annonce de clé créée admissible venant d'un worker : une entrée,
+    /// ajout, salon, version 1, clé de 32 octets.
+    #[must_use]
+    pub fn is_created_thread_key(&self) -> bool {
+        matches!(self.entries.as_slice(), [e] if self.op == KeyOp::Add && e.kind == KeyKind::Thread && e.version == 1 && e.key.len() == SYMMETRIC_KEY_LEN)
+    }
 }
 
 /// Corps vide.
@@ -956,6 +1004,42 @@ mod tests {
         assert_eq!(back.entries[1].kind, KeyKind::LlmCredential);
         assert!(!format!("{back:?}").contains('7'), "clés masquées dans Debug");
         assert_eq!(bytes.capacity(), bytes.len(), "aucune réallocation pendant l'encodage");
+    }
+
+    #[test]
+    fn cle_creee_par_le_worker() {
+        let ok = KeyFrame { op: KeyOp::Add, entries: vec![entry(KeyKind::Thread, "t1", &[1; 32])] };
+        assert!(ok.is_created_thread_key());
+        for bad in [
+            KeyFrame { op: KeyOp::Remove, entries: vec![entry(KeyKind::Thread, "t1", &[])] },
+            KeyFrame { op: KeyOp::Add, entries: vec![entry(KeyKind::Space, "s1", &[1; 32])] },
+            KeyFrame { op: KeyOp::Add, entries: vec![entry(KeyKind::Conv, "c1", &[1; 32])] },
+            KeyFrame { op: KeyOp::Add, entries: vec![entry(KeyKind::LlmCredential, "openai", b"cle")] },
+            KeyFrame { op: KeyOp::Add, entries: vec![] },
+            KeyFrame {
+                op: KeyOp::Add,
+                entries: vec![entry(KeyKind::Thread, "t1", &[1; 32]), entry(KeyKind::Thread, "t2", &[1; 32])],
+            },
+            KeyFrame {
+                op: KeyOp::Add,
+                entries: vec![KeyEntry {
+                    kind: KeyKind::Thread,
+                    reference: "t1".into(),
+                    version: 2,
+                    key: Zeroizing::new(vec![1; 32]),
+                }],
+            },
+        ] {
+            assert!(!bad.is_created_thread_key(), "{bad:?}");
+        }
+        let msg = SupervisorMsg::CreatedKey(CreatedKeyMsg {
+            reference: "t1".into(),
+            envelope: None,
+            error: Some("created_key_limit".into()),
+        });
+        let json = serde_json::to_string(&msg).unwrap();
+        assert_eq!(json, r#"{"type":"created_key","ref":"t1","error":"created_key_limit"}"#);
+        assert_eq!(decode_json::<SupervisorMsg>(json.as_bytes()).unwrap(), msg);
     }
 
     #[test]

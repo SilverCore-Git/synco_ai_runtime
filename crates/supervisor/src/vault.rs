@@ -76,8 +76,19 @@ impl OpenDelegation {
         match (opened, parsed) {
             (Ok(key), Some(kind)) => {
                 let id = KeyId { kind, reference: reference.to_owned(), version };
-                self.keys.insert(id.clone(), key);
-                Some(id)
+                // Une seconde entrée ne remplace jamais silencieusement une clé différente déjà
+                // ouverte pour la même identité : la première est gardée, le rejet est compté.
+                match self.keys.get(&id) {
+                    Some(existing) if existing != &key => {
+                        self.entries_rejected = self.entries_rejected.saturating_add(1);
+                        None
+                    }
+                    Some(_) => Some(id),
+                    None => {
+                        self.keys.insert(id.clone(), key);
+                        Some(id)
+                    }
+                }
             }
             _ => {
                 self.entries_rejected = self.entries_rejected.saturating_add(1);
@@ -127,6 +138,11 @@ impl OpenDelegation {
     #[must_use]
     pub fn key_count(&self) -> usize {
         self.keys.len()
+    }
+
+    /// Chiffre sous `DK` l'entrée d'une clé de salon créée par le runtime (03 §10), version 1.
+    pub fn seal_created_thread_entry(&self, thread_id: &str, key: &SymmetricKey) -> Result<String, synco_e2ee::Error> {
+        delegation::seal_entry(&self.dk, &self.ctx, EntryKind::Thread, thread_id, 1, key, &mut synco_e2ee::OsRandom)
     }
 
     /// Identités des clés détenues.
@@ -343,6 +359,33 @@ mod tests {
         assert!(vault.keys_for_conversation("a", "convA", 1_000 + 86_400).is_none());
         assert!(!vault.has_conversation_key("a", "convA", 1_000 + 86_400));
         assert!(vault.org_keys("a", &vault.get("a").unwrap().key_ids(), 1_000 + 86_400).is_empty());
+    }
+
+    #[test]
+    fn entree_d_une_cle_creee_par_le_runtime() {
+        let f = fixture();
+        let user = EcSigningKey::generate(&mut OsRandom).unwrap();
+        let c = ctx("a", "d1", 1_000, 1_000 + 86_400);
+        let (wrap, sig, _) = delegate(&f, &user, &c, &[]);
+        let mut d = OpenDelegation::accept(&me(&f), 1_100, c, &user.public_key().unwrap(), &wrap, &sig).unwrap();
+        let key = SymmetricKey::from_bytes([7; 32]);
+        let ct = d.seal_created_thread_entry("tNew", &key).unwrap();
+        // L'entrée s'ouvre comme une entrée déposée par le client (même AAD, même DK)…
+        let id = d.add_entry("thread", "tNew", 1, &ct).unwrap();
+        assert_eq!(id.reference, "tNew");
+        // … et pas sous une autre référence ou version.
+        assert!(d.add_entry("thread", "tAutre", 1, &ct).is_none());
+        assert!(d.add_entry("thread", "tNew", 2, &ct).is_none());
+        // Une seconde entrée pour la même identité avec une AUTRE clé n'écrase pas la première.
+        let rejected = d.entries_rejected();
+        let other = d.seal_created_thread_entry("tNew", &SymmetricKey::from_bytes([8; 32])).unwrap();
+        assert!(d.add_entry("thread", "tNew", 1, &other).is_none());
+        assert_eq!(d.entries_rejected(), rejected + 1);
+        assert!(d.add_entry("thread", "tNew", 1, &ct).is_some(), "la même clé reste acceptée");
+        let mut v = Vault::default();
+        v.install(d);
+        let k = v.org_keys("a", &[KeyId { kind: KeyKind::Thread, reference: "tNew".into(), version: 1 }], 1_100);
+        assert_eq!(k[0].key.as_slice(), &[7; 32], "la première clé est gardée");
     }
 
     #[test]

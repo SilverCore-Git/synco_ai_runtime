@@ -60,6 +60,10 @@ pub struct Runtime {
     pub wake: Notify,
     /// Requêtes relayées en vol pour tout le runtime.
     pub relay_permits: Arc<tokio::sync::Semaphore>,
+    /// Historique du dashboard (L08) : compteurs sans contenu.
+    pub history: Arc<crate::dashboard::history::History>,
+    /// Flux de notifications de l'API ouvert.
+    pub api_connected: std::sync::atomic::AtomicBool,
 }
 
 impl core::fmt::Debug for Runtime {
@@ -91,6 +95,11 @@ impl Runtime {
         state: State,
     ) -> Arc<Self> {
         let (shutdown, _) = watch::channel(false);
+        let history = Arc::new(crate::dashboard::history::History::open(
+            &config.state_dir,
+            config.dashboard.retention_days,
+            now_secs(),
+        ));
         Arc::new(Self {
             config,
             keys,
@@ -102,6 +111,8 @@ impl Runtime {
             unpaired: Notify::new(),
             wake: Notify::new(),
             relay_permits: Arc::new(tokio::sync::Semaphore::new(crate::state::RELAY_IN_FLIGHT_TOTAL)),
+            history,
+            api_connected: std::sync::atomic::AtomicBool::new(false),
         })
     }
 

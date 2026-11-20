@@ -89,3 +89,54 @@ Conception, coût mesuré, systemd et Docker : [`docs/plan/10-bac-a-sable.md`](.
 - Vérifier l'environnement réel : `synco-ai-runtime --config … sandbox-check`.
 - systemd : `Delegate=yes` et `ProtectControlGroups=private` (unité d'exemple).
 - Tests sur l'hôte : `host-spawn sh crates/supervisor/tests/sandbox-host.sh`.
+
+## Dashboard (L08)
+
+Interface web de l'administrateur du runtime : état, empreinte de la clé, sessions (tokens, coût
+estimé, CPU et RAM des workers), totaux par utilisateur et par fournisseur. **Jamais de contenu de
+conversation.** Conception et choix d'authentification : `docs/plan/11-dashboard.md`.
+
+```text
+synco-ai-runtime --config /etc/synco-ai-runtime/config.toml dashboard-password   # définit le mot de passe
+```
+
+Sans mot de passe, le dashboard ne démarre pas (le journal l'indique). Il écoute sur
+`listen.dashboard` (défaut `127.0.0.1:8791`) ; derrière un mandataire TLS, déclarer le nom d'hôte
+dans `dashboard.allowed_hosts`. L'historique est dans `<state_dir>/dashboard/` (JSONL) et conservé
+`dashboard.retention_days` jours (défaut 90). Redémarrer le runtime après avoir défini le mot de
+passe la première fois ; un changement ultérieur est pris en compte à chaud (sessions fermées).
+
+### Derrière nginx ou Caddy
+
+Par défaut (`dashboard.trust_proxy_hops = 0`) le dashboard ignore `X-Forwarded-For` et
+`X-Forwarded-Proto` : sur une connexion directe, ils sont forgeables. Derrière **un** mandataire
+TLS, mettre `trust_proxy_hops = 1`, déclarer le nom dans `allowed_hosts`, et faire que le mandataire
+**écrase** ces en-têtes (jamais de transmission de ceux du client).
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name runtime-admin.example.com;
+    location / {
+        proxy_pass http://127.0.0.1:8791;
+        proxy_set_header Host $host;                      # contrôlé par allowed_hosts
+        proxy_set_header X-Forwarded-For $remote_addr;    # écrase, n'ajoute pas
+        proxy_set_header X-Forwarded-Proto $scheme;       # cookie Secure
+    }
+}
+```
+
+```caddy
+runtime-admin.example.com {
+    reverse_proxy 127.0.0.1:8791 {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+```
+
+```toml
+[dashboard]
+allowed_hosts = ["runtime-admin.example.com"]
+trust_proxy_hops = 1
+```

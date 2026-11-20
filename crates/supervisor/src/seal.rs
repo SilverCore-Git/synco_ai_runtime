@@ -261,7 +261,7 @@ fn aad(params: KdfParams, salt: &str) -> String {
     format!("{AAD_LABEL}|passphrase|argon2id|{}|{}|{}|{salt}", params.m_kib, params.t, params.p)
 }
 
-fn derive(passphrase: &[u8], salt: &[u8], params: KdfParams) -> Result<Zeroizing<[u8; 32]>> {
+pub(crate) fn derive(passphrase: &[u8], salt: &[u8], params: KdfParams) -> Result<Zeroizing<[u8; 32]>> {
     // Bornes : un fichier altéré ne doit pas faire allouer 1 Tio au démarrage.
     if params.m_kib > 1024 * 1024 || params.t == 0 || params.t > 16 || params.p == 0 || params.p > 8 || salt.len() < 16
     {
@@ -373,7 +373,7 @@ fn read_passphrase(source: &PassphraseSource, creating: bool) -> Result<Zeroizin
 }
 
 /// Lit une ligne sur le terminal sans écho (stdin doit être un terminal).
-fn prompt_hidden(prompt: &str) -> Result<Zeroizing<String>> {
+pub(crate) fn prompt_hidden(prompt: &str) -> Result<Zeroizing<String>> {
     use rustix::termios::{LocalModes, OptionalActions, isatty, tcgetattr, tcsetattr};
     let stdin = std::io::stdin();
     if !isatty(&stdin) {

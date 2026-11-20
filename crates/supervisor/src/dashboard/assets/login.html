@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Synco AI Runtime · Connexion</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body class="login">
+<main class="login-box">
+  <h1>Synco AI Runtime</h1>
+  <p class="muted">Tableau de bord de l'administrateur du runtime.</p>
+  <form id="form" autocomplete="off">
+    <label for="password">Mot de passe</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="256" autofocus>
+    <button type="submit" id="submit">Se connecter</button>
+    <p id="message" class="error" role="alert" hidden></p>
+  </form>
+</main>
+<script src="/assets/login.js"></script>
+</body>
+</html>

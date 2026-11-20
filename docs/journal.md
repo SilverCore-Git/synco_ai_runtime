@@ -580,3 +580,128 @@ publiés, pas enregistrés sur les fournisseurs réels** (aucune clé disponible
 Aucun appel réel à Mistral ni à Gemini : formats d'appels en flux, usage, pensées, refus de schémas ou de
 champs sont à vérifier en recette manuelle avec de vraies clés (une réponse texte, un outil, plusieurs
 outils, un modèle raisonnant par fournisseur).
+
+## 2026-11-20 — L08 : dashboard web du superviseur
+
+**Branche** : `syncoai/L08-dashboard` (depuis `feature/syncoai-refonte` à `f9c9aad`). Conception :
+`docs/plan/11-dashboard.md`.
+
+**Fait** (`crates/supervisor/src/dashboard/`, aucun changement dans `crates/worker`) :
+
+- `history` : enregistrement **typé** par exécution de worker (compteurs des `metrics` du pipe, coût
+  en µ€ venu du worker, états et codes en liste fermée 08 §1 / §6, sinon `other`, relevés du cgroup),
+  JSONL `<state_dir>/dashboard/history-AAAA-MM-JJ.jsonl` (0600), point de reprise toutes les 60 s,
+  enregistrement final avec chronologie ; exécution sans fin = « interrompue » ; rétention
+  (`dashboard.retention_days`, 1 à 3650, défaut 90) appliquée au démarrage puis chaque heure, sans
+  jamais supprimer un fichier au nom inattendu.
+- `query` : sessions (une conversation = ses exécutions agrégées), filtres (état, utilisateur,
+  fournisseur, période, erreurs), tri sur 11 colonnes (ordre total), pagination, totaux par
+  utilisateur / fournisseur, coût jour / 7 j / 30 j, détail avec chronologie.
+- `auth` : mot de passe local (Argon2id 64 Mio, `dashboard.pass` 0600, commande
+  `synco-ai-runtime dashboard-password`), sessions à jeton aléatoire neuf à chaque connexion (SHA-256
+  seul gardé), 30 min d'inactivité / 12 h, 16 sessions ; force brute : 5 échecs / 15 min par adresse
+  et 20 au total, comptés avant le calcul Argon2, une vérification à la fois.
+- `routes` : garde unique autour de tout le routeur (hôte, session, `Origin`, jeton CSRF), 401 partout
+  sauf `GET /login`, `/assets/login.js`, `/assets/style.css`, `POST /api/login` ; cookie `HttpOnly;
+  SameSite=Strict` (+ `Secure` derrière un mandataire de confiance en HTTPS) ; CSP stricte sans
+  inline ; `Host` contrôlé (DNS rebinding) ; interface HTML/CSS/JS embarquée, en français, sans CDN,
+  texte inséré par `textContent`.
+- Branchements : `Runtime.history`, `Runtime.api_connected` (flux de notifications), relevé du cgroup
+  toutes les 5 s et au dernier instant dans `workers::drive`, hooks `on_metrics` / `on_status` /
+  `on_done` / `end_run`. Le dashboard ne démarre que si un mot de passe existe.
+
+**Dépendances** : aucune nouvelle (Argon2, axum, SHA-256 et aléa déjà dans le dépôt ; JSONL au lieu
+de SQLite pour éviter une bibliothèque C).
+
+**Vérifié** (flatpak, `CARGO_TARGET_DIR=$HOME/.cache/synco-l08-target`) : `cargo fmt --all --check`,
+`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (21 binaires de
+tests, tous verts) ; `node --check` des deux fichiers JS (via `host-spawn`). Tests propres au lot :
+- `tests/integration.rs::dashboard_sans_contenu_de_conversation` : un worker scripté envoie le
+  marqueur dans un `log`, un `status.reason`, trois `event` (texte, arguments, résultat) et un
+  historique relayé ; aucune réponse du dashboard (14 chemins, plusieurs filtres) ni aucun fichier
+  du répertoire d'état ne le contient, alors que l'API simulée l'a reçu. Contrôle négatif fait : en
+  désactivant le filtre des codes, le test échoue.
+- `tests/dashboard.rs` (12 tests) : énumération de toutes les routes × 7 méthodes + chemins inconnus →
+  401 sauf la liste fermée ; en-têtes ; pas de script ni style en ligne ; cookie ; CSRF et origine ;
+  fixation ; hôte ; force brute HTTP (429 + `Retry-After`) ; corps invalide ou > 1 Kio ; filtres et
+  tri de bout en bout.
+- unitaires : rétention (fichiers et mémoire), points de reprise, valeurs hors liste, agrégation,
+  filtres, tri, totaux, coûts par période, force brute (par adresse, globale, rafale parallèle,
+  remise à zéro), expiration des sessions, changement de mot de passe.
+
+**Corrections après revue Opus légère** (commits `7bc8b18`, `d8cada6`, `44f34d3`, `3ae6455`, `4ed692b`) :
+
+- **I1** : le dashboard avait repris `listen.trust_proxy_hops` (défaut 1) et croyait `X-Forwarded-For` /
+  `X-Forwarded-Proto` sur une connexion directe (contournement de la limite par adresse, blocage de
+  l'admin par la limite globale). Réglage propre `dashboard.trust_proxy_hops`, **défaut 0** (en-têtes
+  ignorés), borné à 4. La limite globale n'est plus un refus : au-delà de 20 échecs / 15 min, une
+  adresse inconnue ne déclenche qu'une vérification toutes les 5 s ; les 8 dernières adresses ayant
+  ouvert une session en sont exemptées (jamais de la limite par adresse stricte) ; IPv6 compté par /64.
+  `docs/plan/11-dashboard.md` §3 et README (blocs nginx / Caddy) mis à jour. Tests : XFF ignoré par
+  défaut et lu à 1, `Secure` non posé sur un `X-Forwarded-Proto` forgé à 0, admin connecté pendant une
+  attaque continue (adresse connue sans attente, adresse nouvelle après ≤ 5 s), IPv6 /64.
+- **I2** : plafond `MAX_RUNS` appliqué après le chargement ; élagage amorti (jusqu'à 90 % du plafond,
+  une passe O(n log n) tous les 5 000 ajouts) au lieu d'une passe quadratique à chaque ajout. Test :
+  75 000 enregistrements chargés → plafond respecté, plus récentes gardées, 2 000 ajouts rapides.
+- **M1** (marqueur dans `status.status`, mutation de `clean_status` vérifiée : le test échoue),
+  **M2** (listes, totaux, coûts sur des exécutions **sans chronologie** ; seul le détail clone celles
+  d'une session), **M4** (identifiant d'exécution avec aléa : unique à travers les redémarrages),
+  **M5** (rechargement : `done_reason`, `exit`, `run_id` et chaînes de la chronologie refiltrés ;
+  enregistrement à identifiant invalide ignoré), **M6** (page HTML sans session : 401 avec un court
+  corps renvoyant vers `/login` ; `/api` reste en JSON ; `decodeURIComponent` protégé), **M7**
+  (fichier du mot de passe illisible ou invalide : dashboard non démarré, journal
+  `dashboard_password_unreadable`), **M8** (`Host` insensible à la casse).
+- **M3** laissé : les écritures JSONL (points de reprise toutes les 60 s, fin d'exécution) se font sous
+  le verrou de l'historique ; volume faible (quelques centaines d'octets), non critique.
+- I2, M2, M4, M5 sont dans un seul commit (mêmes fichiers, impossibles à séparer proprement).
+
+**Écarts / décisions remontées** :
+
+1. **Authentification** : mot de passe local retenu. La connexion par ticket Synco (admins de l'org)
+   demande une nouvelle route API et un rôle : **remontée** (évolution possible en plus, jamais à la
+   place : l'empreinte doit rester lisible si Synco est compromis ou hors ligne).
+2. **Chronologie sans nom d'outil ni type d'étape** : les `metrics` du pipe n'ont que des compteurs
+   globaux (06 §5 prévoyait un compteur par outil, que le worker n'émet pas). La chronologie montre
+   lancement, états, écarts de mesures (étapes, outils, tokens, coût, durée du tour), fin. Un compteur
+   par outil demande une évolution de `crates/worker` (L07b ou suivant) : **remontée**.
+3. **Noms d'utilisateur** : l'API ne fournit au superviseur que l'identifiant ; le dashboard affiche
+   l'identifiant (aucune route ajoutée).
+4. Durée d'une exécution = process du worker ; une conversation relancée = plusieurs exécutions
+   agrégées dans la session. Les compteurs du worker repartent de zéro à chaque lancement ; le
+   dashboard les additionne.
+5. Une exécution en cours lors d'un arrêt brutal du superviseur garde ses totaux au dernier point
+   de reprise (≤ 60 s de retard) mais perd sa chronologie.
+6. Le coût est un coût **estimé** par le worker depuis `pricing` (absent : 0). Jour / semaine / mois
+   = jours UTC ; coût attribué au jour d'arrivée de la mesure.
+7. Mot de passe défini après le démarrage : le dashboard ne démarre qu'au redémarrage suivant
+   (changement de mot de passe ensuite pris en compte à chaud).
+8. CPU / RAM des workers : « non mesuré » avec le lanceur de test ou `--insecure-no-sandbox` si le
+   cgroup n'est pas disponible (`usage()` renvoie `None`).
+
+**Non vérifié** : rendu réel dans Firefox (aucune capture produite : pas de navigateur pilotable
+depuis le flatpak sans outil externe) ; mesure CPU/RAM avec un vrai cgroup (le test envoie des
+`ResourceUsage` synthétiques) ; comportement derrière un vrai mandataire TLS (`Secure`, `Host`).
+
+**Checklist de recette manuelle** (sur l'hôte, runtime lancé avec le bac à sable) :
+
+1. `synco-ai-runtime dashboard-password` : saisie masquée ; refus d'un mot de passe de moins de 12
+   caractères ; `ls -l <state_dir>/dashboard.pass` en `-rw-------`.
+2. Redémarrer le runtime : le journal indique `dashboard_started` ; sans le fichier,
+   `dashboard_disabled`.
+3. Ouvrir `http://127.0.0.1:8791/` dans Firefox : réponse 401 (JSON) ; `/login` affiche le formulaire.
+4. Mauvais mot de passe : « Mot de passe incorrect » ; au 6e essai : message de patience (429).
+5. Bon mot de passe : vue d'ensemble ; l'empreinte est identique à `synco-ai-runtime pair` et à
+   celle affichée par Synco (mesure 4) ; état d'appairage et « API Synco connectée » corrects.
+6. Lancer une conversation en mode runtime : une ligne « En cours » apparaît dans Sessions, RAM et
+   CPU non nuls, tokens et coût croissants ; fin : état « Terminé », durée figée.
+7. Détail d'une session : chronologie sans aucun texte de conversation (ni arguments, ni résultats).
+8. Filtres (état, utilisateur, fournisseur, période, erreurs) et tri par clic sur les colonnes ;
+   pagination ; Totaux par utilisateur puis par fournisseur.
+9. Provoquer une erreur (clé du fournisseur invalide) : la session apparaît avec erreur et état
+   « Échec ».
+10. Redémarrer le runtime : l'historique est conservé ; régler `retention_days = 1`, attendre ou
+    redémarrer : les fichiers `history-*.jsonl` plus vieux sont supprimés.
+11. Se déconnecter, puis rejouer l'ancien cookie (`curl -b`) : 401.
+12. Derrière le mandataire TLS : `allowed_hosts` contient le nom ; le cookie porte `Secure` ;
+    `Host` inconnu → 403.
+13. Console du navigateur : aucune violation de CSP, aucune requête externe.

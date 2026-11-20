@@ -115,7 +115,8 @@ Le mandataire (`sandbox/proxy.rs`) :
   système). Une `base_url` configurée pour `gateway` dans le runtime l'emporte ;
 - fournisseur inconnu ou absent de la configuration, ou URL de passerelle refusée : **aucun worker**
   n'est lancé, la conversation passe en `failed` avec `provider_error` (code le plus proche accepté
-  par l'API, 08 §6 ; la cause exacte, `llm_provider_not_configured` ou `llm_gateway_url_refused`, est
+  par l'API, 08 §6 ; un code `provider_not_configured` n'existe pas côté API : **question ouverte**,
+  00 §6, Q30 ; la cause exacte, `llm_provider_not_configured` ou `llm_gateway_url_refused`, est
   au journal du runtime) et le bail est rendu ;
 - pour `openai`, `mistral`, `gemini`, `custom` : l'`authorization` du worker est retiré et remplacé
   par `Bearer <clé>` ; la clé **ne passe plus par le pipe** (`WorkerLauncher::injects_llm_credentials`,
@@ -123,7 +124,8 @@ Le mandataire (`sandbox/proxy.rs`) :
 
 **Requêtes admises (I2)** : exactement deux couples (méthode, chemin relatif à l'URL de base), sans
 chaîne de requête — API compatibles OpenAI : `POST /chat/completions`, `GET /models` ; passerelle
-Synco : `POST /v1/chat/completions`, `GET /models` (routes de `Synco_AI_Gateway`). Tout le reste
+Synco : `POST /v1/chat/completions`, `GET /models` (routes de `Synco_AI_Gateway`). Cette liste blanche est la raison pour laquelle Gemini passe par son endpoint **compatible OpenAI**
+(06 §9) : l'API native (`models/{m}:streamGenerateContent`) serait refusée. Tout le reste
 (`/files`, `/files/<id>/content`, `/organization/users`, `/./files`, `GET /chat/completions?…`) →
 `404 proxy_path` (`405 proxy_method` hors `GET`/`POST`), sans appel au fournisseur.
 
@@ -185,7 +187,8 @@ cgroup est vide. Métriques (06 §5, L08) : `WorkerProcess::usage()` lit `memory
 mémoire anonyme n'est pas récupérable : sous `memory.high` = 448 Mio, le worker de test était encore
 vivant après 120 s, ralenti indéfiniment (5 141 évènements `high`, aucun OOM), au lieu d'être tué à
 `memory.max`. `worker_memory_high_mib` reste lu mais ignoré, et `--check-config` avertit s'il est présent.
-Décision de l'utilisateur en attente.
+**Question ouverte à la porte C** (00 §6, Q22) : retirer `memory.high` de D6 (recommandation, avis du
+relecteur concordant) ou l'appliquer autrement ; non tranché ici, le code n'applique que `memory.max`.
 
 ## 6. Repli si une fonction noyau manque
 
@@ -289,7 +292,7 @@ root sur l'hôte.
 
 ## 11. Pour L07
 
-- Entrée : `synco_ai_runtime_worker::entry::run(pipe, llm_socket)` (remplacer l'appel au bouchon).
+- Entrée : `synco_ai_runtime_worker::entry::run(pipe, llm_socket)` (remplacé par la vraie boucle d'agent en L07).
   Moteur `tokio` mono-fil ; `spawn_blocking` crée des fils (comptés dans `pids.max`).
 - LLM : `synco_ai_runtime_worker::llm::send(socket, LlmRequest::new("POST", "/chat/completions")
   .header("content-type", "application/json").body(…))` puis `next_chunk()` pour le flux SSE. Ne

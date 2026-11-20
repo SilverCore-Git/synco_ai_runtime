@@ -45,13 +45,16 @@ Source : `SYNCOAI_REFONTE_FEATURE.md` §13.5, §13.7.
 | `idleShutdownSecs` | **60 s** | runtime | superviseur | Le worker ne vit que lorsqu'il travaille (P3) ; 60 s évitent de relancer pour un message tapé juste après. |
 | Workers simultanés par utilisateur | **3** | org | superviseur | Au-delà, la conversation reste `queued`. |
 | Workers simultanés par runtime | **8** par défaut ; recommandé : ⌊RAM libre × 0,6 / 512 Mio⌋ | runtime | superviseur | Dimensionnement à ajuster avec la mesure de L06. |
-| RAM par worker (`memory.max`) | **512 Mio** (`memory.high` 448 Mio) | runtime | cgroup (L06) | Un worker = boucle + client HTTP + historique en mémoire ; la recherche sémantique locale (Q6) peut demander plus : à mesurer. Dépassement → OOM de **ce** worker seul. |
+| RAM par worker (`memory.max`) | **512 Mio** (`memory.high` 448 Mio **non appliqué** : écart L06, question ouverte à la porte C, 00 §6 Q22 ; 10 §5) | runtime | cgroup (L06) | Un worker = boucle + client HTTP + historique en mémoire ; la recherche sémantique locale (Q6) peut demander plus : à mesurer. Dépassement → OOM de **ce** worker seul. |
 | CPU par worker (`cpu.max`) | **1 CPU** (`100000 100000`) | runtime | cgroup | Le travail est surtout de l'attente réseau. |
 | Process par worker (`pids.max`) | **64** | runtime | cgroup | Empêche les bombes de fork. |
 | Durée d'un appel au fournisseur | 120 s sans octet reçu ; 10 min au total | runtime | worker | |
 | Bail (`LEASE_MS`) | **60 s**, renouvelé toutes les 20 s | — | API / worker | Relance après plantage en ≤ 60 s. |
 | Tampon de reprise (05 §3) | **2 000** évènements ou **4 Mio** par conversation | runtime | superviseur | |
 | `signed_request` du worker | 20 / s, rafale 50 | runtime | superviseur | |
+| Mandataire LLM (L06) | corps ≤ 8 Mio ; 4 connexions par worker ; 2 appels / s (rafale 5) par worker, 20 / s (rafale 40) pour le runtime ; quotas d'appels et de tokens par tour et par conversation | runtime | superviseur | Application de D6 par le mandataire, détail et codes `proxy_*` en 10 §4 |
+| Réponse du fournisseur (L07) | texte + raisonnement ≤ **4 Mio**, arguments d'outils ≤ **1 Mio** (`LlmError::TooLarge`, sans nouvel essai, `failed` `provider_error`) | runtime | worker | 06 §9 |
+| `create_thread` (L07) | 10 salons par appel, **300** destinataires de clé RSA par salon (`too_many_recipients`), clé RSA ≥ 2048 bits ; 32 clés signées par worker (`created_key_limit`) | runtime | worker, superviseur | 04 §4.3 (corps ≤ 256 Kio), 06 §3.3 |
 
 **Recommandation** : ces valeurs, à revoir après les mesures de L06 (coût d'un worker vide, temps de
 lancement) et les premiers essais de L07.
@@ -135,5 +138,6 @@ Valeurs appliquées par le superviseur (L05, `crates/supervisor/src/`, `crates/r
 | Clés publiques des tickets (runtime) | sans relecture réussie depuis 1 h, aucun ticket accepté (échec fermé, comme la passerelle) | `client_ws.rs:TICKET_KEYS_MAX_AGE` | ajout |
 | Relais `signed_request` | requêtes et réponses découpées en parties de ≤ 512 Kio bruts ; ≤ **4** requêtes en vol par worker et **8** pour le runtime (`relay_busy`) ; 2 corps en réassemblage par worker ; corps ≤ 8 Mio + 64 Kio (requête), 9 Mio (réponse) ; débit 20 / s, rafale 50 par worker (`429` `rt_rate_limited`, `relay_rate_limited`) | `pipe.rs:RELAY_*`, `state.rs:RELAY_*`, `config.rs:203-204` | précision (06 §4) |
 | `snapshot` | ≤ 1 Mio, sinon `ready { mode: "reload" }` | `client_ws.rs`, `runtime.rs` | précision (05 §2) |
+| Dashboard (L08, 11) | `dashboard.retention_days` 1 à 3 650, défaut **90** ; `MAX_RUNS` **50 000** exécutions en mémoire (élagage jusqu'à 90 %) ; chronologie ≤ 500 entrées ; 16 sessions, 30 min d'inactivité, 12 h ; 5 échecs / 15 min par adresse, ralentissement global à 20 échecs / 15 min (1 vérification / 5 s) ; `dashboard.trust_proxy_hops` défaut **0**, au plus 4, **distinct** de `listen.trust_proxy_hops` (défaut 1) | `dashboard/history.rs`, `dashboard/auth.rs`, `config.rs` | ajout (11 §2, §3, §6) |
 
 Sauf mention, les chemins sont relatifs à `synco_api/src/services/aiRuntime/` ou `synco_api/src/routes/`.

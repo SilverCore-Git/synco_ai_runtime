@@ -166,7 +166,11 @@ l'outil qu'après la confirmation de cette écriture. Après l'exécution, il en
 2. Tout appel d'outil `mutating` au statut `executing` n'est **jamais** relancé : il passe en `error`
    et reçoit le message `tool` au résultat chiffré
    `{"error":"unknown_outcome","note":"L'exécution de cet outil a été interrompue : son résultat est inconnu. Vérifie l'état avant de réessayer."}`,
-   avec un `AiChatSessionEvent` `tool_unknown_outcome`. Le modèle décide de la suite.
+   avec un `AiChatSessionEvent` `tool_unknown_outcome` (révisé après L07 : `code` = **nom de l'outil** ;
+   `lease_lost` n'a pas de `code`). Le modèle décide de la suite. Un appel mutant `accepted` qui ne
+   correspond pas au `pendingToolCall` déchiffré n'est pas relancé : clos `tool_call_unverified`
+   (06 §9). Même issue inconnue (`unknown_outcome`) pour une erreur de transport **après** l'envoi
+   d'une action mutante ; les refus locaux du relais, émis avant tout envoi, sont un échec simple.
 3. Un outil **non mutant** au statut `executing` est relancé (lecture sans effet de bord).
 4. Les outils `pending` restent en attente de leur décision (état `awaiting_confirmation`).
 5. Garde-fou : 3 plantages du worker pour la même conversation en 10 minutes → `failed`
@@ -189,8 +193,8 @@ constate et l'écrit.
 |---|---|---|
 | `provider_error` | `failed` | Le fournisseur LLM a échoué après 3 tentatives (backoff 1 s, 4 s, 16 s) |
 | `provider_auth` | `failed` | Clé ou ticket du fournisseur refusé |
-| `budget_exceeded` | `failed` | `maxTokensPerConversation` atteint |
-| `step_limit` | `idle` | `maxStepsPerTurn` atteint : le tour s'arrête, l'utilisateur peut relancer (« continue ») |
+| `budget_exceeded` | `failed` | `maxTokensPerConversation` atteint, ou quota de tokens du mandataire (`proxy_token_budget`, 10 §4) — révisé après L07 |
+| `step_limit` | `idle` | `maxStepsPerTurn` ou `maxTokensPerTurn` atteint, ou quota d'appels du mandataire (`proxy_call_budget`, 10 §4) : le tour s'arrête, l'utilisateur peut relancer (« continue ») — révisé après L07 |
 | `turn_timeout` | `failed` | `maxTurnDurationSecs` dépassé |
 | `confirmation_timeout` | `failed` | Décision attendue trop longtemps (09 §3) |
 | `key_timeout` | `failed` | Clé attendue trop longtemps (09 §3) |

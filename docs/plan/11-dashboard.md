@@ -25,7 +25,7 @@ l'orchestrateur** comme évolution possible (connexion « admin de l'org » en p
 Mise en place : `synco-ai-runtime dashboard-password` demande le mot de passe deux fois sur le
 terminal (sans écho, 12 caractères minimum) et écrit `<state_dir>/dashboard.pass` (0600) : JSON avec
 Argon2id (64 Mio, 3 passes, 1 voie, sel de 16 octets) et l'empreinte résultante. Sans ce fichier, le
-dashboard **ne démarre pas** (journal : comment le créer). Le fichier est relu si sa date change ; un
+dashboard **ne démarre pas** (journal `dashboard_disabled`, avec la commande pour le créer ; fichier illisible ou invalide : `dashboard_password_unreadable`) : **question ouverte** (§7, Q29 c). Un mot de passe défini après le démarrage n'est pris en compte qu'au redémarrage suivant (un changement ultérieur l'est à chaud). Le fichier est relu si sa date change ; un
 changement de mot de passe ferme toutes les sessions.
 
 ## 2. Sessions et cookies
@@ -97,6 +97,22 @@ Fichiers JSONL, sans dépendance : `<state_dir>/dashboard/history-AAAA-MM-JJ.jso
 plusieurs, agrégées à l'affichage). Écriture : un point de reprise (totaux, sans chronologie) toutes
 les 60 s par exécution active, et l'enregistrement final avec chronologie (≤ 500 entrées) à la fin.
 Au chargement, le dernier enregistrement d'un identifiant gagne ; une exécution sans fin devient
-« interrompue ». Pas de SQL. Rétention `dashboard.retention_days` (1 à 3650, défaut 90) : fichiers
+« interrompue » ; une exécution encore en cours lors d'un arrêt brutal garde ses totaux au dernier point de reprise (≤ 60 s de retard) mais perd sa chronologie. Au plus **`MAX_RUNS` = 50 000** exécutions en mémoire : plafond appliqué dès le chargement, puis élagage amorti des terminées les plus anciennes jusqu'à 90 % (une passe tous les 5 000 ajouts, pas à chaque ajout). Pas de SQL. Rétention `dashboard.retention_days` (1 à 3650, défaut 90) : fichiers
 plus vieux supprimés au démarrage puis toutes les heures. Coût du jour / 7 jours / 30 jours : jours
 UTC, le coût étant attribué au jour où la mesure est arrivée.
+
+## 7. Questions ouvertes (L08, reportées le 2026-11-20 ; non tranchées, 00 §6, Q29)
+
+- **(a) Connexion par ticket Synco** des admins de l'org, **en complément** du mot de passe local
+  (jamais à sa place, §1) : demande une nouvelle route de `synco_api` et un rôle.
+- **(b) Compteur d'appels par outil** dans `metrics` (06 §5) : évolution du protocole et de
+  `crates/worker`, nécessaire pour nommer l'outil dans la chronologie (§5). Même remarque pour
+  l'affichage d'un nom d'utilisateur à la place de l'identifiant (l'API n'en donne pas au runtime).
+- **(c) Dashboard désactivé tant qu'aucun mot de passe n'existe** (aujourd'hui : pas de page « aucun
+  mot de passe », §1) : à confirmer ou à remplacer.
+
+Autres limites déclarées (pas des questions) : coût **estimé** par le worker depuis `pricing` (absent :
+0), jours UTC ; durée d'une exécution = vie du process worker (une conversation relancée = plusieurs
+exécutions agrégées) ; CPU et RAM « non mesurés » avec le lanceur de test ou `--insecure-no-sandbox`
+sans cgroup. Rendu réel dans Firefox, mesures cgroup réelles et comportement derrière un vrai
+mandataire TLS : **non vérifiés** (recette manuelle, `docs/journal.md`, L08).

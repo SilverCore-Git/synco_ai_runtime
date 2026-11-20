@@ -2,7 +2,9 @@
 
 Le superviseur lance **un process worker par conversation active** (P3, L06) et lui parle par un
 **seul** canal : une paire de descripteurs hérités (`socketpair` `AF_UNIX`, `SOCK_STREAM`) sur le
-descripteur 3 du worker. Aucun autre descripteur n'est hérité (en dehors de stdin/stdout/stderr
+descripteur 3 du worker (**révisé après L06** : le superviseur la passe d'abord en stdin du
+processus assistant, qui la déplace sur le descripteur 3 ; le worker est le **binaire du
+superviseur** relancé en `__sandbox-worker`, pas `synco-ai-runtime-worker`, 10 §2). Aucun autre descripteur n'est hérité (en dehors de stdin/stdout/stderr
 redirigés vers `/dev/null` ou un journal sans contenu). Les types sont dans la crate
 `runtime-protocol` (L05). Conventions : [00 §3](00-vue-ensemble.md).
 
@@ -33,7 +35,7 @@ trame = longueur (u32 gros-boutiste, octets qui suivent) ‖ genre (u8) ‖ char
 op        u8         0x01 = ajouter, 0x02 = retirer
 nombre    u16 BE
 répété « nombre » fois :
-  kind    u8         0x01 = conv, 0x02 = thread, 0x03 = space, 0x10 = llm_credential (dépend de D1)
+  kind    u8         0x01 = conv, 0x02 = thread, 0x03 = space, 0x10 = llm_credential (voir ci-dessous)
   refLen  u16 BE
   ref     refLen octets UTF-8 (identifiant, 00 §3.2 ; pour llm_credential : identifiant du fournisseur)
   version u32 BE
@@ -49,6 +51,21 @@ Le worker ne peut pas demander une clé d'un autre utilisateur ni d'une autre co
 Taille : une délégation peut contenir des centaines de clés ; le superviseur découpe en plusieurs
 trames de ≤ 64 Kio.
 
+**`llm_credential` n'est plus envoyée (révisé après L06, D1 = A, 2026-11-20)** : le superviseur est un
+mandataire LLM qui **injecte lui-même** la clé du fournisseur dans la requête (10 §4) ; la clé ne
+passe jamais par le pipe (`WorkerLauncher::injects_llm_credentials`). Le `kind` `0x10` reste défini
+dans `runtime-protocol` (le décodeur le lit encore), mais aucune trame n'en contient avec le bac à
+sable. Il n'existe pas non plus de `net_request` / `net_response` : le seul accès réseau du worker
+est le socket du mandataire (10 §4).
+
+### 2.1 Trame `0x02` du **worker** vers le superviseur (extension L07, révisée après les corrections de L07)
+
+Le sens worker → superviseur n'admet **qu'un seul cas** : l'annonce de la clé d'un salon que le
+worker vient de créer (outil `create_thread`, 03 §10). `KeyFrame::is_created_thread_key` exige
+exactement : `op = ajouter`, **une** entrée, `kind = thread`, `version = 1`, clé de 32 octets. Toute
+autre trame `0x02` du worker (retrait, `space`, `conv`, `llm_credential`, plusieurs entrées, version
+≠ 1) est un incident de sécurité : worker tué (`BadKeys`). Réponse : message `created_key` (§3.2).
+
 ## 3. Superviseur → worker
 
 | `type` | Champs | Moment |
@@ -58,16 +75,19 @@ trames de ≤ 64 Kio.
 | `inbox` | `items` : éléments de boîte de réception tels que reçus (05 §6.2, champs encore chiffrés) | Message, décision ou annulation arrivés par WebSocket. **Révisé après L05, 2026-11-20** : un même élément peut arriver **deux fois** au worker (`GET …/inbox` à la reprise, puis `inbox` en direct, 04 §4.2) ; **L07 déduplique la boîte par `id`** (`docs/journal.md`, L05, écart 10) |
 | `keys` | (trame `0x02`) | Clé ajoutée (synchro P11) ou retirée (révocation) |
 | `shutdown` | `graceMs`, `reason` (`idle` \| `revoked` \| `unpaired` \| `sigterm` \| `limit`) | Arrêt demandé : terminer l'étape en cours si `graceMs > 0`, enregistrer, quitter |
-| `net_response` | dépend de L06 | Réponse d'un accès réseau relayé par le superviseur, si L06 choisit ce modèle |
+| `net_response` | — | **Non retenu (L06)** : pas de relais réseau par le pipe, le mandataire est un socket Unix à part (10 §4) |
 | `signed_request_response` | `id`, `status`, `headers`, `body`, `part?`, `last?`, `error?` | Réponse à `signed_request` (§4), en une ou plusieurs parties |
 | `snapshot_request` | `requestId` | **Ajout L05** : un client reprend hors du tampon de rejeu (05 §3) ; le worker répond par `snapshot` (§4) |
+| `created_key` | `ref`, `envelope?`, `error?` | **Ajout L07** : réponse à la trame `0x02` du worker (§2.1, §3.2) |
 
 ### 3.1 Configuration LLM (`llm`)
 
 `{ "provider": "openai" | "mistral" | "gemini" | "gateway" | "custom", "model": "…", "baseUrl": "…", "reasoningEffort": "low" | "medium" | "high", "pricing": { "inputPerMTok": <€>, "outputPerMTok": <€> } | null }`.
-Les secrets (clé API du fournisseur) passent en trame `0x02` (`llm_credential`) ou pas du tout si le
-superviseur relaie le réseau et les injecte lui-même — **dépend de D1 et de L06**. Pour `gateway`, le
-worker obtient un ticket `sgt1` par `signed_request` vers `POST /api/runtime/v1/tickets/llm`.
+**Aucun secret ne passe dans `init` ni en trame `0x02`** (révisé après L06, D1 = A) : le superviseur
+injecte la clé du fournisseur (configuration du runtime, `[llm.providers.<id>]`) dans la requête que
+le worker envoie au mandataire (10 §4) ; `baseUrl` est l'URL réelle, à titre d'information (le worker
+ne s'y connecte jamais). Pour `gateway`, le worker obtient un ticket `sgt1` par `signed_request` vers
+`POST /api/runtime/v1/tickets/llm` et le met lui-même dans `authorization`.
 
 ### 3.2 Plafonds (`limits`)
 
@@ -75,6 +95,41 @@ worker obtient un ticket `sgt1` par `signed_request` vers `POST /api/runtime/v1/
 — valeurs de 09 §2, bornées par la politique de l'org (07 §6). **Révisé après L05, 2026-11-20** :
 `maxTokensPerTurn` et `maxOutputTokensPerCall` (09 §2) font partie de `limits` (`WorkerLimits`,
 `pipe.rs`), les sept champs sont tous obligatoires (désérialisation stricte).
+
+### 3.3 `created_key` (extension L07, 03 §10 et §10.1)
+
+Le worker n'a ni `csk` ni `DK` (mesure 7) : pour poser l'enveloppe `rt1` et l'entrée de délégation
+d'un salon qu'il vient de créer, il envoie la trame `0x02` de §2.1 et reçoit :
+
+```json
+{ "type": "created_key", "ref": "<threadId>",
+  "envelope": { "delegationId": "…", "commitment": "<b64>", "signature": "<b64>", "ciphertext": "sre1.…" } }
+{ "type": "created_key", "ref": "<threadId>", "error": "created_key_unknown_thread" }
+```
+
+Désérialisation stricte ; `envelope` et `error` s'excluent. Le superviseur calcule `commitment` depuis
+la clé, signe `synco-key-envelope-rt-v1|ctx|1|commitment|delegationId` avec `csk` (03 §10), chiffre
+l'entrée sous `DK` de la délégation **courante du propriétaire** (03 §5) ; il **n'installe pas** la
+clé dans son coffre (elle y entre par `delegation.entries_added`). Le **worker** pose ensuite lui-même,
+par `signed_request` et avec le bail : `POST /e2ee/threads/:id/key-envelope` (04 §4.3) puis
+`POST /delegations/:delegationId/entries`.
+
+Codes d'`error` :
+
+| Code | Sens |
+|---|---|
+| `created_key_unknown_thread` | Le salon n'est pas un salon dont **ce** worker a fait relayer la création réussie (réponse `2xx` de `POST /e2ee/threads`, identifiant lu dans la réponse et noté **avant** que le worker la voie), ou la clé de ce salon a déjà été annoncée. Empêche de faire signer une enveloppe `rt1` pour un salon quelconque |
+| `created_key_limit` | Plus de 32 clés signées pour ce worker (`MAX_CREATED_KEYS_PER_WORKER`) |
+| `delegation_unavailable` | Pas de délégation active du propriétaire dans le coffre (retirée ou expirée) |
+| `created_key_failed` | Autre échec (clé illisible, signature ou chiffrement impossibles, worker absent) |
+
+Au plus **64** salons créés en attente de leur clé par worker. **Écart assumé** : le superviseur ne
+connaît que la délégation courante du propriétaire, pas le `delegationId` de l'autorisation de
+session ; si les deux diffèrent un instant, l'échec est **fermé** côté API (signature refusée `400`,
+entrée `out_of_scope`) et le salon reste en TOFU (03 §10.1), aucune enveloppe fausse n'est posée.
+Le coffre ne remplace jamais une clé différente déjà ouverte pour le même salon (la première est
+gardée). Source : `crates/runtime-protocol/src/pipe.rs` (`CreatedKeyMsg`),
+`crates/supervisor/src/workers.rs` (`created_key`, `note_created_thread`), `docs/journal.md` (L07).
 
 ## 4. Worker → superviseur
 
@@ -88,12 +143,15 @@ worker obtient un ticket `sgt1` par `signed_request` vers `POST /api/runtime/v1/
 | `snapshot` | `requestId`, `event` | **Ajout L05** : réponse à `snapshot_request` ; `event` = la trame `snapshot` complète de 05 §5.2, déjà chiffrée (seul le worker peut produire `state`). Le superviseur ne l'envoie qu'au client demandeur, sans la mettre dans le tampon |
 | `inbox_ack` | `ids` | Éléments consommés (après écriture de l'historique) |
 | `metrics` | §5 | Toutes les 10 s et à la fin du tour |
-| `net_request` | dépend de L06 | Accès réseau relayé |
+| `net_request` | — | **Non retenu (L06)**, voir `net_response` ci-dessus |
 | `log` | `level`, `code`, `fields` (sans contenu) | Journal structuré |
 | `done` | `reason` (`idle` \| `awaiting` \| `failed` \| `cancelled` \| `shutdown`) | Le worker va quitter (code 0) |
 
 Le superviseur limite le débit des `signed_request` (09 §2) et refuse un chemin hors liste
 (journalisé comme incident de sécurité, worker tué).
+
+**Trame `0x02` du worker** : voir §2.1 (seulement l'annonce d'une clé de salon créée ; autre trame =
+worker tué).
 
 ### 4.1 Relais `signed_request` en parties (révisé après L05, 2026-11-20)
 
@@ -116,6 +174,13 @@ jusqu'à 8 Mio, 09 §4). Source : `crates/runtime-protocol/src/pipe.rs:600-760`,
 - **Bornes** : au plus **4** requêtes en vol par worker et **8** pour tout le runtime (au-delà :
   `status = 0`, `relay_busy`) ; 2 corps en réassemblage par worker ; débit de 09 §2. Un refus
   `relay_*` **ne ferme pas** le pipe (seul un chemin hors liste tue le worker).
+- **Lecture côté worker (L07, après correction I2)** : après l'envoi d'une action **mutante**
+  (`POST …/tools/:name/execute`, `POST /e2ee/threads`), un délai, un pipe fermé, `relay_network`,
+  `relay_too_large` (réponse illisible ou trop grande) ou un `5xx` donnent une **issue inconnue**
+  (`unknown_outcome`, 08 §5) ; une erreur explicite de l'API est un échec. En revanche les refus
+  **locaux** du relais, émis **avant** tout envoi à l'API (`relay_busy`, `relay_refused`,
+  `relay_rate_limited`, `relay_bad_part`), sont un **échec simple** (`tool_failed`) : rien n'est parti,
+  donc l'issue n'est pas inconnue (décision de l'orchestrateur, acceptée).
 - Autres incidents qui tuent le worker (journalisés, sans contenu) : évènement `event` mal formé,
   hors d'ordre (`epoch` ≠ celui du bail, ou `seq` non croissant) ou de plus de 1 Mio.
 
@@ -143,6 +208,8 @@ CPU et RAM ne viennent pas du worker : le superviseur les lit dans le cgroup du 
 contient de texte de la conversation, de nom de fichier, d'argument d'outil ni de nom de salon ; seul
 le **nom de l'outil** est autorisé dans un compteur par outil. Le dashboard (L08) n'a accès qu'à ces
 métriques.
+**Écart L08** : le worker n'émet **aucun** compteur par outil (seulement les compteurs globaux ci-dessus) ;
+la chronologie du dashboard ne nomme donc pas l'outil (11 §5, question ouverte : 00 §6, Q29 b).
 
 ## 6. Ce que reçoit le worker et ce qu'il ne peut pas faire
 
@@ -168,3 +235,64 @@ journalisées que par leur `type` et leur taille. `Debug` des types de clés mas
    (`idleShutdownSecs`) ou attente d'un humain (`awaiting_*`) : il quitte aussi (P3 : le worker ne vit
    que lorsqu'il travaille).
 4. Plantage (code ≠ 0, signal, canal fermé) : 08 §5.
+
+## 9. Codes machine du worker (L07, L07b)
+
+Résultats d'outil `{"error": code}` donnés au modèle (le code n'est pas un `lastErrorCode` de 08 §6) :
+
+| Code | Cas |
+|---|---|
+| `tool_unavailable_in_runtime` | Outil que le worker ne peut pas exécuter dans son bac à sable : **`create_file`, `create_folder`, `list_documentation`, `read_documentation`, `search_documentation`**. Retirés de la liste d'outils donnée au modèle (`UNAVAILABLE_IN_RUNTIME`), refusés explicitement s'ils sont appelés quand même. `create_file` : le CDN est injoignable du worker ; `create_folder` : aucune route du canal ; documentation : embarquée dans `synco_app` |
+| `tool_call_unverified` | Reprise : un appel **mutant** `accepted` qui ne correspond pas au `pendingToolCall` déchiffré est clos sans exécution (historique forgé ou illisible) |
+| `invalid_tool_arguments` | Arguments de l'appel illisibles (dont `finish_reason: length`) : aucune exécution |
+| `invalid_upload_ref` | Réponse `upload` dont `ref` n'est pas un identifiant (00 §3.2) |
+| `too_many_recipients` | `create_thread` : plus de **300** destinataires de clé RSA (corps du canal ≤ 256 Kio, 04 §4.3) ; aucun salon créé pour cet élément (champ `max`) |
+| `too_many_threads` | `create_thread` : plus de 10 salons par appel |
+| `no_recipient_key` | `create_thread` : aucune clé de membre exploitable |
+| `unknown_outcome` | Issue inconnue d'un outil mutant (08 §5) |
+
+Avertissements de `create_thread` (champ `warning` du résultat, le salon existe) : `key_envelope_unavailable`,
+`key_envelope_not_posted`, `delegation_entry_not_posted` — le salon reste accepté en TOFU (03 §10.1).
+Les membres dont la clé RSA publique est illisible ou **de moins de 2048 bits** sont écartés et
+comptés dans `skippedRecipients` (jamais en silence). Le worker ne scelle la clé d'un salon **d'espace**
+que pour le propriétaire (le canal ne donne pas les membres d'un espace, 04 §4.3).
+
+Erreurs de l'interface LLM (`LlmError`, `crates/worker/src/provider/mod.rs`), codes de journal :
+
+| Variante | Code | Nouvel essai | Effet |
+|---|---|---|---|
+| `Transport` | `llm_transport` | oui | |
+| `Auth` | `llm_auth` | non | `failed` `provider_auth` |
+| `RateLimited { retry_after_secs }` | `llm_rate_limited` | oui | (inclut `proxy_*rate_limited`, `proxy_runtime_token_budget`, `proxy_busy`) |
+| `CallBudget` | `llm_call_budget` | non | fin du tour, `idle` `step_limit` |
+| `TokenBudget` | `llm_token_budget` | non | `failed` `budget_exceeded` |
+| `Timeout` | `llm_timeout` | oui | |
+| `Rejected { status }` | `llm_rejected` | non | |
+| `Provider { status }` | `llm_provider` | oui | |
+| `BadStream` | `llm_bad_stream` | oui | flux illisible, erreur dans le flux, ou **flux coupé** (voir ci-dessous) |
+| `TooLarge` (**ajouté par L07**) | `llm_too_large` | non | texte + raisonnement cumulés > **4 Mio** ou arguments d'outils cumulés > **1 Mio** dans une réponse ; `failed` `provider_error` |
+
+**Adaptateurs** (L07b ; interface inchangée ; `adapter_for`) : `openai`, `gateway`, `custom` =
+dialecte compatible OpenAI ; `mistral` (`provider/mistral.rs`) ; `gemini` (`provider/gemini.rs`).
+Les flux de Mistral et Gemini sont écrits d'après la documentation et des retours publiés, **jamais
+testés contre les vrais fournisseurs** (recette manuelle).
+
+- **Gemini** par l'endpoint **compatible OpenAI** (`base_url` du runtime
+  `https://generativelanguage.googleapis.com/v1beta/openai`) : l'API native est refusée par la liste
+  blanche du mandataire (10 §4, `POST /chat/completions` seulement). Pas de `include_thoughts` (Google
+  refuserait `reasoning_effort` combiné à `thinking_config`, d'après un retour tiers) : le
+  raisonnement n'est lu que si le serveur le rend (`extra_content.google.thought`, `<thought>`) ;
+  `reasoning_tokens` seulement si `completion_tokens_details.reasoning_tokens` est présent (non
+  documenté), sinon absent ; `max_tokens` = `maxOutputTokensPerCall` ; pas de `parallel_tool_calls`.
+- **Mistral** (`base_url` `https://api.mistral.ai/v1`) : les identifiants d'appel d'outil du worker
+  (`call_<24 hex>`) sont **traduits** en 9 caractères alphanumériques **dans la requête seulement**
+  (hachage FNV-1a en base 62, sans collision dans la requête) ; l'historique garde l'identifiant du
+  worker. Pas de `stream_options` ; `parallel_tool_calls: false` quand des outils sont fournis ; `usage` attendu dans le dernier morceau (non garanti par la documentation lue : sans lui, la boucle estime les tokens).
+- **Flux coupé** (fermé sans `finish_reason` ni `[DONE]`) : `BadStream` (donc nouvel essai) pour
+  **Mistral et Gemini** ; pour `openai`, `custom` et `gateway`, fin silencieuse `stop` comme le TS
+  (écart de comportement entre adaptateurs : **question ouverte**, voir 00 §6).
+- **`reasoning_effort` limité aux modèles qui l'acceptent** : passerelle : toujours envoyé (champ de sa
+  liste blanche) ; OpenAI : modèles à raisonnement (`o1`, `o3`, `o4`, `gpt-5`) ; `custom` : jamais ; Gemini : préfixes `gemini-2.5`, `gemini-3`, `gemini-4`
+  (jamais `minimal`, `none`, `xhigh`) ; Mistral : `mistral-large-4*` seulement (`low|medium|high`).
+  Les autres modèles Mistral n'acceptent que `high|none` : **aucun effort** n'est envoyé (la
+  correspondance avec l'effort de l'org est une décision produit non prise, **question ouverte**).

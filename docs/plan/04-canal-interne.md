@@ -237,11 +237,11 @@ d'autre org : ces routes n'existent pas.
 |---|---|---|---|
 | `GET /e2ee/threads/:threadId/messages?before=&limit=` | `GET /api/messages/threads/:threadId` | Messages chiffrés d'un salon | L03 |
 | `GET /e2ee/search-index/workspace/:workspaceId` | `GET /api/search-index/workspace/:workspaceId` (`searchIndex.ts:20`) | Index chiffrés, **sans** `threadKeys` (le runtime les a par la délégation) | L03 |
-| `GET /e2ee/members/keys` | annuaire des membres | Clés publiques RSA et de signature des membres de l'org, pour sceller une nouvelle clé ; le runtime les épingle en TOFU comme `resolveRecipientKey` | L03 |
+| `GET /e2ee/members/keys` | annuaire des membres | Clés publiques RSA et de signature des membres de l'org, pour sceller une nouvelle clé ; le runtime devait les épingler en TOFU comme `resolveRecipientKey` : **non réalisé en L07** (le worker n'a pas de disque) ; seules des bornes sont appliquées (clé RSA ≥ 2048 bits et ≤ 8192, sinon le membre est écarté ; plus de 300 destinataires refusé, `too_many_recipients`, 06 §9). **Question ouverte** : épinglage par le superviseur (00 §6, Q25) | L03 |
 | `POST /e2ee/threads` | `POST /api/threads/org/:orgId`, `/api/threads/space/:spaceId` (`threads.ts`) | Créer un salon : mêmes champs que `createThreadSchema` (`validators/index.ts:125-144`) + `spaceId?` + **`leaseEpoch`** ; `creatorId` = `rt1:<delegationId>` posé par l'API (03 §10) | L03b |
 | `POST /e2ee/threads/:threadId/key-envelope` | — | Pose a posteriori de l'enveloppe `rt1` d'un salon créé par le runtime (03 §10.1, Q11 = B) | L03c |
 | `POST /delegations/:delegationId/entries` | — | Le runtime ajoute l'entrée d'une clé qu'il a créée (03 §10) | L03 |
-| `POST /e2ee/cdn/uploads` | `POST /api/cdn/transfers/uploads` (`cdnTransferRoutes.ts:66`) | Ouvrir un envoi CDN pour l'utilisateur (outil `create_file`), destination **un espace seulement** | L03b |
+| `POST /e2ee/cdn/uploads` | `POST /api/cdn/transfers/uploads` (`cdnTransferRoutes.ts:66`) | Ouvrir un envoi CDN pour l'utilisateur (outil `create_file`), destination **un espace seulement**. **Non utilisée par le runtime v1** : le CDN est injoignable du worker, `create_file` est retiré de la liste d'outils et refusé (`tool_unavailable_in_runtime`, 06 §9) | L03b |
 
 Formes réelles (révisé après la vague B, 2026-11-19 ; `synco_api/src/routes/runtimeInternal/e2ee.ts`,
 `synco_api/src/services/aiRuntime/conversationE2ee.ts`). Codes communs : salon ou espace d'une autre
@@ -288,7 +288,16 @@ reprise après coupure réseau). Aucune entrée de délégation n'est exigée (o
 pas `commitment` ; la pose est définitive, sans voie de reprise en v1 (03 §10.1). Journalisation :
 gabarit `/e2ee/threads/:id/key-envelope` (§7).
 
-Les deux routes d'écriture sont l'exécution des outils `create_thread` et `create_file` (catégorie
+**Révisé après L07 (2026-11-20)** : en pratique le runtime n'exécute que `create_thread` par ces
+routes ; `create_file` (CDN injoignable du worker) et `create_folder` (aucune route du canal) sont
+**retirés** de la liste donnée au modèle et refusés par le worker (`tool_unavailable_in_runtime`,
+06 §9), comme les outils de documentation. Le worker pose la signature `rt1` et l'entrée de
+délégation d'un salon créé avec l'aide du superviseur (`created_key`, 06 §3.3). **`create_thread` est
+bloqué en réel** tant que l'API n'ajoute pas (a) une catégorie par défaut posée côté API
+(`POST /e2ee/threads` exige un `categoryId` que le canal n'expose pas) et (b) les membres d'un
+espace sur le canal (le worker ne scelle la clé d'un salon d'espace que pour le propriétaire) :
+sans cela l'appel échoue en `invalid_body`. **Question ouverte** (00 §6, Q23). Ces routes sont les
+points d'exécution des outils `create_thread` et `create_file` (catégorie
 `client` du registre : la cryptographie est faite par le worker) ; comme `tools/:name/execute`, seul
 le worker qui détient le bail courant fait agir l'utilisateur, et un outil `deny` n'agit jamais.
 Aucune autre destination d'envoi (DM, support, message, tâche) n'existe sur le canal. Le plafond de

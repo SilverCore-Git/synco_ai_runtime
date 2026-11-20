@@ -1,0 +1,87 @@
+# Configuration du Synco AI Runtime (superviseur `synco-ai-runtime`).
+# Vérifier avec : synco-ai-runtime --config <ce fichier> --check-config
+#
+# Aucun secret ne s'écrit dans ce fichier : les clés des fournisseurs LLM sont lues dans des
+# fichiers (idéalement des identifiants systemd, LoadCredential=) ou des variables d'environnement.
+
+# URL publique canonique du runtime (https, sans barre finale). Elle entre dans le certificat signé
+# par l'admin : la changer impose une recertification. Les navigateurs des membres doivent la
+# joindre en wss:// avec un certificat TLS reconnu (un certificat auto-signé ne fonctionne pas).
+public_url = "https://runtime.example.com"
+
+# Origine de l'API Synco (https, sans chemin).
+api_url = "https://api.example.com"
+
+# Répertoire d'état : clés scellées, épinglages TOFU des utilisateurs, autorisations connues.
+# Jamais de clé en clair. Droits conseillés : 0700, propriétaire = utilisateur du service.
+state_dir = "/var/lib/synco-ai-runtime"
+
+# Origines admises pour le WebSocket et la fiche publique : l'app web, et les schémas des
+# applications Capacitor / Tauri utilisées par l'organisation.
+allowed_origins = ["https://app.example.com", "capacitor://localhost", "tauri://localhost"]
+
+# error, warn, info, debug. Aucun niveau ne journalise de clé, de ticket ni de contenu.
+log_level = "info"
+
+[listen]
+# Endpoints publics (/v1/identity, /v1/challenge, /v1/conversations/:id/ws), en HTTP local derrière
+# le mandataire inverse TLS qui sert public_url (Caddy, nginx…).
+public = "127.0.0.1:8790"
+# Dashboard (lot L08).
+dashboard = "127.0.0.1:8791"
+# Nombre de mandataires de confiance devant `public` (adresse du client lue dans X-Forwarded-For).
+trust_proxy_hops = 1
+# Le runtime ne termine pas TLS : une adresse non locale est refusée, sauf (mandataire sur une autre
+# machine d'un réseau de confiance, trafic non chiffré entre les deux) :
+# allow_non_loopback_plain_http = true
+
+[key_sealing]
+# Scellement de la clé privée du runtime au repos :
+#   auto          : systemd-creds s'il est disponible, sinon phrase de passe ;
+#   systemd-creds : TPM2 et/ou clé de l'hôte (keys.cred ; avec LoadCredentialEncrypted=, le service
+#                   lit l'identifiant déchiffré dans $CREDENTIALS_DIRECTORY) ;
+#   passphrase    : Argon2id + AES-256-GCM (keys.sealed), phrase demandée au démarrage.
+mode = "auto"
+# systemd-creds --user (service utilisateur) :
+systemd_creds_user = false
+# Phrase de passe lue dans un fichier (identifiant systemd en mémoire, jamais un fichier ordinaire) :
+# passphrase_file = "/run/credentials/synco-ai-runtime.service/passphrase"
+
+[delegation]
+# Plafond du runtime sur la durée d'une délégation (jours, de 1/24 à 30). L'org choisit sa durée
+# dans cette limite (défaut 7 jours).
+max_days = 30
+
+[limits]
+# Plafonds (valeurs par défaut adoptées, docs/plan/09 §2). L'org peut les abaisser, jamais les relever.
+max_steps_per_turn = 25
+max_tokens_per_conversation = 2000000
+max_tokens_per_turn = 300000
+max_turn_duration_secs = 1800
+max_output_tokens_per_call = 4096
+max_tool_result_bytes = 262144
+idle_shutdown_secs = 60
+max_workers_per_user = 3
+max_workers = 8
+# Appliqués par le bac à sable du worker (cgroup v2, lot L06).
+worker_memory_max_mib = 512
+worker_memory_high_mib = 448
+worker_cpu_percent = 100
+worker_pids_max = 64
+replay_buffer_events = 2000
+replay_buffer_bytes = 4194304
+worker_signed_requests_per_sec = 20
+worker_signed_requests_burst = 50
+# Délai laissé aux workers pour finir l'étape en cours à l'arrêt (SIGTERM).
+shutdown_grace_secs = 30
+
+# Fournisseurs LLM (décision D1 : les clés vivent ici, jamais dans Synco). L'identifiant est celui
+# de la politique de l'org (openai, mistral, gemini, custom, gateway).
+[llm.providers.openai]
+base_url = "https://api.openai.com/v1"
+api_key_file = "/run/credentials/synco-ai-runtime.service/openai"
+input_eur_per_mtok = 2.3
+output_eur_per_mtok = 9.2
+
+# La passerelle Synco n'a pas de clé : le worker obtient un ticket sgt1 par l'API.
+[llm.providers.gateway]

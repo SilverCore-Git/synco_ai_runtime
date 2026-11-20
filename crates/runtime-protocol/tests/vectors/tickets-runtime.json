@@ -1,0 +1,380 @@
+{
+  "description": "Vecteurs des tickets srt1 (runtime), docs/plan/02. Générés par synco_api tests/vectors/ai-runtime/generate.ts avec le code réel de l'API ; ne pas modifier à la main. Entrées : ticket, now, runtimeId (le vérificateur), orgId (org appairée), conv (conversation du chemin), revokedUsers / revokedConversations (facultatifs, liste de révocation 02 §8).",
+  "seedHex": "2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c",
+  "publicKeys": {
+    "vec-1": "lHXGzw7aNAV1KNhpR4HsySrWOdfivSd2HtPvdJJL6wc"
+  },
+  "policy": {
+    "clock_skew_secs": 30,
+    "max_lifetime_secs": 600,
+    "max_length": 2048
+  },
+  "cases": [
+    {
+      "name": "valide",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.IdfQSPBDOrfpADQXwDBE8P5FBf4mt1gz_70EdQsHcx8JeqO2_PNHcCEoL0SHIJsQea9E3mE6syG8Q_YJwwgODg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ok"
+    },
+    {
+      "name": "expiré (exp + 31)",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.IdfQSPBDOrfpADQXwDBE8P5FBf4mt1gz_70EdQsHcx8JeqO2_PNHcCEoL0SHIJsQea9E3mE6syG8Q_YJwwgODg",
+      "now": 1795000621,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_expired"
+    },
+    {
+      "name": "dans la tolérance d'horloge (exp + 29)",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.IdfQSPBDOrfpADQXwDBE8P5FBf4mt1gz_70EdQsHcx8JeqO2_PNHcCEoL0SHIJsQea9E3mE6syG8Q_YJwwgODg",
+      "now": 1795000619,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ok"
+    },
+    {
+      "name": "à la limite de la tolérance (exp + 30)",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.IdfQSPBDOrfpADQXwDBE8P5FBf4mt1gz_70EdQsHcx8JeqO2_PNHcCEoL0SHIJsQea9E3mE6syG8Q_YJwwgODg",
+      "now": 1795000620,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_expired"
+    },
+    {
+      "name": "pas encore valide (iat − 31)",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.IdfQSPBDOrfpADQXwDBE8P5FBf4mt1gz_70EdQsHcx8JeqO2_PNHcCEoL0SHIJsQea9E3mE6syG8Q_YJwwgODg",
+      "now": 1795000259,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "dans la tolérance avant émission (iat − 30)",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.IdfQSPBDOrfpADQXwDBE8P5FBf4mt1gz_70EdQsHcx8JeqO2_PNHcCEoL0SHIJsQea9E3mE6syG8Q_YJwwgODg",
+      "now": 1795000260,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ok"
+    },
+    {
+      "name": "signature altérée (1 bit)",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.IdfQSPBCOrfpADQXwDBE8P5FBf4mt1gz_70EdQsHcx8JeqO2_PNHcCEoL0SHIJsQea9E3mE6syG8Q_YJwwgODg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "kid inconnu",
+      "ticket": "srt1.vec-2.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.aWlisQv9OqZrQeLaFbC3Al9RNSNeqPqovW5N5Jc2rNRY8pf6mMrexm5dq3vzhf7EPLEjFOPnNkcY-VV3kD--Cg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_unknown_key"
+    },
+    {
+      "name": "préfixe srt9",
+      "ticket": "srt9.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.IdfQSPBDOrfpADQXwDBE8P5FBf4mt1gz_70EdQsHcx8JeqO2_PNHcCEoL0SHIJsQea9E3mE6syG8Q_YJwwgODg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "ticket sct1 du CDN valide (même clé, domaine CDN)",
+      "ticket": "sct1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.OfVk0YNqqCTIZm0AHfIztL7fXCO1-6f_OPzW4cnLw_v0zs2e-T4FusLb7UYpeTHvWJSHXTxzcSEPq2xAJsV9BA",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "ticket sct1 du CDN réétiqueté srt1",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.OfVk0YNqqCTIZm0AHfIztL7fXCO1-6f_OPzW4cnLw_v0zs2e-T4FusLb7UYpeTHvWJSHXTxzcSEPq2xAJsV9BA",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "ticket sgt1 valide présenté au runtime",
+      "ticket": "sgt1.vec-1.eyJvcCI6ImxsbSIsInN1YiI6IjY2NjY2NjY2LTc3NzctNDg4OC05OTk5LWFhYWFhYWFhYWFhYSIsIm9yZyI6ImNtM29yZ2V4YW1wbGUwMDAwMDAwMDAwMDAxIiwiZ3ciOiJodHRwczovL2dhdGV3YXkuZXhhbXBsZS5jb20iLCJpYXQiOjE3OTUwMDAyOTAsImV4cCI6MTc5NTAwMDU5MH0.HnTANfiWsdDl-iAXSz4uVxdFDREnUTiLkczXNzafcJ7DrfszSeq6b9GzYVBG_VsclwJlOT3Ozp9Q9yiZxmn1AA",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "préfixe srt1 signé avec le domaine de la passerelle",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.DXifJkwlDqcY4qjNfmM0_npZJPoRmCb1SwVvFwBlkxbgP2fwpaORZBlLX3HufD91rwh5G4ioab0_Hi2AfdfrCQ",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "préfixe srt1 signé avec le domaine du CDN",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.JvnqGCdAOEW00gnJvDdROsw4hb6Jw0RkSCzA4JfnmS3WTKtRyHGeA1YhAgoVeR5zml8jWN7QE6PWyAtC8sCmBg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "préfixe srt1 signé sans domaine",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.yPI7Ij8zjHMO0WUcGXnYyWaufk0JBJeY8pGlgS0vVBKcR6IQ0QGmzhb_Eda6RkpfgVCV1ZOceE7vcDPvWobQCg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "rt d'un autre runtime",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiMGExYjJjM2QtNGU1Zi00YTZiLThjN2QtOWUwZjFhMmIzYzRkIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.2NIzse03psxKeZnMag8fqFd233gR4ZFwz-fIQu2d0yp-yoi4zlcUpLZKzL1AsdTPJrmjvFHpeb6DsEoAlXrZDw",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_wrong_audience"
+    },
+    {
+      "name": "org d'une autre org",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdhdXRyZTAwMDAwMDAwMDAwMDAyIiwicnQiOiI3ZDNmMmMxZS04YTRiLTRjNmQtOWUwZi0xYTJiM2M0ZDVlNmYiLCJjb252IjoiMGYwZTBkMGMtMGIwYS00OTA4LTg3MDYtMDUwNDAzMDIwMTAwIiwiaWF0IjoxNzk1MDAwMjkwLCJleHAiOjE3OTUwMDA1OTB9.s7qCLq0LzJBz1A4JJJ2raaRpAldqN9h_TtxjiaiBV7ou1HiZHbxVKNnYq3eLTLcEOQtfhi6jxZZEvZa8i6OFAA",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_wrong_org"
+    },
+    {
+      "name": "conv différente du chemin",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.IdfQSPBDOrfpADQXwDBE8P5FBf4mt1gz_70EdQsHcx8JeqO2_PNHcCEoL0SHIJsQea9E3mE6syG8Q_YJwwgODg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "11111111-2222-4333-8444-555555555555",
+      "expect": "ticket_wrong_conversation"
+    },
+    {
+      "name": "op = llm",
+      "ticket": "srt1.vec-1.eyJvcCI6ImxsbSIsInN1YiI6IjY2NjY2NjY2LTc3NzctNDg4OC05OTk5LWFhYWFhYWFhYWFhYSIsIm9yZyI6ImNtM29yZ2V4YW1wbGUwMDAwMDAwMDAwMDAxIiwicnQiOiI3ZDNmMmMxZS04YTRiLTRjNmQtOWUwZi0xYTJiM2M0ZDVlNmYiLCJjb252IjoiMGYwZTBkMGMtMGIwYS00OTA4LTg3MDYtMDUwNDAzMDIwMTAwIiwiaWF0IjoxNzk1MDAwMjkwLCJleHAiOjE3OTUwMDA1OTB9.laSnivm5es5euIHDz_sfDC6EwNQdYi-EIvfp1_0zGWOcwcyz1uLxFLfmv4pUIU_5XTBER5hj6Gj0ZZpM0JimBg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_wrong_operation"
+    },
+    {
+      "name": "op inconnue signée",
+      "ticket": "srt1.vec-1.eyJvcCI6ImFkbWluIiwic3ViIjoiNjY2NjY2NjYtNzc3Ny00ODg4LTk5OTktYWFhYWFhYWFhYWFhIiwib3JnIjoiY20zb3JnZXhhbXBsZTAwMDAwMDAwMDAwMDEiLCJydCI6IjdkM2YyYzFlLThhNGItNGM2ZC05ZTBmLTFhMmIzYzRkNWU2ZiIsImNvbnYiOiIwZjBlMGQwYy0wYjBhLTQ5MDgtODcwNi0wNTA0MDMwMjAxMDAiLCJpYXQiOjE3OTUwMDAyOTAsImV4cCI6MTc5NTAwMDU5MH0.u_wCvngS54GoGqyYDOOXVSAT4XzXKydjdph0hAvYPCY0HoqfLX6P_7H7C4mWRxeqi_75_v1c0oEv1u1nQEeSAQ",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "champ inconnu signé (admin: true)",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwLCJhZG1pbiI6dHJ1ZX0.gA53qtbEEC02OrLsApK_kL0PPP7y7zwI1OUDz9Av8VNGtWTEY5dpF5HtPPTee5VunFOEXhBNnKQtnJxDK98uCg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "champ obligatoire absent (conv)",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiaWF0IjoxNzk1MDAwMjkwLCJleHAiOjE3OTUwMDA1OTB9.MFGbIP190JrP5ki7sYfxu5uVDsqAemh755bwXx91jVOn5mOyYE-1Qawht_7GJT8vhn9V7UlcDJXPws3iYqURBQ",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "sub non conforme (../x)",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiIuLi94Iiwib3JnIjoiY20zb3JnZXhhbXBsZTAwMDAwMDAwMDAwMDEiLCJydCI6IjdkM2YyYzFlLThhNGItNGM2ZC05ZTBmLTFhMmIzYzRkNWU2ZiIsImNvbnYiOiIwZjBlMGQwYy0wYjBhLTQ5MDgtODcwNi0wNTA0MDMwMjAxMDAiLCJpYXQiOjE3OTUwMDAyOTAsImV4cCI6MTc5NTAwMDU5MH0.Ho4R5iodQJ_j1dEUzXmIvVSA11dUiWWuEXlxRmOIRjh54aLrYEXKnq6cGzKU1W22XaVVHKLIsZxEdFj4RaD8CQ",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "sub non conforme (a|b)",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiJhfGIiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.fZHFzPK604LCaA09kOFz2-gjPaI0H8tJxOaaejsE7TUM1IOAsDG3JsAuU6Of1WqJ_VY4jQQJJ53oPDljnn5XDw",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "sub non conforme (65 caractères)",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsIm9yZyI6ImNtM29yZ2V4YW1wbGUwMDAwMDAwMDAwMDAxIiwicnQiOiI3ZDNmMmMxZS04YTRiLTRjNmQtOWUwZi0xYTJiM2M0ZDVlNmYiLCJjb252IjoiMGYwZTBkMGMtMGIwYS00OTA4LTg3MDYtMDUwNDAzMDIwMTAwIiwiaWF0IjoxNzk1MDAwMjkwLCJleHAiOjE3OTUwMDA1OTB9.Rv4GsDd-5cV-rebdnmVf82hXP7Pk_imvU28ukM1zD9HQKHsCozGmdXuZIuHpg3q_GkSkDgcgKpoBgIWGcul0BQ",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "rt non UUID",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoicnVudGltZS0xIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.PnGU4FdM8vlPZJKfxf-pfS7C4rQRSJcZ875bWKZ8Gt59wLGZEBwHDYDf8get5iEFLOjvF7PKtExYCMA_oQLGBQ",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "iat non entier",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MC41LCJleHAiOjE3OTUwMDA1OTB9.1yRdBt7-IXdSu3oVTqGgUjQykkXg9hmWeztWeU-42SzmhxyKDtZWDJPzpt0fTzGdRDNcVGhrQelKTS6KtY6tAg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "exp en chaîne",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoiMTc5NTAwMDU5MCJ9.2hAtpYj8NQki3vDL1oiPw7LfRy5basGaOx6eBrXKAm4YZ7dd5AJSyitjgeWPhuTDxGrRo8HgnUZ6xWyQlKH0CA",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "durée de vie 600 s (maximum)",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwODkwfQ.xmOFOtE5U7BkLTP2ASppSYs_L2qKVmsgOrbkWgLl5A7LlS1sB2H9PADuYStIyWITXHTQI84bgO-Nrklv5X5XCg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ok"
+    },
+    {
+      "name": "durée de vie 601 s",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwODkxfQ.3RNSjgTUWtlSDWdAqZS2KDWK9Vj3-XOucE7FWCbK_aORT8_fzvtoHMlbxSKlU2RHr0R5bOVSlIHjjLznJIs2AA",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "contenu signé non JSON",
+      "ticket": "srt1.vec-1.cGFzIGR1IGpzb24.2IvOMn40d1syWlOjud6X-NRhudplfqbAM3UeJtmATKOvBE_3CV5S509b95EUfnYkApADpm5DKbPU6MtSlEsSCQ",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "contenu signé tableau JSON",
+      "ticket": "srt1.vec-1.WzEsMl0.jPp1-Vjsf5LdxOSQcZJaHIwjRvtMrhgPgwmmYkCggPILl1cQlJkJNg8N0FxMIUT11Ixj2f2QnePxTsYZv4k0Bg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "segment supplémentaire",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.IdfQSPBDOrfpADQXwDBE8P5FBf4mt1gz_70EdQsHcx8JeqO2_PNHcCEoL0SHIJsQea9E3mE6syG8Q_YJwwgODg.AAAA",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "trois segments",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "2 049 octets",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwLCJwYWQiOiJ4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eH",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_invalid"
+    },
+    {
+      "name": "vide",
+      "ticket": "",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "expect": "ticket_missing"
+    },
+    {
+      "name": "utilisateur révoqué (ticket émis avant until)",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.IdfQSPBDOrfpADQXwDBE8P5FBf4mt1gz_70EdQsHcx8JeqO2_PNHcCEoL0SHIJsQea9E3mE6syG8Q_YJwwgODg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "revokedUsers": [
+        {
+          "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+          "until": 1795000291
+        }
+      ],
+      "expect": "ticket_revoked"
+    },
+    {
+      "name": "utilisateur révoqué, ticket émis après until",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.IdfQSPBDOrfpADQXwDBE8P5FBf4mt1gz_70EdQsHcx8JeqO2_PNHcCEoL0SHIJsQea9E3mE6syG8Q_YJwwgODg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "revokedUsers": [
+        {
+          "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+          "until": 1795000290
+        }
+      ],
+      "expect": "ok"
+    },
+    {
+      "name": "conversation révoquée",
+      "ticket": "srt1.vec-1.eyJvcCI6ImNvbm5lY3QiLCJzdWIiOiI2NjY2NjY2Ni03Nzc3LTQ4ODgtOTk5OS1hYWFhYWFhYWFhYWEiLCJvcmciOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAwMSIsInJ0IjoiN2QzZjJjMWUtOGE0Yi00YzZkLTllMGYtMWEyYjNjNGQ1ZTZmIiwiY29udiI6IjBmMGUwZDBjLTBiMGEtNDkwOC04NzA2LTA1MDQwMzAyMDEwMCIsImlhdCI6MTc5NTAwMDI5MCwiZXhwIjoxNzk1MDAwNTkwfQ.IdfQSPBDOrfpADQXwDBE8P5FBf4mt1gz_70EdQsHcx8JeqO2_PNHcCEoL0SHIJsQea9E3mE6syG8Q_YJwwgODg",
+      "now": 1795000300,
+      "runtimeId": "7d3f2c1e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+      "orgId": "cm3orgexample0000000000001",
+      "conv": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "revokedConversations": [
+        "0f0e0d0c-0b0a-4908-8706-050403020100"
+      ],
+      "expect": "ticket_revoked"
+    }
+  ]
+}

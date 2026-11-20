@@ -1,0 +1,60 @@
+# Unité systemd d'exemple du Synco AI Runtime (superviseur). À adapter ; le paquet (lot L09) la
+# fournira. Clés scellées par systemd-creds :
+#   systemd-creds encrypt --name=synco-ai-runtime-keys - /var/lib/synco-ai-runtime/keys.cred
+# est fait au premier démarrage par le runtime lui-même ; LoadCredentialEncrypted= les remet
+# déchiffrées dans un ramfs propre au service ($CREDENTIALS_DIRECTORY), jamais sur disque.
+
+[Unit]
+Description=Synco AI Runtime (superviseur)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=synco-ai-runtime
+Group=synco-ai-runtime
+ExecStart=/usr/bin/synco-ai-runtime --config /etc/synco-ai-runtime/config.toml run
+Restart=on-failure
+RestartSec=5s
+# Délai d'arrêt > limits.shutdown_grace_secs (30 s par défaut).
+TimeoutStopSec=45s
+
+StateDirectory=synco-ai-runtime
+StateDirectoryMode=0700
+LoadCredentialEncrypted=synco-ai-runtime-keys:/var/lib/synco-ai-runtime/keys.cred
+# Clés des fournisseurs LLM (décision D1), lues par api_key_file :
+# LoadCredentialEncrypted=openai:/etc/synco-ai-runtime/openai.cred
+
+# Mesure 8 : aucun fichier core, pas d'espace d'échange pour ce service (les clés ne peuvent pas
+# être verrouillées en mémoire sans code non sûr ; voir README).
+LimitCORE=0
+MemorySwapMax=0
+
+# Durcissement. ATTENTION (lot L06) : le bac à sable des workers crée des espaces de noms
+# utilisateur et applique seccomp / landlock / cgroups ; ne pas ajouter RestrictNamespaces=,
+# SystemCallFilter= ni PrivateUsers= sans les valider avec L06. Delegate= sera nécessaire pour
+# que le superviseur gère les cgroups des workers.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+[package]
+name = "runtime-protocol"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license-file = "../../LICENSE"
+description = "Types et formats partagés du Synco AI Runtime : tickets srt1, requêtes signées vers l'API, flux de notifications, WebSocket client, pipe superviseur ↔ worker"
+
+[dependencies]
+synco-e2ee.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zeroize.workspace = true
+ed25519-dalek.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-util", "time", "sync"] }
+
+[lints]
+workspace = true

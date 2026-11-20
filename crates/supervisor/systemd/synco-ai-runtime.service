@@ -1,8 +1,16 @@
-# Unité systemd d'exemple du Synco AI Runtime (superviseur). À adapter ; le paquet (lot L09) la
-# fournira. Clés scellées par systemd-creds :
-#   systemd-creds encrypt --name=synco-ai-runtime-keys - /var/lib/synco-ai-runtime/keys.cred
-# est fait au premier démarrage par le runtime lui-même ; LoadCredentialEncrypted= les remet
-# déchiffrées dans un ramfs propre au service ($CREDENTIALS_DIRECTORY), jamais sur disque.
+# Unité systemd (SYSTÈME) du Synco AI Runtime, sans conteneur : voir docs/deploiement.md §systemd.
+# À copier dans /etc/systemd/system/, à adapter (chemin du binaire, utilisateur). Pas de doublon ailleurs :
+# c'est l'unité de référence (L05, durcissement ; L06, bac à sable ; L09, installation).
+#
+# Clé du runtime scellée par systemd-creds (config.toml : [key_sealing] mode = "systemd-creds") :
+#   1. créer l'utilisateur : useradd --system --no-create-home --shell /usr/sbin/nologin synco-ai-runtime
+#   2. première fois, EN ROOT (le scellement sur la clé de l'hôte / le TPM2 exige root ; l'utilisateur
+#      du service ne peut pas appeler systemd-creds encrypt) :
+#        synco-ai-runtime --config /etc/synco-ai-runtime/config.toml pair
+#      crée /var/lib/synco-ai-runtime/keys.cred (TPM2 et/ou clé de l'hôte) et affiche empreinte et code ;
+#   3. systemctl enable --now synco-ai-runtime.service
+# LoadCredentialEncrypted= remet l'identifiant déchiffré dans un ramfs propre au service
+# ($CREDENTIALS_DIRECTORY), jamais sur disque ; le runtime l'y lit.
 
 [Unit]
 Description=Synco AI Runtime (superviseur)
@@ -13,7 +21,7 @@ Wants=network-online.target
 Type=simple
 User=synco-ai-runtime
 Group=synco-ai-runtime
-ExecStart=/usr/bin/synco-ai-runtime --config /etc/synco-ai-runtime/config.toml run
+ExecStart=/usr/local/bin/synco-ai-runtime --config /etc/synco-ai-runtime/config.toml run
 Restart=on-failure
 RestartSec=5s
 # Délai d'arrêt > limits.shutdown_grace_secs (30 s par défaut).

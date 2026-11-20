@@ -15,9 +15,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::extract::ws::{CloseFrame, Message, Utf8Bytes, WebSocket};
-use runtime_protocol::client::{
-    self, ClientFrame, CloseCode, HELLO_TIMEOUT_SECS, IDLE_TIMEOUT_SECS, Ready, ReadyMode, Resume,
-};
+use runtime_protocol::client::{self, ClientFrame, CloseCode, IDLE_TIMEOUT_SECS, Ready, ReadyMode, Resume};
 use runtime_protocol::pipe::{InboxMsg, SnapshotRequest, SupervisorMsg};
 use runtime_protocol::ticket::{self, TicketContext, TicketError};
 use tokio::sync::mpsc;
@@ -65,13 +63,17 @@ async fn verify_ticket(
     Err(TicketError::UnknownKey)
 }
 
-/// Conduit une connexion cliente.
-pub async fn handle(rt: Arc<Runtime>, session_id: String, mut socket: WebSocket) {
+/// Délai du `hello` (05 §1 propose 10 s ; raccourci pour limiter les connexions inoccupées).
+pub const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Conduit une connexion cliente ; `slot` (place « non authentifiée ») est rendue dès le ticket
+/// vérifié.
+pub async fn handle(rt: Arc<Runtime>, session_id: String, mut socket: WebSocket, slot: crate::server::PreAuthSlot) {
     if rt.is_shutting_down() {
         return close(&mut socket, CloseCode::ShuttingDown.code(), "shutting_down").await;
     }
     // 1. `hello` dans les 10 s.
-    let first = tokio::time::timeout(Duration::from_secs(HELLO_TIMEOUT_SECS), socket.recv()).await;
+    let first = tokio::time::timeout(HELLO_TIMEOUT, socket.recv()).await;
     let hello = match first {
         Err(_) => return close(&mut socket, CloseCode::HelloTimeout.code(), "hello_timeout").await,
         Ok(Some(Ok(Message::Text(t)))) => match ClientFrame::parse(t.as_str()) {
@@ -86,6 +88,7 @@ pub async fn handle(rt: Arc<Runtime>, session_id: String, mut socket: WebSocket)
         Ok(c) => c,
         Err(e) => return close(&mut socket, CloseCode::Ticket.code(), e.code()).await,
     };
+    drop(slot);
     let resume = hello.resume;
     drop(hello);
     // 3. Autorisation et enregistrement du client.

@@ -35,6 +35,60 @@ pub struct ServerState {
     rt: Arc<Runtime>,
     per_ip: Mutex<KeyedWindows>,
     global: Mutex<Window>,
+    unauthenticated: Arc<PreAuth>,
+}
+
+/// WebSocket non encore authentifiés (avant le `hello` vérifié) simultanés, pour tout le runtime.
+pub const MAX_UNAUTHENTICATED_TOTAL: usize = 256;
+/// … et par adresse.
+pub const MAX_UNAUTHENTICATED_PER_IP: usize = 8;
+
+/// Compteur des connexions non authentifiées (global et par adresse).
+#[derive(Debug, Default)]
+pub struct PreAuth {
+    inner: std::sync::Mutex<(usize, std::collections::HashMap<String, usize>)>,
+}
+
+/// Place réservée ; libérée à la destruction (après le `hello` vérifié, ou à la fermeture).
+#[derive(Debug)]
+pub struct PreAuthSlot {
+    owner: Arc<PreAuth>,
+    ip: String,
+}
+
+impl PreAuth {
+    /// Réserve une place pour `ip`, ou `None` si un plafond est atteint.
+    pub fn acquire(self: &Arc<Self>, ip: &str) -> Option<PreAuthSlot> {
+        let mut g = self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (total, by_ip) = &mut *g;
+        let current = by_ip.get(ip).copied().unwrap_or(0);
+        if *total >= MAX_UNAUTHENTICATED_TOTAL || current >= MAX_UNAUTHENTICATED_PER_IP {
+            return None;
+        }
+        *total = total.saturating_add(1);
+        by_ip.insert(ip.to_owned(), current.saturating_add(1));
+        Some(PreAuthSlot { owner: Arc::clone(self), ip: ip.to_owned() })
+    }
+
+    /// Places occupées.
+    #[must_use]
+    pub fn total(&self) -> usize {
+        self.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner).0
+    }
+}
+
+impl Drop for PreAuthSlot {
+    fn drop(&mut self) {
+        let mut g = self.owner.inner.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (total, by_ip) = &mut *g;
+        *total = total.saturating_sub(1);
+        if let Some(n) = by_ip.get_mut(&self.ip) {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                by_ip.remove(&self.ip);
+            }
+        }
+    }
 }
 
 impl core::fmt::Debug for ServerState {
@@ -50,6 +104,7 @@ pub fn router(rt: Arc<Runtime>) -> Router {
         // 09 §4 : 10 / min par adresse, 60 / min au total.
         per_ip: Mutex::new(KeyedWindows::new(10, Duration::from_secs(60), 10_000)),
         global: Mutex::new(Window::new(60, Duration::from_secs(60))),
+        unauthenticated: Arc::new(PreAuth::default()),
     });
     Router::new()
         .route("/v1/identity", get(identity).options(preflight))
@@ -115,8 +170,10 @@ pub fn client_address(peer: SocketAddr, headers: &HeaderMap, trust_proxy_hops: u
         .flat_map(|v| v.split(','))
         .filter_map(|s| s.trim().parse().ok())
         .collect();
+    // Moins d'en-têtes que de mandataires annoncés : on ne remonte jamais au-delà de l'entrée la
+    // plus à droite (ajoutée par notre mandataire) — la plus à gauche peut être forgée par le client.
     let index = chain.len().checked_sub(trust_proxy_hops);
-    index.and_then(|i| chain.get(i)).or_else(|| chain.first()).copied().unwrap_or_else(|| peer.ip()).to_string()
+    index.and_then(|i| chain.get(i)).or_else(|| chain.last()).copied().unwrap_or_else(|| peer.ip()).to_string()
 }
 
 async fn challenge(
@@ -146,6 +203,7 @@ async fn challenge(
 
 async fn conversation_ws(
     State(state): State<Arc<ServerState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Path(session_id): Path<String>,
     headers: HeaderMap,
     method: Method,
@@ -159,10 +217,14 @@ async fn conversation_ws(
         return StatusCode::NOT_FOUND.into_response();
     }
     let Ok(ws) = ws else { return StatusCode::UPGRADE_REQUIRED.into_response() };
+    let ip = client_address(peer, &headers, state.rt.config.listen.trust_proxy_hops);
+    let Some(slot) = state.unauthenticated.acquire(&ip) else {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    };
     let rt = Arc::clone(&state.rt);
     ws.max_message_size(MAX_CLIENT_FRAME_BYTES)
         .max_frame_size(MAX_CLIENT_FRAME_BYTES)
-        .on_upgrade(move |socket| crate::client_ws::handle(rt, session_id, socket))
+        .on_upgrade(move |socket| crate::client_ws::handle(rt, session_id, socket, slot))
 }
 
 /// Sert le routeur public jusqu'à l'arrêt.
@@ -193,5 +255,18 @@ mod tests {
         );
         assert_eq!(client_address(peer, &h, 2), "203.0.113.9");
         assert_eq!(client_address(peer, &h, 0), "127.0.0.1");
+        assert_eq!(client_address(peer, &h, 5), "198.51.100.7", "jamais l'entrée la plus à gauche, forgeable");
+    }
+
+    #[test]
+    fn connexions_non_authentifiees_bornees() {
+        let p = Arc::new(PreAuth::default());
+        let slots: Vec<_> = (0..MAX_UNAUTHENTICATED_PER_IP).map(|_| p.acquire("a").unwrap()).collect();
+        assert!(p.acquire("a").is_none(), "plafond par adresse");
+        let other = p.acquire("b").unwrap();
+        drop(slots);
+        assert_eq!(p.total(), 1);
+        assert!(p.acquire("a").is_some());
+        drop(other);
     }
 }

@@ -701,3 +701,21 @@ async fn desappairage_pendant_le_chargement() {
     drop(st);
     synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }
+
+/// Connexions sans `hello` : au plus 8 par adresse, puis 429 avant la mise à niveau ; une place se
+/// libère quand une connexion inoccupée est fermée (délai du `hello`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn connexions_non_authentifiees_bornees() {
+    let env = setup().await;
+    let mut idle = Vec::new();
+    for _ in 0..synco_ai_runtime::server::MAX_UNAUTHENTICATED_PER_IP {
+        idle.push(connect(&env, SESSION, ORIGIN).await.unwrap());
+    }
+    assert_eq!(connect(&env, SESSION, ORIGIN).await.err(), Some(429));
+    // Délai du hello écoulé : fermées en 4408, les places sont rendues.
+    let closed = next_json(&mut idle[0]).await;
+    assert_eq!(closed["closed"], 4408, "{closed}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(connect(&env, SESSION, ORIGIN).await.is_ok());
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+}

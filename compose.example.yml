@@ -37,7 +37,8 @@ services:
       # Rend le cgroup privé du conteneur inscriptible (Podman). Docker ne le comprend pas :
       # utiliser la variante cgroup délégué de docs/deploiement.md.
       - unmask=/sys/fs/cgroup
-      # Hôte SELinux (Fedora, RHEL) : sans cette ligne SELinux interdit l'écriture dans le cgroup.
+      # Hôte SELinux (Fedora, RHEL) : sans cette ligne SELinux interdit l'écriture dans le cgroup. ATTENTION :
+      # elle désactive TOUT le confinement SELinux du conteneur (spc_t) ; la retirer exige `:Z` sur les montages.
       # Alternative moins large : `setsebool -P container_manage_cgroup on` sur l'hôte (non testée).
       # À retirer sur un hôte sans SELinux.
       - label=disable

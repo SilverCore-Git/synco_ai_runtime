@@ -30,7 +30,8 @@ AddCapability=DAC_OVERRIDE
 NoNewPrivileges=true
 # Cgroup privé du conteneur rendu inscriptible : indispensable au bac à sable (cgroup v2 par worker).
 Unmask=/sys/fs/cgroup
-# Hôte SELinux (Fedora, RHEL) : sans cette ligne SELinux interdit l'écriture dans le cgroup.
+# Hôte SELinux (Fedora, RHEL) : sans cette ligne SELinux interdit l'écriture dans le cgroup. ATTENTION : elle
+# désactive TOUT le confinement SELinux du conteneur (spc_t) ; la retirer exige `:Z` sur les montages.
 # Retirer sur un hôte sans SELinux. Alternative moins large, non testée :
 # `sudo setsebool -P container_manage_cgroup on`.
 SecurityLabelDisable=true

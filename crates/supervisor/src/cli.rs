@@ -5,6 +5,7 @@
 //! synco-ai-runtime [--config <fichier>] run --insecure-no-sandbox   DÉVELOPPEMENT : sans isolement
 //! synco-ai-runtime [--config <fichier>] sandbox-check   tentatives d'évasion contre le bac à sable
 //! synco-ai-runtime [--config <fichier>] pair    URL, identifiant, empreinte, code d'appairage
+//! synco-ai-runtime [--config <fichier>] dashboard-password   définit le mot de passe du dashboard
 //! synco-ai-runtime [--config <fichier>] unpair  désappairage demandé par l'opérateur (01 §9)
 //! synco-ai-runtime [--config <fichier>] reset-keys --yes   nouvelles clés (nouvel appairage)
 //! synco-ai-runtime [--config <fichier>] --check-config     valide la configuration
@@ -37,6 +38,8 @@ pub enum Command {
     Pair,
     /// Désappairage.
     Unpair,
+    /// Mot de passe du dashboard (docs/plan/11).
+    DashboardPassword,
     /// Nouvelles clés.
     ResetKeys {
         /// Confirmation explicite.
@@ -89,6 +92,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args> {
             "run" => Command::Run,
             "pair" => Command::Pair,
             "unpair" => Command::Unpair,
+            "dashboard-password" => Command::DashboardPassword,
             "reset-keys" => Command::ResetKeys { confirmed: false },
             other => return Err(Error::Config(format!("argument inconnu : {other}"))),
         };
@@ -112,7 +116,7 @@ fn out(text: &str) {
     let _ = writeln!(stdout, "{text}");
 }
 
-const HELP: &str = "synco-ai-runtime [--config <fichier>] [run [--insecure-no-sandbox] | pair | unpair | reset-keys --yes | --check-config | sandbox-check]";
+const HELP: &str = "synco-ai-runtime [--config <fichier>] [run [--insecure-no-sandbox] | pair | unpair | dashboard-password | reset-keys --yes | --check-config | sandbox-check]";
 
 /// Avertissement du mode sans isolement.
 pub const INSECURE_WARNING: &str = "ATTENTION : --insecure-no-sandbox. Les workers tournent SANS bac à sable (ni espaces de noms, ni seccomp, ni landlock, ni plafonds cgroup) : un worker compromis peut lire le disque, joindre n'importe quel hôte et lire la mémoire des autres workers. Réservé au développement, JAMAIS en production.";
@@ -196,6 +200,11 @@ pub async fn execute(args: Args) -> Result<()> {
             out(&format!("Empreinte      : {}", keys.fingerprint_display()));
             out(&format!("Code d'appairage : {}", keys.pairing_code()));
             out("Saisir l'URL et le code dans Synco : Paramètres de l'organisation → Synco AI → Runtime.");
+            Ok(())
+        }
+        Command::DashboardPassword => {
+            crate::dashboard::auth::set_password_interactive(&config.state_dir)?;
+            out("Mot de passe du dashboard enregistré ; les sessions ouvertes sont fermées.");
             Ok(())
         }
         Command::Unpair => {
@@ -294,5 +303,6 @@ mod tests {
         assert!(p(&["--insecure-no-sandbox"]).unwrap().insecure_no_sandbox);
         assert!(p(&["pair", "--insecure-no-sandbox"]).is_err());
         assert_eq!(p(&["sandbox-check"]).unwrap().command, Command::SandboxCheck);
+        assert_eq!(p(&["dashboard-password"]).unwrap().command, Command::DashboardPassword);
     }
 }

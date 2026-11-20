@@ -10,6 +10,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use runtime_protocol::ids::is_identifier;
 use runtime_protocol::pipe::Metrics;
 use serde::{Deserialize, Serialize};
+use synco_e2ee::{OsRandom, RandomSource};
 
 use crate::launcher::{ResourceUsage, WorkerExit};
 
@@ -61,6 +62,24 @@ pub fn clean_status(s: &str) -> String {
 #[must_use]
 pub fn clean_reason(s: &str) -> String {
     if REASONS.contains(&s) { s.to_owned() } else { "other".to_owned() }
+}
+
+const DONE_REASONS: [&str; 5] = ["idle", "awaiting", "failed", "cancelled", "shutdown"];
+
+/// Raison de `done` : liste fermée.
+#[must_use]
+pub fn clean_done(s: &str) -> String {
+    if DONE_REASONS.contains(&s) { s.to_owned() } else { "other".to_owned() }
+}
+
+/// Sortie de process : `exit:N`, `signal:N` ou `unknown`.
+#[must_use]
+pub fn clean_exit(s: &str) -> String {
+    let ok = s == "unknown"
+        || s.strip_prefix("exit:").or_else(|| s.strip_prefix("signal:")).is_some_and(|n| {
+            !n.is_empty() && n.len() <= 6 && n.trim_start_matches('-').bytes().all(|b| b.is_ascii_digit())
+        });
+    if ok { s.to_owned() } else { "unknown".to_owned() }
 }
 
 fn clean_id(s: &str) -> String {
@@ -252,7 +271,47 @@ impl Run {
         self.model = clean_label(&self.model);
         self.status = clean_status(&self.status);
         self.reason = self.reason.as_deref().map(clean_reason);
+        self.done_reason = self.done_reason.as_deref().map(clean_done);
+        self.exit = self.exit.as_deref().map(clean_exit);
         self.timeline.truncate(MAX_TIMELINE);
+        for e in &mut self.timeline {
+            match e {
+                Entry::Status { status, reason, .. } => {
+                    *status = clean_status(status);
+                    *reason = reason.as_deref().map(clean_reason);
+                }
+                Entry::Done { reason, .. } => *reason = clean_done(reason),
+                Entry::End { exit, .. } => *exit = clean_exit(exit),
+                Entry::Start { .. } | Entry::Metrics { .. } => {}
+            }
+        }
+    }
+
+    /// Version sans chronologie (listes, totaux : pas de copie des chronologies sous le verrou).
+    fn light(&self) -> Self {
+        Self {
+            v: self.v,
+            run_id: self.run_id.clone(),
+            session_id: self.session_id.clone(),
+            user_id: self.user_id.clone(),
+            provider: self.provider.clone(),
+            model: self.model.clone(),
+            started: self.started,
+            updated: self.updated,
+            ended: self.ended,
+            active: self.active,
+            status: self.status.clone(),
+            reason: self.reason.clone(),
+            done_reason: self.done_reason.clone(),
+            exit: self.exit.clone(),
+            crashed: self.crashed,
+            interrupted: self.interrupted,
+            totals: self.totals,
+            res: self.res,
+            by_day: self.by_day.clone(),
+            timeline: Vec::new(),
+            timeline_dropped: self.timeline_dropped,
+        }
     }
 }
 
@@ -382,15 +441,19 @@ impl Inner {
         }
     }
 
+    /// Au-delà de `MAX_RUNS`, abandonne les exécutions terminées les plus anciennes jusqu'à 90 % du
+    /// plafond (une passe en O(n log n) tous les `MAX_RUNS / 10` ajouts, pas à chaque ajout).
     fn trim(&mut self) {
-        while self.runs.len() > MAX_RUNS {
-            let oldest = self.runs.values().filter(|r| !r.active).min_by_key(|r| r.updated).map(|r| r.run_id.clone());
-            match oldest {
-                Some(id) => {
-                    self.runs.remove(&id);
-                }
-                None => break,
-            }
+        if self.runs.len() <= MAX_RUNS {
+            return;
+        }
+        let target = MAX_RUNS.saturating_sub(MAX_RUNS / 10);
+        let excess = self.runs.len().saturating_sub(target);
+        let mut finished: Vec<(u64, String)> =
+            self.runs.values().filter(|r| !r.active).map(|r| (r.updated, r.run_id.clone())).collect();
+        finished.sort_unstable();
+        for (_, id) in finished.into_iter().take(excess) {
+            self.runs.remove(&id);
         }
     }
 }
@@ -422,6 +485,7 @@ impl History {
             g.runs = load_dir(&dir);
             g.dir = Some(dir);
         }
+        lock(&h.inner).trim();
         h.prune(now);
         h
     }
@@ -469,7 +533,10 @@ impl History {
     pub fn begin_run(&self, session_id: &str, user_id: &str, provider: &str, model: &str, now: u64) -> String {
         let mut g = lock(&self.inner);
         g.seq = g.seq.saturating_add(1);
-        let run_id = format!("r{now}-{}", g.seq);
+        // Aléa en plus du compteur : unique aussi à travers les redémarrages.
+        let mut salt = [0u8; 4];
+        let _ = OsRandom.fill(&mut salt);
+        let run_id = format!("r{now}-{}-{}", g.seq, synco_e2ee::encoding::hex(&salt));
         let mut run = Run {
             v: 1,
             run_id: run_id.clone(),
@@ -595,11 +662,10 @@ impl History {
     pub fn on_done(&self, run_id: &str, reason: &str, now: u64) {
         let mut g = lock(&self.inner);
         let Some(run) = g.runs.get_mut(run_id) else { return };
-        let reason =
-            if ["idle", "awaiting", "failed", "cancelled", "shutdown"].contains(&reason) { reason } else { "other" };
-        run.done_reason = Some(reason.to_owned());
+        let reason = clean_done(reason);
+        run.done_reason = Some(reason.clone());
         run.updated = now;
-        Inner::push_entry(run, Entry::Done { t: now, reason: reason.to_owned() });
+        Inner::push_entry(run, Entry::Done { t: now, reason });
     }
 
     /// Fin du process : enregistrement final avec chronologie.
@@ -617,8 +683,14 @@ impl History {
         g.persist(&done, now, true);
     }
 
-    pub(crate) fn runs_snapshot(&self) -> Vec<Run> {
-        lock(&self.inner).runs.values().cloned().collect()
+    /// Exécutions **sans chronologie** (listes, totaux, coûts).
+    pub(crate) fn runs_light(&self) -> Vec<Run> {
+        lock(&self.inner).runs.values().map(Run::light).collect()
+    }
+
+    /// Exécutions complètes d'une seule session (détail).
+    pub(crate) fn runs_of(&self, session_id: &str) -> Vec<Run> {
+        lock(&self.inner).runs.values().filter(|r| r.session_id == session_id).cloned().collect()
     }
 }
 
@@ -641,7 +713,10 @@ fn load_dir(dir: &Path) -> HashMap<String, Run> {
                 break;
             }
             let Ok(mut run) = serde_json::from_slice::<Run>(&buf) else { continue };
-            if run.v != 1 || run.run_id.len() > 64 {
+            let id_ok = !run.run_id.is_empty()
+                && run.run_id.len() <= 64
+                && run.run_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
+            if run.v != 1 || !id_ok {
                 continue;
             }
             run.sanitize();
@@ -668,6 +743,8 @@ fn load_dir(dir: &Path) -> HashMap<String, Run> {
 #[cfg(test)]
 #[allow(clippy::arithmetic_side_effects, reason = "tests")]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
 
     const D: u64 = SECS_PER_DAY;
@@ -705,7 +782,7 @@ mod tests {
         h.on_metrics(&id, &m(3, 2, 300, 40, 1_500), 11 * D + 5);
         // Un compteur qui recule (worker fautif) est ignoré.
         h.on_metrics(&id, &m(2, 1, 50, 5, 10), 11 * D + 6);
-        let run = h.runs_snapshot().remove(0);
+        let run = h.runs_of("s1").remove(0);
         assert_eq!((run.totals.steps, run.totals.prompt, run.totals.cost_micro), (3, 300, 1_500));
         assert_eq!(run.by_day.get(&10).map(|d| d.cost_micro), Some(500));
         assert_eq!(run.by_day.get(&11).map(|d| d.cost_micro), Some(1_000));
@@ -725,7 +802,7 @@ mod tests {
         h.on_sample(&id, u(100, 100, 0), 100, 0);
         h.on_sample(&id, u(300, 400, 2_500_000), 105, 5_000); // 2,5 s de CPU en 5 s = 500 ‰
         h.on_sample(&id, u(200, 400, 3_000_000), 110, 10_000);
-        let r = h.runs_snapshot().remove(0).res;
+        let r = h.runs_light().remove(0).res;
         assert!(r.measured);
         assert_eq!((r.mem_peak, r.mem_sum / r.mem_samples, r.cpu_usec, r.cpu_peak_pm), (400, 200, 3_000_000, 500));
     }
@@ -736,7 +813,7 @@ mod tests {
         let id = h.begin_run("s 1 avec espaces", "u1", "open ai", "m\u{e9}", 1);
         h.on_status(&id, "MARQUEUR-SECRET", Some("MARQUEUR-SECRET"), 2);
         h.on_done(&id, "MARQUEUR-SECRET", 3);
-        let run = h.runs_snapshot().remove(0);
+        let run = h.runs_light().remove(0);
         assert_eq!((run.session_id.as_str(), run.provider.as_str(), run.status.as_str()), ("?", "?", "other"));
         assert_eq!(run.reason.as_deref(), Some("other"));
         assert!(!serde_json::to_string(&run).unwrap().contains("MARQUEUR"));
@@ -755,10 +832,10 @@ mod tests {
         h.end_run(&b, WorkerExit::Exited(0), false, now + 3);
         // Redémarrage : `a` n'a qu'un point de reprise (interrompue), `b` est complète avec chronologie.
         let h2 = History::open(dir.path(), 90, now + 10);
-        let runs: HashMap<String, Run> = h2.runs_snapshot().into_iter().map(|r| (r.session_id.clone(), r)).collect();
-        assert!(runs["s1"].interrupted && !runs["s1"].active && runs["s1"].timeline.is_empty());
+        let runs: HashMap<String, Run> = h2.runs_light().into_iter().map(|r| (r.session_id.clone(), r)).collect();
+        assert!(runs["s1"].interrupted && !runs["s1"].active && h2.runs_of("s1")[0].timeline.is_empty());
         assert_eq!(runs["s1"].totals.prompt, 10);
-        assert!(!runs["s2"].interrupted && runs["s2"].timeline.len() >= 3);
+        assert!(!runs["s2"].interrupted && h2.runs_of("s2")[0].timeline.len() >= 3);
         assert_eq!(runs["s2"].exit.as_deref(), Some("exit:0"));
     }
 
@@ -799,5 +876,77 @@ mod tests {
         std::fs::create_dir_all(&hd).unwrap();
         std::fs::write(hd.join(file_name(20_000)), "pas du json\n{\"v\":9}\n\n").unwrap();
         assert_eq!(History::open(dir.path(), 90, 20_000 * D).run_count(), 0);
+    }
+
+    #[test]
+    fn plafond_applique_apres_chargement_et_ajouts_amortis() {
+        let dir = tempfile::tempdir().unwrap();
+        let hd = dir.path().join(HISTORY_DIR);
+        std::fs::create_dir_all(&hd).unwrap();
+        let now = 20_000 * D;
+        let template = {
+            let h = History::in_memory(90);
+            let id = h.begin_run("s", "u", "p", "m", now);
+            h.end_run(&id, WorkerExit::Exited(0), false, now);
+            h.runs_light().remove(0)
+        };
+        let total = MAX_RUNS + MAX_RUNS / 2;
+        let mut text = String::new();
+        for i in 0..total {
+            let mut r = template.clone();
+            r.run_id = format!("r{i}");
+            r.session_id = format!("s{i}");
+            r.updated = now - 10_000 + u64::try_from(i).unwrap();
+            text.push_str(&serde_json::to_string(&r).unwrap());
+            text.push('\n');
+        }
+        std::fs::write(hd.join(file_name(20_000)), text).unwrap();
+        let h = History::open(dir.path(), 90, now);
+        assert!(h.run_count() <= MAX_RUNS, "plafond appliqué dès l'ouverture : {}", h.run_count());
+        let newest = format!("s{}", total - 1);
+        assert!(h.runs_light().iter().any(|r| r.session_id == newest), "les plus récentes sont gardées");
+        assert!(!h.runs_light().iter().any(|r| r.session_id == "s0"), "les plus anciennes sont abandonnées");
+        // Ajouts répétés au plafond : rapide (passes amorties), pas de gel.
+        let started = std::time::Instant::now();
+        for i in 0..2_000 {
+            h.begin_run(&format!("n{i}"), "u", "p", "m", now + 1);
+        }
+        assert!(started.elapsed() < Duration::from_secs(20), "{:?}", started.elapsed());
+        assert!(h.run_count() <= MAX_RUNS + 2_000);
+    }
+
+    #[test]
+    fn identifiants_d_execution_uniques_a_travers_les_redemarrages() {
+        let a = History::in_memory(90).begin_run("s", "u", "p", "m", 5);
+        let b = History::in_memory(90).begin_run("s", "u", "p", "m", 5);
+        assert_ne!(a, b, "même instant, même compteur : l'aléa les distingue");
+        assert!(a.len() <= 64 && a.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-'));
+    }
+
+    #[test]
+    fn rechargement_refiltre_tous_les_champs_texte() {
+        let dir = tempfile::tempdir().unwrap();
+        let hd = dir.path().join(HISTORY_DIR);
+        std::fs::create_dir_all(&hd).unwrap();
+        let h = History::in_memory(90);
+        let id = h.begin_run("s1", "u1", "p", "m", 20_000 * D);
+        h.end_run(&id, WorkerExit::Exited(0), false, 20_000 * D + 1);
+        let mut run = h.runs_of("s1").remove(0);
+        run.done_reason = Some("MARQUEUR".into());
+        run.exit = Some("MARQUEUR".into());
+        run.timeline = vec![
+            Entry::Status { t: 1, status: "MARQUEUR".into(), reason: Some("MARQUEUR".into()) },
+            Entry::Done { t: 2, reason: "MARQUEUR".into() },
+            Entry::End { t: 3, exit: "MARQUEUR".into(), crashed: false },
+        ];
+        let mut good = run.clone();
+        good.run_id = "MARQUEUR avec espace".into();
+        let text = format!("{}\n{}\n", serde_json::to_string(&run).unwrap(), serde_json::to_string(&good).unwrap());
+        std::fs::write(hd.join(file_name(20_000)), text).unwrap();
+        let h2 = History::open(dir.path(), 90, 20_000 * D + 5);
+        assert_eq!(h2.run_count(), 1, "identifiant d'exécution invalide : enregistrement ignoré");
+        let json = serde_json::to_string(&h2.runs_of("s1")).unwrap();
+        assert!(!json.contains("MARQUEUR"), "{json}");
+        assert!(json.contains("\"other\"") && json.contains("\"unknown\""));
     }
 }

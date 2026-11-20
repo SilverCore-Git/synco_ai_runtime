@@ -131,7 +131,7 @@ fn aggregate(runs: &[&Run], now: u64) -> Option<SessionView> {
 /// Toutes les sessions (agrégées).
 #[must_use]
 pub fn sessions(h: &History, now: u64) -> Vec<SessionView> {
-    let runs = h.runs_snapshot();
+    let runs = h.runs_light();
     let mut by: BTreeMap<&str, Vec<&Run>> = BTreeMap::new();
     for r in &runs {
         by.entry(r.session_id.as_str()).or_default().push(r);
@@ -343,7 +343,7 @@ pub struct Costs {
 pub fn costs(h: &History, now: u64) -> Costs {
     let today = u32::try_from(now / SECS_PER_DAY).unwrap_or(u32::MAX);
     let mut c = Costs { day: 0, week: 0, month: 0 };
-    for r in h.runs_snapshot() {
+    for r in h.runs_light() {
         for (d, t) in &r.by_day {
             let age = today.saturating_sub(*d);
             if *d > today {
@@ -404,8 +404,8 @@ pub struct Detail {
 /// Détail d'une session, ou `None`.
 #[must_use]
 pub fn detail(h: &History, session_id: &str, now: u64) -> Option<Detail> {
-    let all = h.runs_snapshot();
-    let mut mine: Vec<&Run> = all.iter().filter(|r| r.session_id == session_id).collect();
+    let all = h.runs_of(session_id);
+    let mut mine: Vec<&Run> = all.iter().collect();
     mine.sort_by(|a, b| (a.started, &a.run_id).cmp(&(b.started, &b.run_id)));
     let session = aggregate(&mine, now)?;
     let runs = mine
@@ -442,7 +442,7 @@ pub struct Activity {
 /// Activité courante.
 #[must_use]
 pub fn activity(h: &History) -> Activity {
-    let runs = h.runs_snapshot();
+    let runs = h.runs_light();
     let active: Vec<&Run> = runs.iter().filter(|r| r.active).collect();
     Activity {
         active_runs: u64::try_from(active.len()).unwrap_or(u64::MAX),

@@ -294,13 +294,14 @@ impl Agent {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(every).await;
-                match api.conv(HttpMethod::Post, "/lease", Some(&json!({ "leaseEpoch": epoch }))).await {
-                    Ok(r) if r.code() == Some("lease_conflict") => {
+                let r = api.conv(HttpMethod::Post, "/lease", Some(&json!({ "leaseEpoch": epoch }))).await;
+                match renewal_step(&r) {
+                    Renewal::Lost => {
                         lost.store(true, Ordering::Relaxed);
                         return;
                     }
-                    Err(_) => return,
-                    _ => {}
+                    Renewal::PipeClosed => return,
+                    Renewal::Continue => {}
                 }
             }
         })
@@ -1416,6 +1417,25 @@ impl Agent {
     }
 }
 
+/// Suite du renouvellement du bail après une réponse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Renewal {
+    /// Renouvelé, ou échec passager (délai, relais, 5xx) : réessayer au prochain intervalle.
+    Continue,
+    /// Bail repris par un autre : plus aucune écriture.
+    Lost,
+    /// Pipe fermé : le worker s'arrête de toute façon.
+    PipeClosed,
+}
+
+fn renewal_step(r: &Result<ApiResponse, link::LinkError>) -> Renewal {
+    match r {
+        Ok(r) if r.code() == Some("lease_conflict") => Renewal::Lost,
+        Err(link::LinkError::Closed) => Renewal::PipeClosed,
+        Ok(_) | Err(link::LinkError::Timeout) => Renewal::Continue,
+    }
+}
+
 /// Évènement de journal `tool_unknown_outcome` (`code` = nom de l'outil, 04 §4.2).
 fn unknown_event(name: &str) -> Value {
     let code: String = name
@@ -1555,4 +1575,24 @@ fn clear_pending(p: &PendingToolCall) -> Value {
 #[must_use]
 pub fn inbox_item_id(frame: &Value) -> Option<String> {
     inbox_id(frame)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn resp(status: u16, body: Value, relay: Option<&str>) -> ApiResponse {
+        ApiResponse { status, body, relay_error: relay.map(str::to_owned) }
+    }
+
+    #[test]
+    fn renouvellement_du_bail() {
+        // M1 : un délai ne coupe pas le renouvellement pour le reste de la vie du worker.
+        assert_eq!(renewal_step(&Err(link::LinkError::Timeout)), Renewal::Continue);
+        assert_eq!(renewal_step(&Ok(resp(0, Value::Null, Some("relay_network")))), Renewal::Continue);
+        assert_eq!(renewal_step(&Ok(resp(503, json!({ "error": "internal" }), None))), Renewal::Continue);
+        assert_eq!(renewal_step(&Ok(resp(200, json!({ "leaseEpoch": 1 }), None))), Renewal::Continue);
+        assert_eq!(renewal_step(&Ok(resp(409, json!({ "error": "lease_conflict" }), None))), Renewal::Lost);
+        assert_eq!(renewal_step(&Err(link::LinkError::Closed)), Renewal::PipeClosed);
+    }
 }

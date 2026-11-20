@@ -31,11 +31,22 @@ tracing-subscriber = { version = "=0.3.23", default-features = false, features =
 argon2 = { version = "=0.6.0", default-features = false, features = ["alloc", "zeroize"] }
 rustix = { version = "=1.1.5", default-features = false, features = ["std", "termios", "process"] }
 tempfile = { version = "=3.27.0" }
+# Bac à sable des workers (L06) ; dates crates.io dans docs/journal.md.
+landlock = { version = "=0.4.7" }
+seccompiler = { version = "=0.5.0", default-features = false }
+libc = { version = "=0.2.191", default-features = false }
+hyper = { version = "=1.12.0", default-features = false, features = ["client", "http1"] }
+hyper-util = { version = "=0.1.21", default-features = false, features = ["tokio"] }
+http-body-util = { version = "=0.1.5" }
+bytes = { version = "=1.12.1" }
 
 # Règles « zéro panique » de synco_cdn, communes aux crates du runtime (synco-e2ee garde sa copie) ;
 # assouplies pour les tests dans clippy.toml.
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# `deny` et non `forbid` : seul `crates/supervisor/src/sandbox/sys.rs` lève l'interdiction
+# (`#[allow(unsafe_code)]`, L06) ; chaque crate garde `#![forbid(unsafe_code)]` à sa racine, sauf le
+# superviseur (`#![deny(unsafe_code)]`), et un test vérifie qu'aucun autre fichier n'utilise `unsafe`.
+unsafe_code = "deny"
 missing_docs = "warn"
 missing_debug_implementations = "warn"
 unused_must_use = "deny"

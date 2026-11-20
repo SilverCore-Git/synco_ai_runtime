@@ -1,0 +1,65 @@
+# Profil AppArmor dédié du Synco AI Runtime (Docker, hôtes AppArmor : Ubuntu, Debian, SUSE).
+# NON TESTÉ dans ce dépôt (hôte de développement : Fedora/SELinux, sans AppArmor) : à valider avec
+# `sandbox-check` (docs/deploiement.md §Docker) avant tout usage.
+#
+# Dérivé du profil docker-default (moby, Apache-2.0 : vendor/github.com/moby/profiles/apparmor/
+# template.go, docker-v29.9.2) dont il garde TOUS les refus, sauf `deny mount` remplacé par les
+# seules règles que le bac à sable des workers exige (docs/plan/10-bac-a-sable.md §10) :
+# création d'un espace de noms utilisateur (userns), montages (dans l'espace de noms du worker),
+# pivot_root.
+#
+# Chargement :  sudo apparmor_parser -r -W deploy/docker/apparmor-synco-ai-runtime
+# Usage      :  docker run --security-opt apparmor=synco-ai-runtime …
+# Ubuntu >= 23.10 (kernel.apparmor_restrict_unprivileged_userns=1) : la règle `userns,` ci-dessous
+# est ce qui autorise la création d'espaces de noms utilisateur ; AppArmor >= 4.0 requis. Sur un
+# AppArmor plus ancien, supprimer cette ligne.
+
+abi <abi/3.0>,
+
+#include <tunables/global>
+
+profile synco-ai-runtime flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  network,
+  # Disallow AF_ALG (Linux kernel crypto API) et AF_VSOCK, comme docker-default.
+  deny network alg,
+  deny network vsock,
+  capability,
+  file,
+  umount,
+  signal (receive) peer=unconfined,
+  signal (receive) peer=runc,
+  signal (receive) peer=crun,
+  signal (send,receive) peer=synco-ai-runtime,
+
+  # --- Ajouts pour le bac à sable des workers -------------------------------------------------
+  userns,
+  # Montages : le worker monte un tmpfs sur /tmp, lie son répertoire de socket, remonte en lecture
+  # seule (child.rs). Ces montages ont lieu dans son espace de noms de montage/utilisateur propre
+  # (jamais ceux de l'hôte) ; on ne les restreint donc pas par chemin (règles non testées).
+  mount,
+  pivot_root,
+  # ---------------------------------------------------------------------------------------------
+
+  deny @{PROC}/* w,
+  deny @{PROC}/{[^1-9/],[^1-9/][^0-9/],[^1-9s/][^0-9y/][^0-9s/],[^1-9/][^0-9/][^0-9/][^0-9/]*}/** w,
+  deny @{PROC}/sys/[^k]** w,
+  deny @{PROC}/sys/kernel/{?,??,[^s][^h][^m]**} w,
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/kcore rwklx,
+
+  # `deny mount,` de docker-default est RETIRÉ (remplacé par les règles mount ci-dessus). Tout
+  # autre montage reste refusé par défaut.
+
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/devices/virtual/powercap/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+
+  ptrace (trace,tracedby,read,readby) peer=synco-ai-runtime,
+}

@@ -165,6 +165,7 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
             in_flight: Arc::new(tokio::sync::Semaphore::new(crate::state::RELAY_IN_FLIGHT_PER_WORKER)),
             uploads: Default::default(),
             created_keys: 0,
+            created_threads: Default::default(),
         }));
     }
     tracing::info!(code = "worker_launched", launcher = rt.launcher.name(), epoch = lease.lease_epoch, "worker lancé");
@@ -223,7 +224,16 @@ async fn read_incoming(rd: &mut ReadHalf<Box<dyn WorkerIo>>) -> Result<Incoming,
 /// l'engagement depuis la clé, signe l'enveloppe `rt1` avec `csk` et chiffre l'entrée sous `DK` de la
 /// délégation **du propriétaire**. Il n'installe pas la clé dans le coffre : elle y entrera par le
 /// chemin normal (`delegation.entries_added` après la pose de l'entrée par le worker). Borné à
-/// [`pipe::MAX_CREATED_KEYS_PER_WORKER`] par worker.
+/// [`pipe::MAX_CREATED_KEYS_PER_WORKER`] par worker, et réservé aux salons dont **ce** worker a
+/// relayé la création réussie (`POST /e2ee/threads`, id lu dans la réponse 2xx), une clé par salon :
+/// un worker compromis ne peut pas faire signer `rt1` pour un salon quelconque.
+///
+/// Délégation : le superviseur ne connaît que la délégation courante du propriétaire (une par
+/// utilisateur dans le coffre), pas le `delegationId` de l'autorisation que l'API contrôle (04 §4.3,
+/// contrôle 7 ; l'API met l'autorisation à jour au remplacement de la délégation). Si les deux
+/// diffèrent un instant, l'échec est **fermé** : l'API refuse la signature (octets signés avec un
+/// autre `delegationId`, `400`) et l'entrée (`/delegations/<autre>/entries` → `out_of_scope`) ; le
+/// salon reste en TOFU (03 §10.1), aucune enveloppe fausse n'est posée.
 pub(crate) async fn created_key(
     rt: &Arc<Runtime>,
     session: &str,
@@ -240,6 +250,10 @@ pub(crate) async fn created_key(
     };
     if w.created_keys >= pipe::MAX_CREATED_KEYS_PER_WORKER {
         return created_key_error(&reference, "created_key_limit");
+    }
+    // Seulement un salon dont CE worker a relayé la création réussie, et une seule clé par salon.
+    if !w.created_threads.remove(&reference) {
+        return created_key_error(&reference, "created_key_unknown_thread");
     }
     w.created_keys = w.created_keys.saturating_add(1);
     let Some(delegation) = st.vault.get(user_id).filter(|d| d.exp() > now_secs()) else {
@@ -264,6 +278,26 @@ pub(crate) async fn created_key(
             error: None,
         },
         _ => created_key_error(&reference, "created_key_failed"),
+    }
+}
+
+/// Route de création d'un salon par le runtime (04 §4.3).
+pub const CREATE_THREAD_PATH: &str = "/api/runtime/v1/e2ee/threads";
+/// Salons créés en attente de leur clé, au plus, par worker.
+const MAX_PENDING_CREATED_THREADS: usize = 64;
+
+async fn note_created_thread(rt: &Arc<Runtime>, session: &str, epoch: u64, body: &[u8]) {
+    let id = serde_json::from_slice::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v.get("id").and_then(serde_json::Value::as_str).map(str::to_owned))
+        .filter(|id| runtime_protocol::ids::is_identifier(id));
+    let Some(id) = id else { return };
+    let mut st = rt.state.lock().await;
+    if let Some(WorkerState::Running(w)) = st.convs.get_mut(session).map(|c| &mut c.worker)
+        && w.epoch == epoch
+        && w.created_threads.len() < MAX_PENDING_CREATED_THREADS
+    {
+        w.created_threads.insert(id);
     }
 }
 
@@ -512,7 +546,7 @@ async fn relay(
     if req.id.is_empty() || req.id.len() > 64 {
         return Err("worker_bad_request_id");
     }
-    let (req, body, permit) = {
+    let (req, body, permit, epoch) = {
         let mut st = rt.state.lock().await;
         let owner_delegation = st.vault.get(user_id).map(|d| d.delegation_id().to_owned());
         if !worker_path_allowed(&req.path, session, owner_delegation.as_deref()) {
@@ -574,16 +608,25 @@ async fn relay(
             reply(tx, SignedResponse::failure(&req.id, "relay_busy"));
             return Ok(());
         };
-        (req, body, permit)
+        (req, body, permit, w.epoch)
     };
     let auth = req.with_auth.then_some(auth_id.to_owned());
     let rt = Arc::clone(rt);
     let tx = tx.clone();
+    let session = session.to_owned();
     tokio::spawn(async move {
         let _permit = permit;
         let result = rt.api.signed(Method::from(req.method), &req.path, body, auth.as_deref()).await;
         let parts = match result {
             Ok(r) => {
+                // Salon créé par CE worker (réponse 2xx de l'API, id lu dans la réponse) : seule
+                // source admise pour `created_key`. Noté AVANT que le worker voie la réponse.
+                if req.method == pipe::HttpMethod::Post
+                    && req.path == CREATE_THREAD_PATH
+                    && (200..300).contains(&r.status)
+                {
+                    note_created_thread(&rt, &session, epoch, &r.body).await;
+                }
                 let headers =
                     r.content_type.map(|c| [("content-type".to_owned(), c)].into_iter().collect()).unwrap_or_default();
                 SignedResponse::split(&req.id, r.status, &headers, &r.body)

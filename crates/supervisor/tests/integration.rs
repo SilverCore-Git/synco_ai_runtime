@@ -980,3 +980,183 @@ async fn fournisseur_non_configure_refuse() {
         synco_ai_runtime::app::shutdown(&env.running.runtime).await;
     }
 }
+
+// ---------------------------------------------------------------------------
+// created_key (L07) : le vrai code du superviseur contre un worker scripté
+// ---------------------------------------------------------------------------
+
+type ScriptFn = Arc<dyn Fn(usize, tokio::io::DuplexStream) -> BoxFuture<'static, ()> + Send + Sync>;
+
+/// Lanceur dont chaque lancement exécute `script(rang, pipe)`.
+struct ScriptedEach {
+    script: ScriptFn,
+    n: std::sync::atomic::AtomicUsize,
+}
+
+impl WorkerLauncher for ScriptedEach {
+    fn spawn(&self, _spec: WorkerSpec) -> BoxFuture<'_, Result<SpawnedWorker, LaunchError>> {
+        Box::pin(async move {
+            let i = self.n.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let (ours, theirs) = tokio::io::duplex(1 << 20);
+            let task = tokio::spawn((self.script)(i, theirs));
+            Ok(SpawnedWorker { io: Box::new(ours), process: Box::new(Task(Some(task))) })
+        })
+    }
+    fn name(&self) -> &'static str {
+        "scripted-each"
+    }
+}
+
+type Rd = tokio::io::ReadHalf<tokio::io::DuplexStream>;
+type Wr = tokio::io::WriteHalf<tokio::io::DuplexStream>;
+
+async fn handshake(rd: &mut Rd, wr: &mut Wr) -> wire::Init {
+    let SupervisorMsg::Init(init) = read(rd).await else { panic!("init attendu") };
+    wire::write_json(wr, &WorkerMsg::Ready(wire::ReadyMsg { pid: 1, version: "test".into() })).await.unwrap();
+    while !matches!(read(rd).await, SupervisorMsg::Start(_)) {}
+    *init
+}
+
+/// `POST /e2ee/threads` relayé : id du salon créé.
+async fn create_thread(rd: &mut Rd, wr: &mut Wr, id: &str) -> String {
+    for p in SignedRequest::split(id, HttpMethod::Post, "/api/runtime/v1/e2ee/threads", br#"{"name":"t"}"#, true) {
+        wire::write_json(wr, &WorkerMsg::SignedRequest(p)).await.unwrap();
+    }
+    let (status, _, body) = response(rd, id).await;
+    assert_eq!(status, 201);
+    serde_json::from_slice::<Value>(&body).unwrap()["id"].as_str().unwrap().to_owned()
+}
+
+async fn created_key(rd: &mut Rd, wr: &mut Wr, thread: &str, key: [u8; 32]) -> wire::CreatedKeyMsg {
+    let frame = wire::KeyFrame {
+        op: wire::KeyOp::Add,
+        entries: vec![wire::KeyEntry {
+            kind: wire::KeyKind::Thread,
+            reference: thread.into(),
+            version: 1,
+            key: Zeroizing::new(key.to_vec()),
+        }],
+    };
+    wire::write_keys(wr, &frame.encode().unwrap()).await.unwrap();
+    loop {
+        if let SupervisorMsg::CreatedKey(c) = read(rd).await {
+            return c;
+        }
+    }
+}
+
+#[derive(Default)]
+struct CreatedReport {
+    first: Vec<(String, [u8; 32], wire::CreatedKeyMsg)>,
+    /// Le worker a pu continuer après la trame interdite (ne doit jamais arriver).
+    survived: bool,
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn created_key_reserve_aux_salons_crees_par_ce_worker() {
+    let report = Arc::new(std::sync::Mutex::new(CreatedReport::default()));
+    let (remove_tx, mut remove_rx) = tokio::sync::mpsc::channel::<tokio::sync::oneshot::Sender<()>>(1);
+    let (r2, remove_tx) = (Arc::clone(&report), Arc::new(remove_tx));
+    let script: ScriptFn = Arc::new(move |i, io| {
+        let report = Arc::clone(&r2);
+        let remove_tx = Arc::clone(&remove_tx);
+        Box::pin(async move {
+            let (mut rd, mut wr) = tokio::io::split(io);
+            handshake(&mut rd, &mut wr).await;
+            let push =
+                |t: &str, k: [u8; 32], c: wire::CreatedKeyMsg| report.lock().unwrap().first.push((t.to_owned(), k, c));
+            if i == 0 {
+                // a. Salon jamais créé par ce worker.
+                let c = created_key(&mut rd, &mut wr, "cm3threadautre0000000001", [1; 32]).await;
+                push("autre", [1; 32], c);
+                // b. Salon créé (2xx relayé) : enveloppe signée.
+                let t1 = create_thread(&mut rd, &mut wr, "c1").await;
+                let c = created_key(&mut rd, &mut wr, &t1, [2; 32]).await;
+                push(&t1, [2; 32], c);
+                // c. Une seule clé par salon.
+                let c = created_key(&mut rd, &mut wr, &t1, [3; 32]).await;
+                push("deuxieme", [3; 32], c);
+                // d. Plafond : 32 clés au plus par worker.
+                for n in 0..32u8 {
+                    let t = create_thread(&mut rd, &mut wr, &format!("p{n}")).await;
+                    let c = created_key(&mut rd, &mut wr, &t, [n; 32]).await;
+                    push(&format!("plafond{n}"), [n; 32], c);
+                }
+                wire::write_json(&mut wr, &WorkerMsg::Done(wire::DoneMsg { reason: wire::DoneReason::Idle }))
+                    .await
+                    .unwrap();
+            } else {
+                // e. Délégation retirée entre la création et la clé.
+                let t = create_thread(&mut rd, &mut wr, "d1").await;
+                let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+                remove_tx.send(ack_tx).await.unwrap();
+                ack_rx.await.unwrap();
+                let c = created_key(&mut rd, &mut wr, &t, [9; 32]).await;
+                push("delegation", [9; 32], c);
+                // f. Trame de clés non admissible (espace) : le worker est tué.
+                let bad = wire::KeyFrame {
+                    op: wire::KeyOp::Add,
+                    entries: vec![wire::KeyEntry {
+                        kind: wire::KeyKind::Space,
+                        reference: "s1".into(),
+                        version: 1,
+                        key: Zeroizing::new(vec![1; 32]),
+                    }],
+                };
+                wire::write_keys(&mut wr, &bad.encode().unwrap()).await.unwrap();
+                // Tué : cette tâche est interrompue avant d'obtenir une réponse.
+                let next = tokio::time::timeout(Duration::from_secs(3), create_thread(&mut rd, &mut wr, "apres")).await;
+                if next.is_ok() {
+                    report.lock().unwrap().survived = true;
+                }
+            }
+        })
+    });
+    let launcher = ScriptedEach { script, n: Default::default() };
+    let env = setup_with(Arc::new(launcher)).await;
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    authorize(&env).await;
+    let rt = Arc::clone(&env.running.runtime);
+    env.api.push(json!({ "type": "conversation.wake", "sessionId": SESSION, "authId": AUTH, "reason": "inbox" }));
+    wait_until("premier worker", || report.lock().unwrap().first.len() == 35).await;
+    for _ in 0..100 {
+        if rt.state.lock().await.convs.get(SESSION).is_some_and(|c| !c.worker.is_active()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    {
+        let r = report.lock().unwrap();
+        assert_eq!(r.first[0].2.error.as_deref(), Some("created_key_unknown_thread"));
+        let (t1, k1, ok) = &r.first[1];
+        let env1 = ok.envelope.as_ref().expect("enveloppe");
+        let sig = synco_e2ee::keys::KeyEnvelopeSignature {
+            commitment: env1.commitment.clone(),
+            signature: env1.signature.clone(),
+        };
+        synco_e2ee::keys::verify_rt1_envelope(&rt.keys.public().csk, k1, &format!("thread:{t1}"), 1, "d-good", &sig)
+            .expect("rt1 signée par la csk du runtime, délégation du propriétaire");
+        assert_eq!(env1.delegation_id, "d-good");
+        assert_eq!(r.first[2].2.error.as_deref(), Some("created_key_unknown_thread"), "une seule clé par salon");
+        let ok_count = r.first[3..].iter().filter(|(_, _, c)| c.envelope.is_some()).count();
+        assert_eq!(ok_count, 31, "32 clés au plus (1 + 31)");
+        assert_eq!(r.first[34].2.error.as_deref(), Some("created_key_limit"));
+    }
+    // Second worker : délégation retirée pendant qu'il travaille, puis trame interdite.
+    env.api.push(json!({ "type": "conversation.wake", "sessionId": SESSION, "authId": AUTH, "reason": "inbox" }));
+    let ack = tokio::time::timeout(Duration::from_secs(10), remove_rx.recv()).await.unwrap().unwrap();
+    rt.state.lock().await.vault.remove_user(USER);
+    ack.send(()).unwrap();
+    wait_until("second worker", || report.lock().unwrap().first.len() == 36).await;
+    assert_eq!(report.lock().unwrap().first[35].2.error.as_deref(), Some("delegation_unavailable"));
+    for _ in 0..100 {
+        if rt.state.lock().await.convs.get(SESSION).is_some_and(|c| !c.worker.is_active()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(rt.state.lock().await.convs.get(SESSION).is_some_and(|c| !c.worker.is_active()), "worker arrêté");
+    assert!(!report.lock().unwrap().survived, "trame de clés interdite : worker tué");
+    env.api.with(|st| assert_eq!(st.threads_created, 34, "aucune requête relayée après la trame interdite"));
+    synco_ai_runtime::app::shutdown(&rt).await;
+}

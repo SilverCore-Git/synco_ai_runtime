@@ -4,7 +4,7 @@ Le client (synco_app) parle **directement** au runtime (P6) pour suivre une conv
 runtime : flux d'évènements en direct, envoi de messages et de décisions. L'historique enregistré vient
 de l'API (déchiffré localement). Conventions : [00 §3](00-vue-ensemble.md).
 
-## 1. Connexion
+## 1. Connexion (révisé après L05, 2026-11-20)
 
 ```
 wss://<url du runtime>/v1/conversations/<sessionId>/ws
@@ -14,10 +14,24 @@ wss://<url du runtime>/v1/conversations/<sessionId>/ws
    `POST /api/orgs/:orgId/ai/sessions/:sessionId/runtime-ticket`.
 2. Le runtime n'accepte la mise à niveau que si l'en-tête `Origin` est dans ses origines configurées
    (origine de l'app web, schémas des applis Capacitor / Tauri) ; sinon `403` HTTP.
-3. Première trame du client, **dans les 10 s** : `hello` (§6.1) avec le ticket. Le ticket n'est
-   jamais mis dans l'URL (les mandataires inverses journalisent les URL).
+3. Première trame du client, **dans les 5 s** (la spec proposait 10 s ; L05 l'a raccourci pour
+   limiter les connexions inoccupées, `crates/supervisor/src/client_ws.rs:HELLO_TIMEOUT`) : `hello`
+   (§6.1) avec le ticket. Le ticket n'est jamais mis dans l'URL (les mandataires inverses journalisent
+   les URL). Passé ce délai : fermeture `4408`.
 4. Le runtime vérifie le ticket (02 §5, `conv` = `<sessionId>` du chemin), que la conversation lui est
-   autorisée (autorisation connue, 04 §3) et répond `ready` (§5.1), sinon ferme (§7).
+   autorisée (autorisation **connue** de l'utilisateur du ticket, 04 §3 ; persistée et réconciliée
+   avec l'API, 03 §9) et répond `ready` (§5.1), sinon ferme (§7).
+
+**Connexions non authentifiées** (révisé après L05 ; `crates/supervisor/src/server.rs:MAX_UNAUTHENTICATED_*`) :
+au plus **8 WebSocket par adresse** et **256 au total** sans `hello` vérifié ; au-delà, la mise à
+niveau est refusée par une réponse HTTP **`429`**. La place est rendue dès le ticket vérifié. L'adresse
+est celle de la connexion, ou, derrière un mandataire, l'entrée de `X-Forwarded-For` située à
+`trust_proxy_hops` depuis la **droite** (jamais au-delà de l'entrée la plus à droite, que le client ne
+peut pas forger).
+
+**Pas de TLS natif (D10, v1)** : le runtime sert ces endpoints en HTTP sur une adresse de boucle
+locale (sauf option explicite) et un **mandataire inverse obligatoire** termine le `wss://` avec un
+certificat reconnu par les navigateurs (01 §3 ; Q7).
 
 Au plus 5 connexions simultanées par conversation (plusieurs onglets ou appareils du même
 utilisateur) ; toutes reçoivent les mêmes évènements.
@@ -43,6 +57,20 @@ utilisateur) ; toutes reçoivent les mêmes évènements.
 Reprise : le client envoie dans `hello` le dernier `{ epoch, seq }` reçu. Même `epoch` et `seq + 1`
 encore dans le tampon → le runtime rejoue la suite (`ready { mode: "replay" }`) ; sinon il envoie
 `ready { mode: "snapshot" }` puis un `snapshot`.
+
+Précisions (révisé après L05, 2026-11-20 ; `client_ws.rs:ready_plan`, `register` ; 06 §4.2) :
+
+- sans `resume` (première connexion alors qu'un worker tourne), le rejeu part du **début de l'époque**
+  courante ;
+- `snapshot` n'est annoncé que si le worker a démarré **et** que la demande lui est réellement partie
+  (`snapshot_request`, 06 §4.2) ; sinon `ready { mode: "reload" }` (le client relit l'historique par
+  l'API puis se reconnecte). Idem si la trame `snapshot` dépasse 1 Mio ;
+- **ordre côté client** : entre `ready { snapshot }` et le `snapshot` lui-même, le client peut recevoir
+  des évènements en direct ; il les **garde en tampon** et n'applique après le `snapshot` que ceux dont
+  `seq` est **supérieur** à celui du `snapshot` ; le `snapshot` n'est envoyé qu'au client demandeur ;
+- le repli `reload` est décidé **par le runtime** (canal du worker plein ou worker pas démarré,
+  trame trop grande) : le client le traite comme en §5.1 (relire l'historique par l'API, puis se
+  reconnecter).
 
 ## 4. Chiffrement des champs sensibles
 
@@ -83,6 +111,14 @@ codes d'erreur.
 `replay` | `snapshot` | `idle` (aucun worker : l'historique de l'API suffit) | `reload` (relire
 l'historique puis se reconnecter).
 
+Valeurs réelles (révisé après L05, 2026-11-20) : **`rev` vaut 0 quand un worker tourne** (`replay`,
+`snapshot`) : le superviseur ne connaît pas la révision de l'API sans appel ; le client lit `rev` dans
+l'historique de l'API et s'appuie sur `baseRev` du `snapshot`. Sans worker (`idle`), `status`, `rev` et
+`epoch` viennent d'un `GET /conversations/:sessionId` (`rev`, `leaseEpoch`) ; **si l'API ne répond
+pas**, le runtime envoie `ready { mode: "reload", rev: 0, epoch: 0 }` avec le dernier statut connu ; si
+l'API répond que l'autorisation est révoquée, expirée, invalide ou hors périmètre : fermeture `4403`.
+Source : `client_ws.rs:handle`.
+
 ### 5.2 `snapshot`
 
 ```json
@@ -118,6 +154,13 @@ Correspondance avec l'affichage existant (`WireEvent`, `synco_api/src/services/a
   runtime y dépose la trame reçue **sans son champ `v`** (`{ t, … }` : le schéma de l'API est strict,
   révisé après la vague B, 2026-11-19 ; `synco_api/src/services/aiRuntime/conversationValidation.ts:217-223`).
   Un doublon (`200`) donne lieu au même `queued`.
+
+  **Dépôt refusé (révisé après L05, 2026-11-20)** : aucun évènement `error` ne peut être émis sans
+  `epoch` (§3), donc le runtime **ferme le WebSocket** : `4429` (`inbox_full`, `rate_limited`,
+  `rt_rate_limited`), `4403` (`auth_revoked`, `auth_expired`, `auth_invalid`, `out_of_scope`,
+  `delegation_expired`, `delegation_revoked` ; raison `revoked`), `4404` (`not_runtime`), `4500` (toute
+  autre cause : API injoignable, erreur interne). Pas de `queued` dans ces cas ; l'élément n'est pas
+  transmis au worker. Source : `client_ws.rs:run_connection`.
 - `pong` : réponse à `ping`.
 
 ## 6. Client → runtime
@@ -169,22 +212,25 @@ Dépôt par l'API (révisé après la vague B, 2026-11-19 ; `synco_api/src/route
 ### 6.3 `ping`
 
 `{ "v": 1, "t": "ping" }` toutes les 25 s ; sans trame reçue pendant 60 s, chaque côté ferme.
+Côté runtime (révisé après L05, 2026-11-20) : la fermeture est `1000` avec la raison `idle_timeout`
+(toute trame reçue, `ping` compris, remet le compteur à zéro ; `IDLE_TIMEOUT_SECS`).
 
 Débit client → runtime : 20 trames / 10 s par connexion, au-delà `4429`.
 
-## 7. Fermetures et codes d'erreur
+## 7. Fermetures et codes d'erreur (révisé après L05, 2026-11-20)
 
 | Code WebSocket | Raison (code machine) | Sens |
 |---|---|---|
 | `4400` | `bad_frame` | Trame invalide, binaire, trop grande, champ inconnu |
 | `4401` | code de ticket (02 §10) | Ticket refusé |
-| `4403` | `forbidden` / `revoked` | Conversation non autorisée sur ce runtime, ou révoquée en cours de route |
-| `4404` | `not_runtime` | La conversation n'est pas (ou plus) en mode runtime |
-| `4408` | `hello_timeout` | Pas de `hello` en 10 s |
+| `4403` | `forbidden` / `revoked` | Conversation non autorisée sur ce runtime, ou révoquée en cours de route ; aussi dépôt de boîte refusé pour autorisation (§5.4) |
+| `4404` | `not_runtime` | La conversation n'est pas (ou plus) en mode runtime (aussi : dépôt de boîte refusé, §5.4) |
+| `4408` | `hello_timeout` | Pas de `hello` en 5 s (révisé après L05) |
+| `1000` | `idle_timeout` | Aucune trame reçue pendant 60 s (§6.3 ; révisé après L05) |
 | `4409` | `too_many_connections` | Plus de 5 connexions |
-| `4429` | `rate_limited` | Débit dépassé |
+| `4429` | `rate_limited` | Débit dépassé, ou dépôt de boîte refusé pour `inbox_full` / limite de débit (§5.4) |
 | `4503` | `shutting_down` | Arrêt du runtime ; se reconnecter avec backoff |
-| `4500` | `internal` | Erreur interne |
+| `4500` | `internal` | Erreur interne (aussi : dépôt de boîte refusé pour une autre cause, §5.4) |
 
 Codes de l'évènement `error` (sans fermeture) : `stale_decision`, `key_unavailable`,
 `provider_error`, `budget_exceeded`, `step_limit`, `confirmation_timeout`, `tool_failed`,

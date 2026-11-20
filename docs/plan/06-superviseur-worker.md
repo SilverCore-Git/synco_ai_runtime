@@ -6,7 +6,7 @@ descripteur 3 du worker. Aucun autre descripteur n'est hérité (en dehors de st
 redirigés vers `/dev/null` ou un journal sans contenu). Les types sont dans la crate
 `runtime-protocol` (L05). Conventions : [00 §3](00-vue-ensemble.md).
 
-## 1. Cadrage
+## 1. Cadrage (révisé après L05, 2026-11-20)
 
 ```
 trame = longueur (u32 gros-boutiste, octets qui suivent) ‖ genre (u8) ‖ charge
@@ -17,8 +17,10 @@ trame = longueur (u32 gros-boutiste, octets qui suivent) ‖ genre (u8) ‖ char
 | `0x01` | Message JSON (UTF-8, un objet, §3–§4) |
 | `0x02` | Message de clés binaire (§2) |
 
-- Longueur maximale : 1 Mio pour `0x01`, 64 Kio pour `0x02`. Au-delà, ou longueur nulle, ou genre
-  inconnu : le lecteur ferme le canal ; côté superviseur, le worker est tué (`SIGKILL`) et la
+- Longueur : la valeur en tête compte **le genre (1 octet) plus la charge** ; les **plafonds portent sur
+  la charge** : 1 Mio pour `0x01`, 64 Kio pour `0x02` (`header`, `read_frame`,
+  `crates/runtime-protocol/src/pipe.rs:98-129`). Une charge vide (longueur = 1), une longueur nulle,
+  une charge au-delà du plafond, ou un genre inconnu : le lecteur ferme le canal ; côté superviseur, le worker est tué (`SIGKILL`) et la
   conversation suit 08 §5.
 - JSON : `{ "type": "<type>", … }`, désérialisation **stricte** (`deny_unknown_fields`), un seul
   objet par trame.
@@ -57,7 +59,8 @@ trames de ≤ 64 Kio.
 | `keys` | (trame `0x02`) | Clé ajoutée (synchro P11) ou retirée (révocation) |
 | `shutdown` | `graceMs`, `reason` (`idle` \| `revoked` \| `unpaired` \| `sigterm` \| `limit`) | Arrêt demandé : terminer l'étape en cours si `graceMs > 0`, enregistrer, quitter |
 | `net_response` | dépend de L06 | Réponse d'un accès réseau relayé par le superviseur, si L06 choisit ce modèle |
-| `signed_request_response` | `id`, `status`, `headers`, `body` | Réponse à `signed_request` (§4) |
+| `signed_request_response` | `id`, `status`, `headers`, `body`, `part?`, `last?`, `error?` | Réponse à `signed_request` (§4), en une ou plusieurs parties |
+| `snapshot_request` | `requestId` | **Ajout L05** : un client reprend hors du tampon de rejeu (05 §3) ; le worker répond par `snapshot` (§4) |
 
 ### 3.1 Configuration LLM (`llm`)
 
@@ -68,8 +71,10 @@ worker obtient un ticket `sgt1` par `signed_request` vers `POST /api/runtime/v1/
 
 ### 3.2 Plafonds (`limits`)
 
-`{ "maxStepsPerTurn", "maxTokensPerConversation", "maxTurnDurationSecs", "maxToolResultBytes", "idleShutdownSecs" }`
-— valeurs de 09 §2, bornées par la politique de l'org (07 §6).
+`{ "maxStepsPerTurn", "maxTokensPerConversation", "maxTokensPerTurn", "maxTurnDurationSecs", "maxOutputTokensPerCall", "maxToolResultBytes", "idleShutdownSecs" }`
+— valeurs de 09 §2, bornées par la politique de l'org (07 §6). **Révisé après L05, 2026-11-20** :
+`maxTokensPerTurn` et `maxOutputTokensPerCall` (09 §2) font partie de `limits` (`WorkerLimits`,
+`pipe.rs`), les sept champs sont tous obligatoires (désérialisation stricte).
 
 ## 4. Worker → superviseur
 
@@ -79,7 +84,8 @@ worker obtient un ticket `sgt1` par `signed_request` vers `POST /api/runtime/v1/
 | `event` | `event` : trame runtime → client complète (05 §5), déjà chiffrée, avec `epoch` et `seq` | Le superviseur la met dans le tampon de reprise et la diffuse aux WebSocket de la conversation **sans la lire** |
 | `status` | `status`, `reason?` | Changement d'état (le worker l'a déjà enregistré dans l'API) |
 | `need_key` | `kind`, `ref` | Clé absente de la délégation (03 §11) ; le superviseur répond par `keys` si elle arrive |
-| `signed_request` | `id`, `method`, `path`, `body` (b64), `withAuth` (bool) | Requête vers l'API que **le superviseur signe** avec `sig` (le worker n'a jamais la clé privée, mesure 7) ; `path` doit commencer par `/api/runtime/v1/conversations/<sessionId>`, `/api/runtime/v1/e2ee/`, `/api/runtime/v1/tickets/llm` ou `/api/runtime/v1/delegations/<délégation du propriétaire>/entries` ; sinon refus |
+| `signed_request` | `id`, `method`, `path`, `body` (b64), `withAuth` (bool), `part?`, `last?` | Requête vers l'API que **le superviseur signe** avec `sig` (le worker n'a jamais la clé privée, mesure 7) ; `path` doit commencer par `/api/runtime/v1/conversations/<sessionId>`, `/api/runtime/v1/e2ee/`, `/api/runtime/v1/tickets/llm` ou `/api/runtime/v1/delegations/<délégation du propriétaire>/entries` ; sinon refus |
+| `snapshot` | `requestId`, `event` | **Ajout L05** : réponse à `snapshot_request` ; `event` = la trame `snapshot` complète de 05 §5.2, déjà chiffrée (seul le worker peut produire `state`). Le superviseur ne l'envoie qu'au client demandeur, sans la mettre dans le tampon |
 | `inbox_ack` | `ids` | Éléments consommés (après écriture de l'historique) |
 | `metrics` | §5 | Toutes les 10 s et à la fin du tour |
 | `net_request` | dépend de L06 | Accès réseau relayé |
@@ -88,6 +94,41 @@ worker obtient un ticket `sgt1` par `signed_request` vers `POST /api/runtime/v1/
 
 Le superviseur limite le débit des `signed_request` (09 §2) et refuse un chemin hors liste
 (journalisé comme incident de sécurité, worker tué).
+
+### 4.1 Relais `signed_request` en parties (révisé après L05, 2026-11-20)
+
+Un corps de requête ou de réponse dépasse vite la charge maximale d'une trame (l'historique va
+jusqu'à 8 Mio, 09 §4). Source : `crates/runtime-protocol/src/pipe.rs:600-760`,
+`crates/supervisor/src/workers.rs:420-540`, `docs/journal.md` (L05, correction 2).
+
+- **Parties** : un corps est envoyé en plusieurs trames de même `id`, `part` = 0, 1, 2… (absent = 0),
+  la dernière avec `last = true` (absent = vrai), de **≤ 512 Kio bruts** chacune (`RELAY_CHUNK_BYTES`) ;
+  `method`, `path`, `withAuth` (requête) ou `status`, `headers` (réponse) sont répétés à l'identique.
+  Une partie hors ordre, illisible ou changeant `method` / `path` / `withAuth` → réponse d'échec
+  `relay_bad_part`. Corps maximal : 8 Mio + 64 Kio (requête), 9 Mio (réponse) ; au-delà
+  `relay_too_large`.
+- **Réponse d'échec** : `status = 0` et `error` = code machine, sans corps. Codes `relay_*` :
+  `relay_refused` (requête refusée **localement** : chemin non conforme ou dont la forme envoyée
+  diffère de la forme signée), `relay_busy` (trop de requêtes en vol ou de corps en réassemblage),
+  `relay_too_large` (aussi : réponse de l'API illisible ou trop grande), `relay_bad_part`, `relay_network` (échec réseau ou délai ; une réponse HTTP d'erreur de l'API n'est pas un échec : son `status` et son corps sont relayés), `relay_rate_limited`
+  (débit dépassé : alors `status = 429` et corps `{"error":"rt_rate_limited"}`, **sans appel** à l'API).
+  `headers` est réduit à `content-type`.
+- **Bornes** : au plus **4** requêtes en vol par worker et **8** pour tout le runtime (au-delà :
+  `status = 0`, `relay_busy`) ; 2 corps en réassemblage par worker ; débit de 09 §2. Un refus
+  `relay_*` **ne ferme pas** le pipe (seul un chemin hors liste tue le worker).
+- Autres incidents qui tuent le worker (journalisés, sans contenu) : évènement `event` mal formé,
+  hors d'ordre (`epoch` ≠ celui du bail, ou `seq` non croissant) ou de plus de 1 Mio.
+
+### 4.2 `snapshot_request` / `snapshot` (révisé après L05, 2026-11-20)
+
+Quand un client se reconnecte hors du tampon de rejeu (05 §3), le superviseur répond
+`ready { mode: "snapshot" }` **seulement si** la demande est réellement partie : il envoie au worker
+`snapshot_request { requestId }` (identifiant propre à la connexion) ; sinon (canal plein, worker pas
+démarré) il répond `ready { mode: "reload" }`. Le worker répond par `snapshot { requestId, event }`.
+Le superviseur ne peut pas fabriquer la trame lui-même : `state` est chiffré par `CK` (05 §4) que
+seul le worker détient. Une trame de plus de 1 Mio est remplacée par `ready { mode: "reload" }`
+(05 §2). Source : `crates/supervisor/src/client_ws.rs:ready_plan`, `register` ; `workers.rs:341-364` ;
+`docs/journal.md` (L05, écart 2, correction 10). Décision de l'orchestrateur : acceptés.
 
 ## 5. Métriques (sans contenu, P9)
 

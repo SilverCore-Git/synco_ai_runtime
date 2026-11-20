@@ -142,3 +142,53 @@ effacées au désappairage, `AUTH` mal formé dans la chaîne signée → tests 
 `wss://` derrière un mandataire avec certificat reconnu ; unité systemd avec
 `LoadCredentialEncrypted=` ; saisie de la phrase de passe au terminal ; reconnexion et `4409` avec deux
 instances ; arrêt `SIGTERM` avec un vrai worker (L06/L07) ; TPM2 sans `--user`.
+
+### 2026-11-20 — L05, corrections après relecture indépendante
+
+**Corrigé** (un commit par point, chacun avec son test) :
+
+1. Mandat vérifié **uniquement** avec la clé de signature épinglée courante (ou l'aboutissement
+   d'une chaîne valide partant d'elle), jamais une clé précédente. Une délégation ouverte avant une
+   rotation reste en mémoire jusqu'à `exp` ; après redémarrage elle est `unusable` et le client la
+   renouvelle (P11).
+2. Relais `signed_request` : corps de requête et de réponse en parties de ≤ 512 Kio (`part`,
+   `last`), ≤ 4 requêtes en vol par worker et 8 pour le runtime (`status = 0`, code `relay_busy`),
+   pipe jamais fermé sur une trame refusée.
+3. Délégation révoquée ou d'un appairage précédent jamais réinstallée : génération d'appairage et
+   ensemble des délégations révoquées vérifiés sous le verrou de l'installation, rechargements du
+   flux annulés en fin de session.
+4. `PR_SET_DUMPABLE=0` et `RLIMIT_CORE=0` avant le chargement des clés ; `mlock` impossible sans
+   `unsafe` (documenté : `MemorySwapMax=0` ou swap chiffré) ; unité systemd d'exemple durcie
+   (`crates/supervisor/systemd/`) et README du superviseur.
+5. Secrets lus sans réallocation (trames de clés, `systemd-creds decrypt`, phrase de passe) ;
+   `api_key_env` reste dans l'environnement (retrait = `unsafe` en Rust 2024) : préférer
+   `api_key_file`.
+6. Au plus 8 WebSocket sans `hello` vérifié par adresse et 256 au total ; `hello` en 5 s ;
+   `X-Forwarded-For` jamais lu au-delà de l'entrée la plus à droite.
+7. Écoute HTTP limitée à la boucle locale sauf `listen.allow_non_loopback_plain_http` ;
+   `--check-config` avertit des incohérences avec `trust_proxy_hops`.
+8. Clés remises seulement si la délégation n'est pas expirée ; `hello` du flux d'une autre org →
+   flux fermé ; aucun ticket accepté sans relecture réussie des clés depuis 1 h.
+9. `authorizations.json` purgé (`user.revoked`, `delegation.revoked`, expiration) et réconcilié à
+   chaque ouverture du flux par `GET /conversations/:sessionId`. **Besoin API** : une route
+   « autorisations actives de l'org pour ce runtime » éviterait un appel par conversation.
+10. `snapshot` annoncé seulement si la demande est partie (sinon `reload`), ≤ 1 Mio (sinon
+    `ready reload`) ; sans `resume`, rejeu depuis le début de l'époque.
+11. `passphrase_file` : fichier ordinaire, même propriétaire, `0600`/`0400` ; bornes Argon2id
+    (≤ 1 Gio, t ≤ 16, p ≤ 8) ; entrée de conversation retirée sur refus.
+
+**Décisions de l'orchestrateur** : pas de TLS natif en v1, mandataire inverse obligatoire (exemples
+Caddy et nginx dans `crates/supervisor/README.md`) ; persistance des autorisations acceptée avec la
+réconciliation du point 9 ; `snapshot_request` / `snapshot` acceptés.
+
+**Rappels pour L06** : lancer chaque worker par `fork` + `exec`, jamais un `fork` seul d'un processus
+tokio qui détient des clés ; vider l'environnement des workers (`env_clear`) ; l'unité systemd
+d'exemple n'a ni `RestrictNamespaces=` ni `SystemCallFilter=` (à décider avec le bac à sable),
+`Delegate=` sera nécessaire pour les cgroups.
+
+**Écarts à reporter dans docs/plan (liste à jour)** : ceux de l'entrée L05 ci-dessus, plus :
+06 §4 relais en parties (`part`, `last`, `error` quand `status = 0` : `relay_refused`,
+`relay_busy`, `relay_too_large`, `relay_bad_part`, `relay_network`, `relay_rate_limited`), bornes
+4 / 8 en vol ; 05 §1 délai du `hello` 5 s et plafonds de connexions non authentifiées (429) ;
+05 §3 ordre `snapshot` / évènements en direct et repli `reload` ; 03 §4 vérification du mandat avec
+la seule clé courante (remplace le point 9 de la liste précédente).

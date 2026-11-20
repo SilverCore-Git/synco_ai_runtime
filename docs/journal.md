@@ -192,3 +192,56 @@ d'exemple n'a ni `RestrictNamespaces=` ni `SystemCallFilter=` (à décider avec 
 4 / 8 en vol ; 05 §1 délai du `hello` 5 s et plafonds de connexions non authentifiées (429) ;
 05 §3 ordre `snapshot` / évènements en direct et repli `reload` ; 03 §4 vérification du mandat avec
 la seule clé courante (remplace le point 9 de la liste précédente).
+
+## 2026-11-20 — L06 : bac à sable des workers
+
+**Branche** : `syncoai/L06-bac-a-sable` (depuis `feature/syncoai-refonte` à `30f2fbc`).
+
+**Fait** (conception : `docs/plan/10-bac-a-sable.md`) :
+
+- `crates/supervisor/src/sandbox/` : `SandboxLauncher` (implémente `WorkerLauncher`), lancement par
+  `fork` + `exec` du binaire du superviseur en deux étapes (`__sandbox-helper`, `__sandbox-worker`),
+  environnement vidé, pipe seul (stdin → descripteur 3), espaces de noms user/pid/mount/net/ipc/
+  uts/cgroup, racine `tmpfs` vide en lecture seule, capacités retirées, `no_new_privs`, landlock,
+  seccomp (fatals + liste blanche, défaut `ENOSYS`), cgroup v2 par worker (`memory.max`,
+  `memory.swap.max = 0`, `memory.oom.group`, `pids.max`, `cpu.max`, `cgroup.kill`, compteurs) ;
+  mandataire LLM par worker (socket Unix, clé ajoutée par le superviseur, sans redirection) ;
+  autotest (`sandbox-check`) ; sonde au démarrage et refus de démarrer, `--insecure-no-sandbox`.
+- `unsafe` : un seul bloc (`unshare_unsafe`) dans `sandbox/sys.rs` ; workspace en `deny`, chaque
+  autre crate garde `#![forbid(unsafe_code)]`, `tests/unsafe_scope.rs` le vérifie.
+- `crates/worker` : `entry::run` (point d'entrée isolé, fd 3) et `llm` (client `hyper` du
+  mandataire, pour L07) ; le binaire autonome n'est plus utilisé.
+- `WorkerSpec.allowed_hosts` remplacé par `llm: Option<LlmRoute>` ; `WorkerLauncher::
+  injects_llm_credentials` : avec le bac à sable, aucune clé LLM ne passe par le pipe.
+- Configuration `[sandbox]` (`cgroup_root`, `run_dir`) ; unité systemd : `Delegate=yes`,
+  `ProtectControlGroups=private`, `RestrictNamespaces=`, `SystemCallFilter=`.
+
+**Dépendances ajoutées** (épinglées, dates crates.io) : landlock 0.4.7 (2026-07-27), seccompiler
+0.5.0 (2025-03-07), enumflags2 / enumflags2_derive 0.7.12 (2025-06-09, transitive de landlock).
+Déjà au `Cargo.lock`, désormais directes : libc 0.2.191, hyper 1.12.0, hyper-util 0.1.21,
+http-body-util 0.1.5, bytes 1.12.1. Fonctions `rustix` ajoutées : `mount`, `thread`, `system`,
+`stdio`, `fs`, `net`.
+
+**Vérifié** : `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo fmt --check` (flatpak) ; sur l'hôte (`host-spawn sh crates/supervisor/tests/sandbox-host.sh`,
+noyau 7.2.15) : 8 tests de `tests/sandbox.rs` (tentatives d'évasion, témoin qui survit à l'OOM, à la
+boucle de fils et à l'appel fatal d'un autre worker, couches indépendantes, mandataire, coût) et
+l'aller-retour complet avec un worker isolé ; `sandbox-check` en scope délégué et dans une unité
+utilisateur transitoire avec tout le durcissement de l'unité d'exemple. Mutations : `memory.max` /
+`pids.max` non écrits → `sandbox-check` en échec ; couches retirées → évasion constatée.
+Coût (`--release`) : 3,9 ms du lancement à `ready`, ≈ 1,3 Mio facturés au cgroup, PSS 4,6 Mio.
+
+**Écarts avec docs/plan (à reporter)** :
+1. 09 §2 : `memory.high` non appliqué (sans swap, il bloque le worker au lieu de le laisser être
+   tué) ; `worker_memory_high_mib` ignoré.
+2. 06 §2–§3.1 (D1) : la trame `llm_credential` n'est plus envoyée ; le mandataire ajoute la clé.
+   `net_request` / `net_response` n'existent pas : le réseau passe par le socket du mandataire.
+3. 06 §1 : le pipe arrive par stdin de l'assistant puis sur le descripteur 3 du worker ; le worker
+   est le binaire du superviseur, pas `synco-ai-runtime-worker`.
+4. 06 §6 : l'API n'est jamais jointe directement par le worker (seulement `signed_request`).
+5. Workers simultanés : comptage inchangé (L05) ; 2 processus par worker (assistant + worker) dans
+   `pids.max`.
+
+**Non vérifié (recette manuelle)** : unité systemd **système** (root) avec `Delegate=yes` et
+`ProtectControlGroups=private` ; conteneur Docker/Podman (L09) ; aarch64 ; vrai fournisseur LLM
+derrière le mandataire (L07) ; noyau sans landlock ou avec ABI < 6.

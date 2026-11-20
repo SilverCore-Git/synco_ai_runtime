@@ -23,6 +23,17 @@ use tokio::sync::Notify;
 const M1: &str = "3c2b1a09-8f7e-4d6c-9b5a-493827161504";
 const M2: &str = "4d3c2b1a-8f7e-4d6c-9b5a-493827161505";
 
+/// Identifiant de l'appel en attente (tiré par le worker, jamais celui du fournisseur).
+fn pending_id(api: &FakeApi) -> String {
+    let id = api.with(|st| st.pending["id"].as_str().unwrap().to_owned());
+    assert!(id.starts_with("call_") && id.len() == 29, "identifiant tiré par le worker : {id}");
+    id
+}
+
+fn confirm(api: &FakeApi, id: &str, decision: &str) {
+    api.deposit(&format!("confirm:{id}"), json!({ "t": "confirm", "toolCallId": id, "decision": decision }));
+}
+
 fn statuses(api: &FakeApi) -> Vec<String> {
     api.with(|st| st.statuses.iter().map(|(s, _)| s.clone()).collect())
 }
@@ -132,13 +143,18 @@ async fn outil_serveur_lecture_puis_ecriture_anticipee() {
     // Le modèle reçoit le résultat au tour suivant.
     let second = &llm.requests()[1];
     let tool_msg = second["messages"].as_array().unwrap().iter().find(|m| m["role"] == "tool").unwrap();
-    assert_eq!(tool_msg["tool_call_id"], "call_1");
+    // Identifiant tiré par le worker, cohérent entre l'appel et son résultat.
+    let first = msgs[1]["toolCalls"][0]["id"].clone();
+    assert_ne!(first, "call_1");
+    assert_eq!(tool_msg["tool_call_id"], first);
+    assert_eq!(second["messages"][2]["tool_calls"][0]["id"], first);
+    let call2 = msgs[3]["toolCalls"][0]["id"].clone();
     // Évènements tool_call (executing → done) et tool_result, arguments chiffrés.
     let ev = peer.events();
-    let tc: Vec<&Value> = ev.iter().filter(|e| e["t"] == "tool_call" && e["toolCallId"] == "call_2").collect();
+    let tc: Vec<&Value> = ev.iter().filter(|e| e["t"] == "tool_call" && e["toolCallId"] == call2).collect();
     assert_eq!(tc.iter().map(|e| e["status"].as_str().unwrap()).collect::<Vec<_>>(), ["executing", "done"]);
     assert!(tc[0]["args"].as_str().unwrap().starts_with("gcm1:"));
-    assert!(ev.iter().any(|e| e["t"] == "tool_result" && e["toolCallId"] == "call_2"));
+    assert!(ev.iter().any(|e| e["t"] == "tool_result" && e["toolCallId"] == call2));
 }
 
 #[tokio::test]
@@ -153,7 +169,6 @@ async fn confirmation_acceptee_refusee_et_interdite() {
     api.with(|st| {
         assert_eq!(st.status, "awaiting_confirmation");
         assert!(st.tool_runs.is_empty(), "rien n'est exécuté avant la décision");
-        assert_eq!(st.pending["id"], "call_1");
         assert!(st.pending["args"].as_str().unwrap().starts_with("gcm1:"));
         assert_eq!(st.pushes, ["AI_AWAITING_CONFIRMATION"]);
         assert!(st.lease_released);
@@ -165,13 +180,14 @@ async fn confirmation_acceptee_refusee_et_interdite() {
         st.lease_epoch = 2;
         st.status = "queued".into();
     });
-    api.deposit("confirm:call_1", json!({ "t": "confirm", "toolCallId": "call_1", "decision": "accept" }));
+    let p1 = pending_id(&api);
+    confirm(&api, &p1, "accept");
     llm.push(Script::ok(sse_tool("call_2", "delete_task", &json!({ "taskId": "t9" }), (10, 3))));
     let (peer, _t) = spawn_worker(&api, &llm, init(2), default_keys(false));
     assert_eq!(peer.wait_done().await, DoneReason::Awaiting);
     api.with(|st| {
         assert_eq!(st.tool_runs, [("create_task".to_owned(), json!({ "title": "Rapport" }))]);
-        assert_eq!(st.pending["id"], "call_2");
+        assert_ne!(st.pending["id"], p1.as_str());
         assert!(st.events.is_empty());
     });
     assert!(peer.events().iter().all(|e| e["epoch"] == 2));
@@ -181,7 +197,8 @@ async fn confirmation_acceptee_refusee_et_interdite() {
         st.lease_epoch = 3;
         st.status = "queued".into();
     });
-    api.deposit("confirm:call_2", json!({ "t": "confirm", "toolCallId": "call_2", "decision": "reject" }));
+    let p2 = pending_id(&api);
+    confirm(&api, &p2, "reject");
     llm.push(Script::ok(sse_tool("call_3", "delete_task", &json!({ "taskId": "t9" }), (10, 3))));
     llm.push(Script::ok(sse_text(&["Bien, je n'ai rien supprimé."], (10, 3))));
     let mut ini = init(3);
@@ -356,11 +373,12 @@ async fn question_interactive_puis_reponse() {
         assert_eq!(st.pushes, ["AI_AWAITING_USER"]);
     });
     // Réponse chiffrée (AAD __answer__:answer:<toolCallId>).
+    let q = pending_id(&api);
     let value = synco_e2ee::session::encrypt_field(
         &ck(),
         SID,
         "__answer__",
-        &synco_e2ee::session::FieldName::Answer("call_q".into()),
+        &synco_e2ee::session::FieldName::Answer(q.clone()),
         "Chaque lundi",
         &mut synco_e2ee::OsRandom,
     )
@@ -371,7 +389,7 @@ async fn question_interactive_puis_reponse() {
     });
     // Une décision qui ne correspond à rien : consommée, `stale_decision`.
     api.deposit("confirm:call_x", json!({ "t": "confirm", "toolCallId": "call_x", "decision": "accept" }));
-    api.deposit("answer:call_q", json!({ "t": "answer", "toolCallId": "call_q", "value": value }));
+    api.deposit(&format!("answer:{q}"), json!({ "t": "answer", "toolCallId": q, "value": value }));
     llm.push(Script::ok(sse_text(&["Noté : chaque lundi."], (10, 3))));
     let mut ini2 = ini;
     ini2.lease_epoch = 2;
@@ -819,7 +837,8 @@ async fn confirmation_d_un_autre_appel_et_deny_reverifie() {
     let (peer, _t) = spawn_worker(&api, &llm, init(1), default_keys(false));
     assert_eq!(peer.wait_done().await, DoneReason::Awaiting);
 
-    // Confirmation d'un autre appel : périmée, rien d'exécuté, toujours en attente de call_1.
+    // Confirmation d'un autre appel : périmée, rien d'exécuté, toujours en attente du premier.
+    let p1 = pending_id(&api);
     api.with(|st| {
         st.lease_epoch = 2;
         st.status = "queued".into();
@@ -831,7 +850,7 @@ async fn confirmation_d_un_autre_appel_et_deny_reverifie() {
     api.with(|st| {
         assert!(st.tool_runs.is_empty());
         assert_eq!(st.status, "awaiting_confirmation");
-        assert_eq!(st.pending["id"], "call_1");
+        assert_eq!(st.pending["id"], p1.as_str());
         assert!(st.inbox.iter().all(|i| i.2), "décision périmée consommée");
     });
     assert_eq!(llm.requests().len(), 1);
@@ -842,7 +861,7 @@ async fn confirmation_d_un_autre_appel_et_deny_reverifie() {
         st.lease_epoch = 3;
         st.status = "queued".into();
     });
-    api.deposit("confirm:call_1", json!({ "t": "confirm", "toolCallId": "call_1", "decision": "accept" }));
+    confirm(&api, &p1, "accept");
     llm.push(Script::ok(sse_text(&["Interdit par l'organisation."], (10, 3))));
     let mut ini = init(3);
     ini.tool_policy = policy(&[("create_task", ToolPolicy::Deny)]);
@@ -907,4 +926,30 @@ async fn create_thread_cles_courtes_et_trop_de_destinataires() {
     api.with(|st| assert!(st.threads_created.is_empty()));
     let msgs = api.clear_messages();
     assert_eq!(msgs.iter().find(|m| m["role"] == "tool").unwrap()["toolResult"]["error"], "too_many_recipients");
+}
+
+/// M5 : arguments tronqués (`finish_reason: length`) : outil jamais exécuté, erreur au modèle.
+#[tokio::test]
+async fn arguments_tronques_jamais_executes() {
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.deposit_message(M1, "Crée la tâche");
+    let chunks = vec![
+        format!(
+            "data: {}\n\n",
+            json!({ "choices": [{ "index": 0, "delta": { "tool_calls": [{ "index": 0, "id": "x", "type": "function",
+                "function": { "name": "create_task", "arguments": "{\"title\":\"Rapp" } }] }, "finish_reason": "length" }] })
+        ),
+        "data: [DONE]\n\n".to_owned(),
+    ];
+    llm.push(Script::ok(chunks));
+    llm.push(Script::ok(sse_text(&["Je recommence."], (10, 3))));
+    let mut ini = init(1);
+    ini.tool_policy = policy(&[("create_task", ToolPolicy::Auto)]);
+    let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Idle);
+    api.with(|st| assert!(st.tool_runs.is_empty()));
+    let msgs = api.clear_messages();
+    assert_eq!(msgs[1]["toolCalls"][0]["status"], "error");
+    assert_eq!(msgs[2]["toolResult"], json!({ "error": "invalid_tool_arguments" }));
 }

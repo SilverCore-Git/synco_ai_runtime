@@ -1234,17 +1234,21 @@ impl Agent {
         let has_call = call.is_some();
         m.content = if has_call && text.is_empty() { None } else { Some(text) };
         if let Some(c) = call {
-            let id = if runtime_protocol::ids::is_identifier(&c.id) { c.id } else { call_id() };
-            let arguments =
-                serde_json::from_str::<Value>(&c.arguments).ok().filter(Value::is_object).unwrap_or_else(|| json!({}));
+            // Identifiant toujours tiré par le worker (jamais celui du fournisseur, qui entre dans les
+            // AAD, les ids de boîte et les journaux) : l'historique renvoyé au fournisseur porte le
+            // même identifiant dans l'appel et dans son résultat.
+            let id = call_id();
+            // Arguments illisibles (JSON tronqué par `finish_reason: length`, non objet) : l'appel
+            // n'est jamais exécuté, le modèle reçoit une erreur.
+            let parsed = serde_json::from_str::<Value>(&c.arguments).ok().filter(Value::is_object);
             let spec = self.spec(&c.name).cloned();
             m.tool_calls.push(ToolCall {
                 id,
                 name: c.name,
-                arguments,
+                status: if parsed.is_some() { ToolStatus::Pending } else { ToolStatus::Error },
+                arguments: parsed.unwrap_or_else(|| json!({})),
                 category: spec.as_ref().map_or_else(|| "server".to_owned(), |s| s.category.clone()),
                 mutating: spec.as_ref().is_none_or(|s| s.mutating),
-                status: ToolStatus::Pending,
             });
         }
         self.messages.push(m);
@@ -1261,6 +1265,11 @@ impl Agent {
         let Some(tc) = self.messages.get(idx).and_then(|m| m.tool_calls.first()).cloned() else {
             return Ok(Flow::Continue);
         };
+        if tc.status == ToolStatus::Error {
+            self.close_call(&tc.id, &tc.name, ToolStatus::Error, json!({ "error": "invalid_tool_arguments" })).await?;
+            self.persist("running", None).await?;
+            return Ok(Flow::Continue);
+        }
         let spec = self.spec(&tc.name).cloned();
         match tools::decide(spec.as_ref(), &self.init.tool_policy) {
             Decision::Unknown => {

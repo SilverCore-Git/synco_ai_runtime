@@ -324,8 +324,20 @@ async fn mandataire_llm_injecte_la_cle() {
     assert!(!r.line.contains("forge"), "{}", r.line);
     let g = l.run_case("proxy", args("GET", "/models"), &limits(), route("gateway"), vec![], t).await.unwrap();
     assert!(g.line.contains("data: Bearer forge-par-le-worker"), "{}", g.line);
-    let bad = l.run_case("proxy", args("GET", "/v1/../admin"), &limits(), route("openai"), vec![], t).await.unwrap();
-    assert!(bad.line.contains("status=400") && bad.line.contains("proxy_path"), "{}", bad.line);
+    // I2 : hors de la liste (méthode, chemin), refus sans appel au fournisseur.
+    for (m, p) in [
+        ("GET", "/files"),
+        ("GET", "/files/file-abc/content"),
+        ("GET", "/chat/completions?limit=100"),
+        ("POST", "/chat/completions?x=1"),
+        ("GET", "/organization/users"),
+        ("GET", "/./files"),
+        ("GET", "/v1/../admin"),
+        ("POST", "/models"),
+    ] {
+        let bad = l.run_case("proxy", args(m, p), &limits(), route("openai"), vec![], t).await.unwrap();
+        assert!(bad.line.contains("status=404") && bad.line.contains("proxy_path"), "{m} {p} : {}", bad.line);
+    }
     let delete = l.run_case("proxy", args("DELETE", "/models"), &limits(), route("openai"), vec![], t).await.unwrap();
     assert!(delete.line.contains("status=405"), "{}", delete.line);
     let seen = seen.lock().unwrap().clone();

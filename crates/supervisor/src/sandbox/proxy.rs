@@ -5,6 +5,8 @@
 //! du fournisseur **de cette conversation** (et d'aucun autre hôte), en TLS, sans suivre de
 //! redirection, et :
 //!
+//! - n'accepte que `POST` du chemin de chat et `GET` de la liste des modèles ([`allowed_request`]),
+//!   sans chaîne de requête (I2) ;
 //! - pour `openai`, `mistral`, `gemini`, `custom` : retire tout `authorization` du worker et ajoute
 //!   `Authorization: Bearer <clé>` depuis la configuration du runtime (D1) ; la clé ne passe jamais
 //!   par le pipe ni par le worker ;
@@ -152,15 +154,14 @@ pub fn base_url_allowed(url: &str) -> bool {
     })
 }
 
-/// Chemin demandé par le worker (suffixe de l'URL de base) : ASCII visible, commence par `/`, sans
-/// `..`, `//`, `%`, `#`, `\`.
+/// Couples (méthode, chemin) admis pour un fournisseur (I2) : chat et liste des modèles, chemins
+/// relatifs à l'URL de base, **sans** chaîne de requête. API compatibles OpenAI : `POST
+/// /chat/completions`, `GET /models` ; passerelle Synco : `POST /v1/chat/completions`, `GET /models`
+/// (`Synco_AI_Gateway/src/app.rs`).
 #[must_use]
-pub fn path_allowed(path: &str) -> bool {
-    path.starts_with('/')
-        && path.len() <= 2048
-        && !path.contains("..")
-        && !path.contains("//")
-        && path.bytes().all(|b| b.is_ascii_graphic() && !b"%#\\".contains(&b))
+pub fn allowed_request(provider: &str, method: &Method, path_and_query: &str) -> bool {
+    let chat = if provider == "gateway" { "/v1/chat/completions" } else { "/chat/completions" };
+    (method == Method::POST && path_and_query == chat) || (method == Method::GET && path_and_query == "/models")
 }
 
 fn refuse(status: StatusCode, code: &'static str) -> Response {
@@ -237,8 +238,8 @@ async fn handle(
         return refuse(StatusCode::METHOD_NOT_ALLOWED, "proxy_method");
     }
     let path = uri.path_and_query().map_or("/", |p| p.as_str());
-    if !path_allowed(path) {
-        return refuse(StatusCode::BAD_REQUEST, "proxy_path");
+    if !allowed_request(&ctx.route.provider, &method, path) {
+        return refuse(StatusCode::NOT_FOUND, "proxy_path");
     }
     let Ok(permit) = Arc::clone(&ctx.in_flight).try_acquire_owned() else {
         return refuse(StatusCode::TOO_MANY_REQUESTS, "proxy_busy");
@@ -327,6 +328,28 @@ mod tests {
     }
 
     #[test]
+    fn requetes_admises() {
+        assert!(allowed_request("openai", &Method::POST, "/chat/completions"));
+        assert!(allowed_request("openai", &Method::GET, "/models"));
+        assert!(allowed_request("gateway", &Method::POST, "/v1/chat/completions"));
+        assert!(!allowed_request("gateway", &Method::POST, "/chat/completions"));
+        for (m, p) in [
+            (Method::GET, "/files"),
+            (Method::GET, "/files/abc/content"),
+            (Method::GET, "/chat/completions?limit=100"),
+            (Method::GET, "/chat/completions"),
+            (Method::GET, "/organization/users"),
+            (Method::GET, "/./files"),
+            (Method::POST, "/models"),
+            (Method::GET, "/models?x=1"),
+            (Method::POST, "/chat/completions/"),
+            (Method::POST, "//chat/completions"),
+        ] {
+            assert!(!allowed_request("openai", &m, p), "{m} {p}");
+        }
+    }
+
+    #[test]
     fn urls_et_chemins() {
         assert!(base_url_allowed("https://api.openai.com/v1"));
         assert!(base_url_allowed("http://127.0.0.1:8080/v1"));
@@ -335,10 +358,5 @@ mod tests {
         assert!(!base_url_allowed("https://api.openai.com/v1?x=1"));
         assert!(!base_url_allowed("file:///etc/passwd"));
         assert!(!base_url_allowed(""));
-        assert!(path_allowed("/chat/completions"));
-        assert!(path_allowed("/models?limit=10"));
-        for bad in ["chat", "/../x", "//evil.example.com/x", "/a%2e%2e", "/a#b", "/a b", "/a\\b"] {
-            assert!(!path_allowed(bad), "{bad}");
-        }
     }
 }

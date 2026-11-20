@@ -161,33 +161,50 @@ async fn register(
     }
     let mut needs_head = None;
     if let WorkerState::Running(w) = &conv.worker {
-        let replay =
-            resume.and_then(|r| (r.epoch == w.epoch).then(|| conv.buffer.replay_after(r.epoch, r.seq)).flatten());
-        let (mode, frames) = match replay {
-            Some(frames) => (ReadyMode::Replay, frames),
-            None => (ReadyMode::Snapshot, vec![]),
-        };
+        let (mut mode, frames) = ready_plan(resume, w.epoch, &conv.buffer, w.started);
+        if mode == ReadyMode::Snapshot {
+            // `snapshot` annoncé seulement si la demande est réellement partie vers le worker.
+            let request_id = format!("c{id}");
+            let request =
+                ToWorker::Json(SupervisorMsg::SnapshotRequest(SnapshotRequest { request_id: request_id.clone() }));
+            if w.tx.try_send(request).is_ok() {
+                conv.snapshots.insert(request_id, id);
+            } else {
+                mode = ReadyMode::Reload;
+            }
+        }
         let ready = Ready { status: conv.status.clone(), rev: 0, epoch: w.epoch, last_seq: w.last_seq, mode };
         let _ = tx.try_send(ClientOut::Text(Arc::from(ready.to_frame())));
         for f in frames {
             let _ = tx.try_send(ClientOut::Text(f));
-        }
-        if mode == ReadyMode::Snapshot && w.started {
-            let request_id = format!("c{id}");
-            if w.tx
-                .try_send(ToWorker::Json(SupervisorMsg::SnapshotRequest(SnapshotRequest {
-                    request_id: request_id.clone(),
-                })))
-                .is_ok()
-            {
-                conv.snapshots.insert(request_id, id);
-            }
         }
     } else {
         needs_head = Some(conv.status.clone());
     }
     conv.clients.push(ClientSlot { id, user_id: user_id.to_owned(), tx });
     Ok((id, auth.auth_id, needs_head))
+}
+
+/// Mode de `ready` quand un worker tourne (05 §3) :
+/// - `replay` si le tampon contient toute la suite depuis la position du client (sans `resume`,
+///   depuis le début de l'époque courante) ;
+/// - sinon `snapshot` si le worker a démarré (la demande lui sera envoyée). Ordre côté client : il
+///   peut recevoir des évènements en direct **avant** le `snapshot` ; il les garde en tampon et
+///   n'applique que ceux dont `seq` est supérieur à celui du `snapshot` ;
+/// - sinon `reload` (relire l'historique puis se reconnecter).
+#[must_use]
+pub fn ready_plan(
+    resume: Option<Resume>,
+    epoch: u64,
+    buffer: &crate::state::ReplayBuffer,
+    started: bool,
+) -> (ReadyMode, Vec<Arc<str>>) {
+    let from = resume.unwrap_or(Resume { epoch, seq: 0 });
+    match (from.epoch == epoch).then(|| buffer.replay_after(epoch, from.seq)).flatten() {
+        Some(frames) => (ReadyMode::Replay, frames),
+        None if started => (ReadyMode::Snapshot, vec![]),
+        None => (ReadyMode::Reload, vec![]),
+    }
 }
 
 async fn unregister(rt: &Arc<Runtime>, session_id: &str, client_id: u64) {
@@ -308,6 +325,21 @@ async fn forward_or_launch(rt: &Arc<Runtime>, session_id: &str, body: serde_json
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mode_de_ready() {
+        let mut b = crate::state::ReplayBuffer::new(2, 1 << 20);
+        for seq in 1..=3 {
+            b.push(5, seq, Arc::from("e"));
+        }
+        // Tampon : 2 et 3.
+        assert_eq!(ready_plan(Some(Resume { epoch: 5, seq: 2 }), 5, &b, true).0, ReadyMode::Replay);
+        assert_eq!(ready_plan(Some(Resume { epoch: 5, seq: 0 }), 5, &b, true).0, ReadyMode::Snapshot);
+        assert_eq!(ready_plan(None, 5, &b, false).0, ReadyMode::Reload, "pas de snapshot sans worker démarré");
+        assert_eq!(ready_plan(Some(Resume { epoch: 4, seq: 9 }), 5, &b, false).0, ReadyMode::Reload);
+        let fresh = crate::state::ReplayBuffer::new(10, 1 << 20);
+        assert_eq!(ready_plan(None, 5, &fresh, false), (ReadyMode::Replay, vec![]), "rien n'a encore été émis");
+    }
 
     #[test]
     fn cles_de_tickets_perimees_apres_une_heure() {

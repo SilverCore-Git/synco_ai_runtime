@@ -343,7 +343,22 @@ async fn on_worker_msg(
             let mut st = rt.state.lock().await;
             let Some(conv) = st.convs.get_mut(session) else { return Ok(()) };
             if let Some(client) = conv.snapshots.remove(&s.request_id) {
-                let frame: Arc<str> = Arc::from(s.event.to_string());
+                let mut frame: Arc<str> = Arc::from(s.event.to_string());
+                // 05 §2 : un `snapshot` de plus de 1 Mio est remplacé par `ready { mode: "reload" }`.
+                if frame.len() > runtime_protocol::client::MAX_RUNTIME_FRAME_BYTES {
+                    let (epoch, last_seq) = match &conv.worker {
+                        WorkerState::Running(w) => (w.epoch, w.last_seq),
+                        _ => (0, 0),
+                    };
+                    let ready = runtime_protocol::client::Ready {
+                        status: conv.status.clone(),
+                        rev: 0,
+                        epoch,
+                        last_seq,
+                        mode: runtime_protocol::client::ReadyMode::Reload,
+                    };
+                    frame = Arc::from(ready.to_frame());
+                }
                 if let Some(c) = conv.clients.iter().find(|c| c.id == client) {
                     let _ = c.tx.try_send(crate::state::ClientOut::Text(frame));
                 }

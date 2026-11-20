@@ -105,3 +105,38 @@ Sans mot de passe, le dashboard ne démarre pas (le journal l'indique). Il écou
 dans `dashboard.allowed_hosts`. L'historique est dans `<state_dir>/dashboard/` (JSONL) et conservé
 `dashboard.retention_days` jours (défaut 90). Redémarrer le runtime après avoir défini le mot de
 passe la première fois ; un changement ultérieur est pris en compte à chaud (sessions fermées).
+
+### Derrière nginx ou Caddy
+
+Par défaut (`dashboard.trust_proxy_hops = 0`) le dashboard ignore `X-Forwarded-For` et
+`X-Forwarded-Proto` : sur une connexion directe, ils sont forgeables. Derrière **un** mandataire
+TLS, mettre `trust_proxy_hops = 1`, déclarer le nom dans `allowed_hosts`, et faire que le mandataire
+**écrase** ces en-têtes (jamais de transmission de ceux du client).
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name runtime-admin.example.com;
+    location / {
+        proxy_pass http://127.0.0.1:8791;
+        proxy_set_header Host $host;                      # contrôlé par allowed_hosts
+        proxy_set_header X-Forwarded-For $remote_addr;    # écrase, n'ajoute pas
+        proxy_set_header X-Forwarded-Proto $scheme;       # cookie Secure
+    }
+}
+```
+
+```caddy
+runtime-admin.example.com {
+    reverse_proxy 127.0.0.1:8791 {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}
+```
+
+```toml
+[dashboard]
+allowed_hosts = ["runtime-admin.example.com"]
+trust_proxy_hops = 1
+```

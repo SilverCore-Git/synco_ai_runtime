@@ -81,7 +81,7 @@ pub async fn start(rt: &Arc<Runtime>) -> std::io::Result<Option<Started>> {
         Arc::clone(&auth),
         source,
         rt.config.dashboard.allowed_hosts.clone(),
-        rt.config.listen.trust_proxy_hops,
+        rt.config.dashboard.trust_proxy_hops,
         addr,
     );
     let mut shutdown = rt.shutdown.subscribe();

@@ -33,7 +33,7 @@ changement de mot de passe ferme toutes les sessions.
 - Jeton de 32 octets aléatoires (`OsRandom`) tiré **à chaque connexion** (pas de session avant la
   connexion : aucune fixation possible) ; le serveur ne garde que son SHA-256. Cookie `synco_dash` :
   `HttpOnly; SameSite=Strict; Path=/`, plus `Secure` quand la requête est arrivée en HTTPS
-  (`X-Forwarded-Proto: https` lu seulement si `trust_proxy_hops > 0`).
+  (`X-Forwarded-Proto: https` lu seulement si `dashboard.trust_proxy_hops > 0`).
 - Durée : 30 min d'inactivité, 12 h au maximum ; 16 sessions simultanées au plus. Déconnexion =
   suppression côté serveur.
 - **CSRF** : `SameSite=Strict`, plus contrôle de `Origin` (doit correspondre à `Host`) sur toute
@@ -44,11 +44,24 @@ changement de mot de passe ferme toutes les sessions.
 
 ## 3. Force brute
 
-Connexion : corps JSON ≤ 1 Kio. Une vérification Argon2 à la fois (sémaphore) ; avant chaque
-vérification, deux fenêtres : **5 échecs / 15 min par adresse** et **20 échecs / 15 min au total** ;
-au-delà `429` + `Retry-After`, sans vérifier le mot de passe. Un échec ne dit rien de plus qu'un
-autre (`invalid_credentials`). Limite assumée : un attaquant peut épuiser la fenêtre globale et
-retarder la connexion de l'admin de 15 min ; les sessions ouvertes restent valides.
+Connexion : corps JSON ≤ 1 Kio. Une vérification Argon2 à la fois (sémaphore). Avant chaque
+vérification :
+
+- **limite stricte par adresse réelle** : 5 échecs / 15 min, au-delà `429` + `Retry-After` sans
+  vérifier le mot de passe (même le bon). Les adresses IPv6 comptent par préfixe /64. L'adresse est
+  celle de la connexion TCP ; `X-Forwarded-For` n'est lu que si `dashboard.trust_proxy_hops > 0`
+  (défaut **0**, réglage distinct de `listen.trust_proxy_hops`, prévu pour le mandataire de
+  `public`), de même pour `X-Forwarded-Proto` ;
+- **ralentissement global, pas un refus** : à partir de 20 échecs en 15 min toutes adresses
+  confondues, une adresse *inconnue* ne peut déclencher qu'une vérification toutes les 5 s (les
+  autres reçoivent `429`). Les 8 dernières adresses qui ont ouvert une session sont **exemptées**
+  de ce ralentissement (jamais de la limite par adresse) : une attaque distribuée ne peut donc pas
+  enfermer l'admin dehors, elle ne fait que le ralentir de 5 s s'il se connecte d'une nouvelle
+  adresse.
+
+Un échec ne dit rien de plus qu'un autre (`invalid_credentials`). Limite assumée : un attaquant qui
+dispose de beaucoup d'adresses réelles garde un débit d'au plus une tentative toutes les 5 s une fois
+le seuil atteint (≈ 700 / h), contre un mot de passe Argon2id de 12 caractères minimum.
 
 ## 4. En-têtes et interface
 

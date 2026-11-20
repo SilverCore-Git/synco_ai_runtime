@@ -101,6 +101,11 @@ pub struct DashboardConfig {
     /// Noms d'hôte supplémentaires admis dans `Host` (mandataire inverse), `hôte` ou `hôte:port`.
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
+    /// Mandataires de confiance devant le dashboard (0 à 4) : adresse du client lue dans
+    /// `X-Forwarded-For` et protocole dans `X-Forwarded-Proto`. **Défaut 0** : ces en-têtes sont
+    /// ignorés (ils sont forgeables sur une connexion directe). Distinct de `listen.trust_proxy_hops`.
+    #[serde(default)]
+    pub trust_proxy_hops: usize,
 }
 
 const fn default_retention_days() -> u32 {
@@ -109,7 +114,7 @@ const fn default_retention_days() -> u32 {
 
 impl Default for DashboardConfig {
     fn default() -> Self {
-        Self { retention_days: default_retention_days(), allowed_hosts: Vec::new() }
+        Self { retention_days: default_retention_days(), allowed_hosts: Vec::new(), trust_proxy_hops: 0 }
     }
 }
 
@@ -372,6 +377,9 @@ impl Config {
             h.is_empty() || h.len() > 255 || !h.bytes().all(|b| b.is_ascii_alphanumeric() || b"-.:[]".contains(&b))
         }) {
             return Err(invalid("dashboard.allowed_hosts : noms d'hôte simples (lettres, chiffres, - . : [ ])"));
+        }
+        if self.dashboard.trust_proxy_hops > 4 {
+            return Err(invalid("dashboard.trust_proxy_hops : au plus 4"));
         }
         if self.listen.trust_proxy_hops > 4 {
             return Err(invalid("listen.trust_proxy_hops : au plus 4"));

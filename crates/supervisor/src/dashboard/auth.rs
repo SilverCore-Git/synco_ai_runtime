@@ -32,8 +32,13 @@ pub const MAX_SESSIONS: usize = 16;
 pub const FAILURE_WINDOW: Duration = Duration::from_secs(15 * 60);
 /// Échecs tolérés par adresse dans la fenêtre.
 pub const MAX_FAILURES_PER_IP: u32 = 5;
-/// Échecs tolérés au total dans la fenêtre.
+/// Échecs au total dans la fenêtre à partir desquels les adresses **inconnues** sont ralenties.
 pub const MAX_FAILURES_TOTAL: u32 = 20;
+/// Ralentissement global : une seule vérification pour une adresse inconnue toutes les N secondes.
+pub const GLOBAL_DELAY: Duration = Duration::from_secs(5);
+/// Adresses ayant déjà ouvert une session, exemptées du ralentissement global (jamais de la limite
+/// par adresse).
+pub const MAX_KNOWN_ADDRESSES: usize = 8;
 const MAX_TRACKED_IPS: usize = 10_000;
 
 #[derive(Serialize, Deserialize)]
@@ -50,6 +55,17 @@ struct PasswordDoc {
 
 fn cfg(msg: &str) -> Error {
     Error::Config(msg.to_owned())
+}
+
+/// Adresse IPv6 ramenée à son /64 (un client en contrôle des milliards) ; le reste inchangé.
+fn normalize_ip(ip: &str) -> String {
+    match ip.parse::<std::net::Ipv6Addr>() {
+        Ok(a) => {
+            let [s0, s1, s2, s3, ..] = a.segments();
+            format!("{s0:x}:{s1:x}:{s2:x}:{s3:x}::/64")
+        }
+        Err(_) => ip.to_owned(),
+    }
 }
 
 fn ct_eq(a: &[u8], b: &[u8]) -> bool {
@@ -113,6 +129,9 @@ struct Session {
 struct Failures {
     per_ip: HashMap<String, (Instant, u32)>,
     total: Option<(Instant, u32)>,
+    /// Prochaine vérification admise pour une adresse inconnue, une fois le seuil global atteint.
+    next_allowed: Option<Instant>,
+    known: Vec<String>,
 }
 
 impl Failures {
@@ -120,15 +139,36 @@ impl Failures {
         now.saturating_duration_since(start) < FAILURE_WINDOW
     }
 
-    /// Attente avant un nouvel essai, si une limite est atteinte.
+    /// Attente avant un nouvel essai si **cette adresse** a épuisé sa limite (refus strict).
     fn blocked(&self, ip: &str, now: Instant) -> Option<Duration> {
-        let wait = |(start, n): &(Instant, u32), max: u32| {
-            (Self::fresh(*start, now) && *n >= max)
-                .then(|| FAILURE_WINDOW.saturating_sub(now.saturating_duration_since(*start)))
-        };
-        let a = self.per_ip.get(ip).and_then(|e| wait(e, MAX_FAILURES_PER_IP));
-        let b = self.total.as_ref().and_then(|e| wait(e, MAX_FAILURES_TOTAL));
-        a.max(b)
+        let (start, n) = self.per_ip.get(ip)?;
+        (Self::fresh(*start, now) && *n >= MAX_FAILURES_PER_IP)
+            .then(|| FAILURE_WINDOW.saturating_sub(now.saturating_duration_since(*start)))
+    }
+
+    /// Ralentissement global : le seuil d'échecs est-il atteint ?
+    fn over_threshold(&self, now: Instant) -> bool {
+        self.total.as_ref().is_some_and(|(s, n)| Self::fresh(*s, now) && *n >= MAX_FAILURES_TOTAL)
+    }
+
+    /// Une adresse inconnue doit attendre ? Sinon réserve le créneau suivant.
+    fn slow_down(&mut self, ip: &str, now: Instant) -> Option<Duration> {
+        if !self.over_threshold(now) || self.known.iter().any(|k| k == ip) {
+            return None;
+        }
+        if let Some(next) = self.next_allowed.filter(|n| *n > now) {
+            return Some(next.saturating_duration_since(now));
+        }
+        self.next_allowed = Some(now.checked_add(GLOBAL_DELAY).unwrap_or(now));
+        None
+    }
+
+    fn remember(&mut self, ip: &str) {
+        self.known.retain(|k| k != ip);
+        self.known.push(ip.to_owned());
+        while self.known.len() > MAX_KNOWN_ADDRESSES {
+            self.known.remove(0);
+        }
     }
 
     fn record(&mut self, ip: &str, now: Instant) {
@@ -159,7 +199,7 @@ pub enum Login {
     },
     /// Mot de passe incorrect.
     Invalid,
-    /// Trop d'échecs : réessayer dans `n` secondes.
+    /// Trop d'échecs (limite de l'adresse) ou ralentissement global : réessayer dans `n` secondes.
     Limited(u64),
     /// Aucun mot de passe défini ou fichier illisible.
     Unavailable,
@@ -238,15 +278,26 @@ impl Auth {
             return Login::Unavailable;
         }
         let Ok(_permit) = self.verify.acquire().await else { return Login::Unavailable };
-        if let Some(wait) = lock(&self.failures).blocked(ip, now) {
-            return Login::Limited(wait.as_secs().max(1));
+        let ip = &normalize_ip(ip);
+        {
+            let mut f = lock(&self.failures);
+            if let Some(wait) = f.blocked(ip, now) {
+                return Login::Limited(wait.as_secs().max(1));
+            }
+            if let Some(wait) = f.slow_down(ip, now) {
+                return Login::Limited(wait.as_secs().saturating_add(1));
+            }
         }
         let ok = password.len() <= MAX_PASSWORD_BYTES && self.check_password(password).await;
         if !ok {
             lock(&self.failures).record(ip, now);
             return Login::Invalid;
         }
-        lock(&self.failures).per_ip.remove(ip);
+        {
+            let mut f = lock(&self.failures);
+            f.per_ip.remove(ip);
+            f.remember(ip);
+        }
         let (Some(token), Some(csrf)) = (random_token(32), random_token(16)) else { return Login::Unavailable };
         let mut sessions = lock(&self.sessions);
         sessions.retain(|_, s| Self::alive(s, now));
@@ -383,12 +434,40 @@ mod tests {
         assert!(matches!(a.login(PW, "8.8.8.8", t0).await, Login::Ok { .. }));
         // La fenêtre passée, l'adresse est de nouveau admise.
         assert!(matches!(a.login(PW, "9.9.9.9", t0 + FAILURE_WINDOW).await, Login::Ok { .. }));
-        // Fenêtre globale : de nombreuses adresses, chacune sous sa limite.
+    }
+
+    #[tokio::test]
+    async fn ralentissement_global_sans_blocage_de_l_admin() {
         let (_d, a) = setup();
+        let t0 = Instant::now();
+        // Première connexion de l'admin, avant l'attaque : son adresse devient « connue ».
+        assert!(matches!(a.login(PW, "198.51.100.1", t0).await, Login::Ok { .. }));
+        // Attaque : de nombreuses adresses, chacune sous sa limite, jusqu'au seuil global.
         for i in 0..MAX_FAILURES_TOTAL {
             assert_eq!(a.login("non", &format!("203.0.113.{i}"), t0).await, Login::Invalid);
         }
-        assert!(matches!(a.login(PW, "203.0.114.9", t0).await, Login::Limited(_)));
+        // Une adresse inconnue est ralentie (pas refusée pour 15 min) : elle passe après le délai.
+        assert!(matches!(a.login("non", "203.0.114.9", t0).await, Login::Invalid), "créneau pris par l'attaquant");
+        assert!(matches!(a.login(PW, "203.0.114.10", t0).await, Login::Limited(n) if n <= GLOBAL_DELAY.as_secs() + 1));
+        assert!(matches!(a.login(PW, "203.0.114.10", t0 + GLOBAL_DELAY).await, Login::Ok { .. }));
+        // L'attaque continue : l'admin, depuis son adresse connue, n'attend jamais.
+        for round in 0..5u64 {
+            let t = t0 + Duration::from_secs(round);
+            let _ = a.login("non", &format!("192.0.2.{round}"), t).await;
+            assert!(matches!(a.login(PW, "198.51.100.1", t).await, Login::Ok { .. }), "tour {round}");
+        }
+    }
+
+    #[tokio::test]
+    async fn ipv6_compte_par_prefixe_64() {
+        let (_d, a) = setup();
+        let t0 = Instant::now();
+        for i in 0..MAX_FAILURES_PER_IP {
+            let ip = format!("2001:db8:1:2:{i:x}::1");
+            assert_eq!(a.login("non", &ip, t0).await, Login::Invalid);
+        }
+        assert!(matches!(a.login(PW, "2001:db8:1:2:ffff::9", t0).await, Login::Limited(_)));
+        assert!(matches!(a.login(PW, "2001:db8:1:3::1", t0).await, Login::Ok { .. }));
     }
 
     #[tokio::test]

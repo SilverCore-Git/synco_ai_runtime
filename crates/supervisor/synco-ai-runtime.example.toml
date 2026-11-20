@@ -92,6 +92,9 @@ shutdown_grace_secs = 30
 retention_days = 90
 # Noms d'hôte admis dans l'en-tête Host derrière un mandataire inverse (en plus de localhost).
 # allowed_hosts = ["runtime-admin.example.com"]
+# Mandataires de confiance devant le dashboard : 0 (défaut, connexion directe : X-Forwarded-For et
+# X-Forwarded-Proto ignorés) ou 1 derrière nginx/Caddy (voir le README du superviseur).
+trust_proxy_hops = 0
 
 # Fournisseurs LLM (décision D1 : les clés vivent ici, jamais dans Synco). L'identifiant est celui
 # de la politique de l'org (openai, mistral, gemini, custom, gateway).

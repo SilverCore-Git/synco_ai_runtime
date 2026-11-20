@@ -419,3 +419,31 @@ async fn corps_de_connexion_invalide_ou_trop_gros() {
         "plus de 1 Kio"
     );
 }
+
+#[tokio::test]
+async fn x_forwarded_for_ignore_par_defaut_et_lu_derriere_un_mandataire() {
+    let attempt = |e: &Env, i: usize| {
+        let r = e
+            .client
+            .post(e.url("/api/login"))
+            .header("origin", e.origin())
+            .header("x-forwarded-for", format!("203.0.113.{i}"))
+            .header("content-type", "application/json")
+            .body(json!({ "password": "faux" }).to_string());
+        async move { r.send().await.unwrap().status().as_u16() }
+    };
+    let max_failures = usize::try_from(MAX_FAILURES_PER_IP).unwrap();
+    // Connexion directe (défaut 0) : des X-Forwarded-For variés ne contournent pas la limite par adresse.
+    let direct = env().await;
+    let mut codes = Vec::new();
+    for i in 0..max_failures + 3 {
+        codes.push(attempt(&direct, i).await);
+    }
+    assert_eq!(codes.iter().filter(|c| **c == 401).count(), max_failures, "{codes:?}");
+    assert!(codes.iter().skip(max_failures).all(|c| *c == 429), "{codes:?}");
+    // Derrière un mandataire de confiance (1) : l'adresse lue est celle de l'en-tête.
+    let proxied = env_with(1, vec![]).await;
+    for i in 0..max_failures + 3 {
+        assert_eq!(attempt(&proxied, i).await, 401, "adresses distinctes : aucune limite par adresse atteinte");
+    }
+}

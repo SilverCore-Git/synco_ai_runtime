@@ -280,3 +280,158 @@ dépendance directe du superviseur, version déjà présente).
 
 **Écart à reporter** : code d'erreur dédié `provider_not_configured` absent de la liste de l'API
 (08 §6, `CONVERSATION_ERROR_CODES`) ; `provider_error` utilisé en attendant.
+
+## 2026-11-20 — L07 : worker et boucle d'agent
+
+**Branche** : `syncoai/L07-worker-agent` (depuis `feature/syncoai-refonte` à `46a5f77`).
+
+**Fait** (`crates/worker`, plus une extension minimale du pipe dans `runtime-protocol` et le
+superviseur) :
+
+- `agent` : boucle d'agent durable qui remplace le bouchon dans `entry::run` (le bouchon reste pour
+  `InProcessStubLauncher` des tests du superviseur). Lecture de la conversation, du manifeste
+  (`GET …/tools`, source unique) et de la boîte (paginée) ; boîte **dédupliquée par `id`** (API +
+  WebSocket) ; messages pris en compte à l'étape suivante ; `confirm` / `answer` / `upload` ;
+  annulation (flux interrompu, texte déjà vu gardé, appel en attente `rejected`) ; D5 (`auto` /
+  `ask` / `deny`, défaut `ask` pour un outil mutant, `auto` sinon ; un outil `deny` n'est même pas
+  proposé au modèle) ; `awaiting_user` ; `awaiting_key` (`need_key` au superviseur, 2 s d'attente,
+  puis `awaitingKey`, reprise : l'appel reste `accepted` et est relancé) ; **écriture anticipée
+  `executing`** avant tout outil mutant ; **reprise** : outil mutant `executing` jamais relancé
+  (`unknown_outcome` avec le texte de 08 §5, `events: tool_unknown_outcome` + `code` = nom de
+  l'outil, puis le modèle est rappelé), lecture relancée, `lease_lost` écrit par le worker suivant
+  (conversation trouvée `running`) ; plafonds D6 ; 3 nouveaux essais (1 s, 4 s, 16 s) ; bail
+  renouvelé toutes les 20 s (bail perdu → plus aucune écriture) ; `snapshot` ; `shutdown` (état
+  `running` enregistré, reprise par le worker suivant) ; push `AI_*` des transitions écrites par le
+  worker ; métriques sans contenu (tokens, coût estimé en µ€ depuis `pricing`, latences p50/max,
+  durée du tour, outils, erreurs) en fin de tour, en fin de worker et toutes les 10 s pendant un flux.
+- `transcript` : `StoredMessage[]` en clair en mémoire, chiffré champ par champ sous `CK` à
+  l'écriture (03 §6.3), lecture tolérante (clair ancien, champ illisible remplacé, champs inconnus
+  conservés) ; le message de l'utilisateur garde son chiffré d'origine.
+- `events` : trames 05 §5 chiffrées (`ws:text|thinking:<epoch>:<seq>`, arguments et résultats avec
+  l'AAD des champs persistés, `error:<e>:<s>`, `snapshot:<e>:<s>`).
+- `link` / `api` : liaison au superviseur (tâches lectrice/rédactrice, réassemblage des réponses en
+  parties, contrôle) ; toutes les requêtes par `signed_request`, `x-synco-auth` toujours.
+- `provider` : **interface des adaptateurs LLM** (ci-dessous) et adaptateur compatible OpenAI
+  (`openai`, `gateway` avec ticket `sgt1` obtenu par `POST /tickets/llm` et réutilisé 4 min,
+  `custom`) ; `think` = `ThinkTagSplitter` (avec `flush`).
+- `tools` : manifeste, décision D5, outils `server` (`POST …/tools/:name/execute { leaseEpoch, args }`,
+  `409 lease_conflict` → arrêt), `create_thread` E2EE, `search_messages` en **repli lexical**, refus
+  explicite `tool_unavailable_in_runtime` pour `create_file`, `create_folder`, documentation.
+- `create_thread` : clé tirée, scellée RSA-OAEP-SHA256 pour les destinataires
+  (`GET /e2ee/members/keys`), `POST /e2ee/threads` sans `commitment`, puis **`created_key`** (voir
+  écart 1), `POST /e2ee/threads/:id/key-envelope`, `POST /delegations/:d/entries`. `voice` → `vocal`.
+- Superviseur : trame `0x02` d'un worker admise **seulement** pour une clé de salon créée (une entrée,
+  ajout, `thread`, version 1), au plus 32 par worker ; le superviseur calcule l'engagement, signe
+  `rt1` avec `csk`, chiffre l'entrée sous `DK` du propriétaire et répond `created_key` ; il
+  n'installe pas la clé dans son coffre (elle y entre par `delegation.entries_added`).
+
+**Interface LLM (pour L07b)** — `crates/worker/src/provider/mod.rs` :
+
+```rust
+pub trait LlmAdapter: Send + Sync {
+    fn id(&self) -> &'static str;
+    fn build(&self, req: &ChatRequest) -> Result<HttpCall, LlmError>;      // aucune clé
+    fn decoder(&self) -> Box<dyn StreamDecoder>;                             // réponse 2xx
+    fn classify_error(&self, status: u16, retry_after_secs: Option<u64>, body: &[u8]) -> LlmError; // défaut fourni
+}
+pub trait StreamDecoder: Send {
+    fn push(&mut self, chunk: &[u8], out: &mut Vec<LlmEvent>) -> Result<(), LlmError>;
+    fn finish(&mut self, out: &mut Vec<LlmEvent>) -> Result<(), LlmError>; // appels d'outils, usage, puis UN Done
+}
+// ChatRequest { model, system, messages: Vec<ChatMessage>, tools: Vec<ToolDef>, reasoning_effort,
+//               max_output_tokens, bearer: Option<String> }
+// ChatMessage::{User{content}, Assistant{content, tool_calls}, Tool{tool_call_id, content}}
+// LlmEvent::{Text, Thinking, ToolCall(ChatToolCall{id,name,arguments}), Usage(Usage), Done(FinishReason)}
+// LlmError::{Transport, Auth, RateLimited{retry_after_secs}, CallBudget, TokenBudget, Timeout,
+//            Rejected{status}, Provider{status}, BadStream}
+```
+
+Transport commun : `provider::stream_completion(socket, adapter, req, on_event)` par le mandataire.
+Choix de l'adaptateur : `provider::adapter_for(LlmProvider)`.
+
+**Brief L07b (Gemini, Mistral)** : ajouter `provider/mistral.rs` et `provider/gemini.rs`, chacun un
+`LlmAdapter` + `StreamDecoder`, et ne modifier **que** les deux branches `Mistral` / `Gemini` de
+`adapter_for` (aujourd'hui repli sur le dialecte OpenAI `custom_named`). Contraintes :
+
+1. Le mandataire n'admet que `POST /chat/completions` et `GET /models` (sans requête) relatifs à
+   l'URL de base configurée dans le runtime (`docs/plan/10` §4). **Gemini** : l'API native
+   (`models/{m}:streamGenerateContent`) est refusée ; soit utiliser l'endpoint compatible OpenAI
+   (`base_url = https://generativelanguage.googleapis.com/v1beta/openai`) avec un décodeur qui lit
+   le raisonnement (`delta.reasoning_content` / `extra_content` selon la doc à la date) et
+   `reasoning_effort` (`low|medium|high`, accepté par cet endpoint), soit proposer une extension de
+   la liste blanche du mandataire (L06, superviseur) — à arbitrer par l'orchestrateur. **Mistral** :
+   `POST /chat/completions` natif ; ne pas envoyer `stream_options` ni `parallel_tool_calls` s'ils
+   sont refusés (vérifier la doc à la date), `max_tokens`, outils au format OpenAI ; raisonnement
+   Magistral en ligne `<think>` (`think::ThinkTagSplitter`) ou en `content` structuré
+   (`[{type:"thinking",…}]`) selon le modèle ; usage dans le dernier morceau.
+2. Comportement commun (cf. `openai.rs`) : un seul appel d'outil traité ; arguments réassemblés ;
+   `finish` émet appels d'outils, `Usage`, puis exactement un `Done` ; identifiant d'appel non
+   conforme à `^[A-Za-z0-9_-]{1,64}$` laissé tel quel (la boucle le remplace) ; aucune erreur ne
+   recopie de texte du fournisseur ; `classify_error` : garder les codes `proxy_*` du défaut.
+3. Tests : requêtes construites (corps, chemin, en-têtes, jamais d'`authorization`), flux
+   enregistrés (texte, raisonnement, outil coupé, usage, erreur dans le flux), comme
+   `openai.rs::tests` ; un test d'agent (`tests/agent.rs`, `FakeLlm`) avec `init.llm.provider`
+   réglé sur le fournisseur.
+4. Ne pas toucher à `agent.rs`, `tools`, `transcript`, `events`, ni au pipe.
+
+**Dépendances ajoutées** (épinglées, dates crates.io relevées le 2026-11-20) : `rsa` 0.10.0
+(2026-11-08), `crypto-primes` 0.7.2 (2026-06-10, transitive). Aucune autre version nouvelle au
+`Cargo.lock` (rand_core 0.10.1, crypto-bigint 0.7.11, sha2 0.11, hmac 0.13 y étaient). Aucun appel
+système ajouté au filtre seccomp (le vrai worker passe le test hôte sans changement).
+
+**Vérifié** :
+
+- flatpak : `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo fmt --check`, check-secrets ;
+- `crates/worker/tests/agent.rs` (LLM simulé sur socket Unix qui rejoue des flux SSE, API simulée
+  avec contrôles de bail, de `rev` et de format `gcm1:`) : tour simple, outil serveur (lecture,
+  écriture anticipée avant l'outil mutant), confirmation acceptée / refusée / `deny`, message en
+  file pendant un tour et doublon, plafonds (étapes, budget, quota du mandataire, 5xx avec
+  nouveaux essais, clé refusée), annulation, `ask_question` + `stale_decision`, `awaiting_key` et
+  reprise, outils hors d'atteinte, `snapshot` et arrêt, outil E2EE `create_thread` (scellés RSA
+  ouverts, `rt1` vérifiée, entrée ouverte par `DK`), passerelle (`sgt1`), bail perdu, **aucun
+  contenu en clair** (marqueurs absents des trames du pipe et des corps vers l'API hors arguments
+  d'outil serveur) ;
+- `crates/worker/tests/crash.rs` : **vrai `SIGKILL`** d'un worker enfant (ce binaire de test relancé
+  sur `entry::run`) pendant `create_task` : outil jamais relancé, `unknown_outcome`, `events` ;
+  mutation (relance autorisée) → test en échec ;
+- test croisé : `SYNCO_APP=…/synco_app bun crates/worker/tests/ts/read-from-worker.ts` → le code réel
+  de synco_app (`decryptAiField`, `decryptGatewaySessionMessages`, `convertStoredMessagesToChatMessages`
+  extraits d'`AIService.ts`, `decryptThreadKeyWithRsa`, `verifyRt1Envelope`) relit le fixture
+  `tests/fixtures/transcript-from-worker.json` produit par le worker : 11/11 ; synco_app non modifié ;
+- hôte : `host-spawn sh -c 'CARGO_TARGET_DIR=$HOME/.cache/synco-l07-host-target sh
+  crates/supervisor/tests/sandbox-host.sh'` → 10/10 + `aller_retour_avec_bac_a_sable`, désormais avec
+  la vraie boucle d'agent dans le bac à sable : appel au fournisseur simulé par le mandataire (clé
+  `Bearer` ajoutée par le superviseur), deltas chiffrés reçus par le client, historique écrit.
+
+**Écarts avec docs/plan (à reporter)** :
+
+1. 06 §3–§4 : message **`created_key`** (superviseur → worker) et trame `0x02` **worker →
+   superviseur** restreinte (une clé de salon créée). Raison : 03 §10/§10.1 exigent la signature
+   `csk` et l'entrée sous `DK`, que le worker n'a pas (mesure 7) ; aucune trame ne le permettait.
+2. 04 §4.3 / API : `POST /e2ee/threads` exige `categoryId` (cuid) que le canal n'expose pas, et
+   le canal ne donne pas les membres d'un **espace** : le worker transmet `categoryId` s'il figure
+   dans les arguments (absent du schéma de l'outil) et ne scelle la clé d'un salon d'espace que pour
+   le propriétaire (sceller pour toute l'org donnerait la clé à des non-membres). **Besoin d'API
+   (L14/L15)** : catégorie par défaut de la cible côté API et membres d'un espace sur le canal ;
+   sinon `create_thread` échoue (`invalid_body`) en réel.
+3. Q6 : `search_messages` en **repli lexical** sur les index déchiffrés (le modèle d'embedding ne
+   peut pas tourner dans le bac à sable : pas de fichier, pas de réseau, ~120 Mio de poids, aucun
+   moteur ONNX) ; argument facultatif `spaceId` (hors schéma) qui seul déclenche `awaiting_key`.
+4. `create_file` (CDN injoignable du worker), `create_folder` (aucune route du canal),
+   documentation (embarquée dans synco_app) : non exécutables, retirés de la liste donnée au
+   modèle, refus explicite s'ils sont appelés.
+5. 09 §2 : `maxTokensPerTurn` atteint → `idle` + `step_limit` (relance possible), comme
+   `maxStepsPerTurn` ; `proxy_call_budget` → `step_limit`, `proxy_token_budget` →
+   `budget_exceeded`.
+6. 08 §5 : `events.code` de `tool_unknown_outcome` = nom de l'outil ; `lease_lost` sans `code`.
+7. Clés RSA des membres non épinglées en TOFU par le runtime (le worker n'a pas de disque ;
+   à confier au superviseur, comme `pins.rs`) : clé illisible écartée.
+8. `reasoning_effort` envoyé à la passerelle et aux modèles de raisonnement d'OpenAI seulement
+   (OpenAI le refuse pour les autres) ; la consigne d'effort du prompt s'applique à tous.
+9. `answer` / `upload` acceptés même si l'état lu est `queued` (l'API passe `queued` au dépôt) :
+   le contrôle porte sur l'appel en attente (`pendingToolCall`).
+
+**Non vérifié (recette manuelle)** : vraie API (L03) et vrai fournisseur (OpenAI, passerelle avec
+un vrai `sgt1`) ; affichage dans OrgAI.vue du flux en direct (L12 adapte la source d'évènements) ;
+`create_thread` réel (bloqué par l'écart 2) ; push reçus sur mobile ; métriques au dashboard (L08).

@@ -705,3 +705,35 @@ depuis le flatpak sans outil externe) ; mesure CPU/RAM avec un vrai cgroup (le t
 12. Derrière le mandataire TLS : `allowed_hosts` contient le nom ; le cookie porte `Secure` ;
     `Host` inconnu → 403.
 13. Console du navigateur : aucune violation de CSP, aucune requête externe.
+
+## 2026-11-20 — L00d : report dans docs/plan des écarts acceptés de L06, L07, L07b et L08
+
+**Branche** : `syncoai/L00d-spec-ecarts-d` (depuis `285d433`). Documentation seule : aucun code, test,
+`Cargo.*` ni README touché.
+
+**Fait** (chaque forme relue dans le code avant d'être écrite) :
+
+- `06-superviseur-worker.md` : pipe par stdin puis descripteur 3, worker = binaire du superviseur ;
+  `llm_credential` plus envoyée (clé injectée par le mandataire), `net_request` / `net_response`
+  non retenus ; §2.1 trame `0x02` du worker restreinte à l'annonce d'une clé de salon créée ;
+  §3.3 message `created_key` (forme, codes `created_key_unknown_thread`, `created_key_limit`,
+  `delegation_unavailable`, `created_key_failed`) ; §4.1 lecture côté worker des refus locaux du relais
+  (échec simple) ; §5 absence de compteur par outil ; §9 codes machine du worker (`tool_call_unverified`,
+  `invalid_tool_arguments`, `invalid_upload_ref`, `too_many_recipients`, outils retirés), `LlmError`
+  avec `TooLarge`, adaptateurs Mistral et Gemini (identifiants traduits, flux coupé, `reasoning_effort`).
+- `03-delegation.md` §10.1 et `04-canal-interne.md` §4.3 : signature `rt1` par le superviseur,
+  `create_file` / `create_folder` retirés, `create_thread` bloqué en réel, clés RSA des membres non
+  épinglées (bornes ≥ 2048 bits et 300 destinataires).
+- `10-bac-a-sable.md` : `memory.high` marqué question ouverte à la porte C, `provider_not_configured`,
+  raison de Gemini par l'endpoint compatible OpenAI. `11-dashboard.md` : `MAX_RUNS`, reprise après arrêt
+  brutal, §7 questions ouvertes. `08` / `09` : codes et limites ajoutés (`step_limit` / `budget_exceeded`
+  du mandataire, `events.code`, limites du mandataire, de la réponse LLM, de `create_thread`, du dashboard).
+- `00-vue-ensemble.md` : réalisation de D1 et D6, Q6 mise à jour, **Q22 à Q30** (questions ouvertes,
+  non tranchées, avec renvois).
+
+**Constat** : `10-bac-a-sable.md` et `11-dashboard.md` avaient déjà été écrits à jour par L06 et L08
+(mandataire, quotas, `dashboard.trust_proxy_hops`, Argon2id, JSONL 90 j, limite globale = ralentissement) ;
+le gros du report concernait `06`, `04`, `03` et `00`.
+
+**Vérifié** : `cargo fmt --all --check` avant chaque commit, `check-secrets` du hook, `git diff --cached
+--name-only` limité à `docs/plan/` et `docs/journal.md`. Pas de compilation ni de test.

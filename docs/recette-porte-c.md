@@ -15,7 +15,7 @@ Hôte : ____________  noyau : ______  Podman : ______  Version du runtime (commi
 - [ ] `podman build --format docker -t localhost/synco-ai-runtime:latest .` réussit ; image sans `root` (`podman run --rm --entrypoint id … -u` → `10001`).
 - [ ] `deploy/config.container.example.toml` copié et adapté (`public_url`, `api_url`, `allowed_origins`, `allowed_hosts`) ; `--check-config` répond « configuration valide ».
 - [ ] Secret de phrase de passe créé ; **phrase notée dans le coffre**.
-- [ ] `sandbox-check` (conteneur jetable, [`deploiement.md §2.3`](deploiement.md)) : huit `ok`, code 0. Noter la sortie.
+- [ ] `sandbox-check` (conteneur jetable, [`deploiement.md §2.3`](deploiement.md)) : sept lignes `ok`, code 0. Noter la sortie.
 - [ ] Quadlet installé, `systemctl --user start synco-ai-runtime.service`, `podman ps` : `healthy` en moins d'une minute.
 - [ ] `podman top synco-ai-runtime` : un seul processus (le superviseur, PID 1).
 - [ ] Mandataire TLS en place : `curl -s https://runtime.example.com/v1/identity` renvoie la fiche (JSON avec `fingerprint`) ; `curl -I http://runtime.example.com/` redirige vers HTTPS ; `https://runtime.example.com/` (hors `/v1/`) → 404 ; `localhost:8790` non joignable depuis une autre machine.

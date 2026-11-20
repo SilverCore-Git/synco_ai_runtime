@@ -153,7 +153,7 @@ ignorent `uid` et `mode` : suivre les commentaires du fichier (`chown 10001` de 
      localhost/synco-ai-runtime:latest sandbox-check
    ```
 
-   Attendu : huit lignes `ok …` puis « toutes les tentatives d'évasion ont échoué ou tué le seul worker concerné »,
+   Attendu : sept lignes `ok …` puis « toutes les tentatives d'évasion ont échoué ou tué le seul worker concerné »,
    code de sortie 0. Toute ligne `ÉCHEC`, ou un refus de démarrer, est à corriger avant d'aller plus loin.
 2. Valider la configuration : `podman exec synco-ai-runtime synco-ai-runtime --check-config` (avertissements éventuels, scellement, fournisseurs).
 3. Afficher les informations d'appairage :

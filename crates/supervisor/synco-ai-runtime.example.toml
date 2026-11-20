@@ -65,7 +65,8 @@ max_workers_per_user = 3
 max_workers = 8
 # Appliqués par le bac à sable du worker (cgroup v2, lot L06).
 worker_memory_max_mib = 512
-worker_memory_high_mib = 448
+# worker_memory_high_mib : ignoré (memory.high non appliqué, docs/plan/10 §5) ; --check-config
+# avertit s'il est présent.
 worker_cpu_percent = 100
 worker_pids_max = 64
 replay_buffer_events = 2000

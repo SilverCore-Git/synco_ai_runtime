@@ -7,8 +7,9 @@
 //! - Espaces de noms user, pid, mount (racine `tmpfs` vide en lecture seule), net (aucune
 //!   interface), ipc, uts, cgroup ; capacités retirées ; `no_new_privs` ; landlock ; seccomp en liste
 //!   blanche ([`policy`]).
-//! - cgroup v2 par worker : `memory.max`, `memory.high`, `memory.swap.max = 0`,
-//!   `memory.oom.group = 1`, `pids.max`, `cpu.max` (D6) ; compteurs pour les métriques ([`cgroup`]).
+//! - cgroup v2 par worker : `memory.max`, `memory.swap.max = 0`, `memory.oom.group = 1`,
+//!   `pids.max`, `cpu.max` (D6 ; `memory.high` volontairement non appliqué, docs/plan/10 §5) ;
+//!   compteurs pour les métriques ([`cgroup`]).
 //! - Réseau : uniquement le mandataire LLM du superviseur ([`proxy`]), qui ajoute la clé (D1).
 //! - Repli : si une fonction noyau manque, [`SandboxLauncher::new`] échoue et le superviseur
 //!   **refuse de démarrer** ; `--insecure-no-sandbox` (développement) lance des processus séparés

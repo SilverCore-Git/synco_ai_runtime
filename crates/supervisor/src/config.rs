@@ -46,6 +46,9 @@ pub struct Config {
     /// Bac à sable des workers (L06, docs/plan/10).
     #[serde(default)]
     pub sandbox: Sandbox,
+    /// Dashboard (L08, docs/plan/11).
+    #[serde(default)]
+    pub dashboard: DashboardConfig,
     /// Journal : `error`, `warn`, `info`, `debug`.
     #[serde(default = "default_log_level")]
     pub log_level: String,
@@ -85,6 +88,28 @@ impl Default for Listen {
             trust_proxy_hops: 1,
             allow_non_loopback_plain_http: false,
         }
+    }
+}
+
+/// Réglages du dashboard (L08, docs/plan/11). L'adresse d'écoute est `listen.dashboard`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DashboardConfig {
+    /// Durée de conservation de l'historique, en jours (1 à 3650).
+    #[serde(default = "default_retention_days")]
+    pub retention_days: u32,
+    /// Noms d'hôte supplémentaires admis dans `Host` (mandataire inverse), `hôte` ou `hôte:port`.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
+}
+
+const fn default_retention_days() -> u32 {
+    90
+}
+
+impl Default for DashboardConfig {
+    fn default() -> Self {
+        Self { retention_days: default_retention_days(), allowed_hosts: Vec::new() }
     }
 }
 
@@ -339,6 +364,14 @@ impl Config {
                      sinon listen.allow_non_loopback_plain_http = true"
                 )));
             }
+        }
+        if !(1..=3650).contains(&self.dashboard.retention_days) {
+            return Err(invalid("dashboard.retention_days : de 1 à 3650"));
+        }
+        if self.dashboard.allowed_hosts.iter().any(|h| {
+            h.is_empty() || h.len() > 255 || !h.bytes().all(|b| b.is_ascii_alphanumeric() || b"-.:[]".contains(&b))
+        }) {
+            return Err(invalid("dashboard.allowed_hosts : noms d'hôte simples (lettres, chiffres, - . : [ ])"));
         }
         if self.listen.trust_proxy_hops > 4 {
             return Err(invalid("listen.trust_proxy_hops : au plus 4"));

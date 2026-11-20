@@ -85,6 +85,14 @@ shutdown_grace_secs = 30
 # Sockets du mandataire LLM, un sous-répertoire 0700 par worker (défaut : <state_dir>/workers).
 # run_dir = "/var/lib/synco-ai-runtime/workers"
 
+# Dashboard web (écoute : listen.dashboard). Il ne démarre que si un mot de passe a été défini par
+# `synco-ai-runtime dashboard-password`. Jamais de contenu de conversation (docs/plan/11).
+[dashboard]
+# Conservation de l'historique des sessions, en jours (1 à 3650).
+retention_days = 90
+# Noms d'hôte admis dans l'en-tête Host derrière un mandataire inverse (en plus de localhost).
+# allowed_hosts = ["runtime-admin.example.com"]
+
 # Fournisseurs LLM (décision D1 : les clés vivent ici, jamais dans Synco). L'identifiant est celui
 # de la politique de l'org (openai, mistral, gemini, custom, gateway).
 [llm.providers.openai]

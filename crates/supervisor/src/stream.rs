@@ -154,6 +154,11 @@ async fn session(rt: &Arc<Runtime>, mut socket: Socket) -> Attempt {
                             break Attempt::Lost;
                         }
                     }
+                    Ok(ApiEvent::Hello { org_id, .. }) if rt.org_id().await.as_deref() != Some(org_id.as_str()) => {
+                        // Le flux annonce une autre org que celle du certificat : on ferme.
+                        rt.state.lock().await.alert(crate::clock::now_secs(), "stream_org_mismatch");
+                        break Attempt::Lost;
+                    }
                     Ok(event) => {
                         if tx.send(event).await.is_err() {
                             break Attempt::Lost;

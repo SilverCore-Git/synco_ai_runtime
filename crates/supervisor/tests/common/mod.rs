@@ -72,6 +72,8 @@ pub struct MockState {
     pub pending: Vec<Value>,
     pub conversations: BTreeMap<String, Conversation>,
     pub stream_hellos: u32,
+    /// Org annoncée dans `hello` (défaut : `ORG`).
+    pub hello_org: Option<String>,
     /// Délai (ms) avant de servir les entrées d'une délégation.
     pub slow_entries_ms: u64,
     /// Requêtes d'entrées reçues (avant le délai).
@@ -177,7 +179,8 @@ async fn stream(State((state, events, _)): State<Shared>, headers: HeaderMap, ws
 
 async fn run_stream(state: Arc<Mutex<MockState>>, events: broadcast::Sender<String>, mut socket: WebSocket) {
     let mut rx = events.subscribe();
-    let hello = json!({ "v": 1, "type": "hello", "orgId": ORG, "serverTime": runtime_protocol_now() });
+    let org = state.lock().unwrap().hello_org.clone().unwrap_or_else(|| ORG.to_owned());
+    let hello = json!({ "v": 1, "type": "hello", "orgId": org, "serverTime": runtime_protocol_now() });
     if socket.send(Message::Text(hello.to_string().into())).await.is_err() {
         return;
     }
@@ -186,6 +189,10 @@ async fn run_stream(state: Arc<Mutex<MockState>>, events: broadcast::Sender<Stri
         tokio::select! {
             e = rx.recv() => match e {
                 Ok(text) => {
+                    if text.contains("\"__close__\"") {
+                        let _ = socket.send(Message::Close(Some(CloseFrame { code: 4409, reason: "replaced".into() }))).await;
+                        return;
+                    }
                     let close = text.contains("\"runtime.unpaired\"");
                     if socket.send(Message::Text(text.into())).await.is_err() { return; }
                     if close {

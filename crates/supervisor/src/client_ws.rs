@@ -30,12 +30,28 @@ async fn close(socket: &mut WebSocket, code: u16, reason: &str) {
     let _ = socket.send(Message::Close(Some(CloseFrame { code, reason: Utf8Bytes::from(reason) }))).await;
 }
 
+/// Âge maximal des clés de tickets sans relecture réussie (comme la passerelle).
+pub const TICKET_KEYS_MAX_AGE: Duration = Duration::from_secs(3_600);
+
+/// Clés de tickets relues avec succès depuis moins d'une heure ?
+#[must_use]
+pub fn ticket_keys_fresh(refreshed: Option<Instant>, now: Instant) -> bool {
+    refreshed.is_some_and(|t| now.saturating_duration_since(t) < TICKET_KEYS_MAX_AGE)
+}
+
 /// Vérifie le ticket (02 §5) ; relit les clés une fois sur `kid` inconnu (≤ 1 / min).
 async fn verify_ticket(
     rt: &Arc<Runtime>,
     session_id: &str,
     ticket_text: &str,
 ) -> Result<ticket::RuntimeTicketClaims, TicketError> {
+    // Échec fermé : sans relecture réussie des clés depuis 1 h, aucun ticket n'est accepté.
+    if !ticket_keys_fresh(rt.state.lock().await.tickets.refreshed, std::time::Instant::now())
+        && (!rt.refresh_ticket_keys(true).await
+            || !ticket_keys_fresh(rt.state.lock().await.tickets.refreshed, std::time::Instant::now()))
+    {
+        return Err(TicketError::UnknownKey);
+    }
     for attempt in 0..2 {
         let result = {
             let st = rt.state.lock().await;
@@ -286,5 +302,18 @@ async fn forward_or_launch(rt: &Arc<Runtime>, session_id: &str, body: serde_json
     };
     if !sent {
         rt.ensure_worker(session_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cles_de_tickets_perimees_apres_une_heure() {
+        let t0 = Instant::now();
+        assert!(!ticket_keys_fresh(None, t0), "jamais relues : refus");
+        assert!(ticket_keys_fresh(Some(t0), t0 + Duration::from_secs(3_599)));
+        assert!(!ticket_keys_fresh(Some(t0), t0 + TICKET_KEYS_MAX_AGE));
     }
 }

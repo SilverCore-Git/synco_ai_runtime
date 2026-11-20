@@ -719,3 +719,25 @@ async fn connexions_non_authentifiees_bornees() {
     assert!(connect(&env, SESSION, ORIGIN).await.is_ok());
     synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }
+
+/// Un `hello` du flux qui annonce une autre org que celle du certificat ferme le flux.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn flux_d_une_autre_org_ferme() {
+    let env = setup().await;
+    wait_until("flux ouvert", || env.api.with(|st| st.stream_hellos > 0)).await;
+    env.api.with(|st| st.hello_org = Some("autreorg".into()));
+    env.api.push(json!({ "type": "__close__" }));
+    let rt = Arc::clone(&env.running.runtime);
+    let mut seen = false;
+    for _ in 0..100 {
+        if rt.state.lock().await.alerts.iter().any(|(_, c)| *c == "stream_org_mismatch") {
+            seen = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(seen, "alerte stream_org_mismatch attendue");
+    // Le flux ne reste pas ouvert : une nouvelle tentative suit, refermée à son tour.
+    wait_until("reconnexions", || env.api.with(|st| st.stream_hellos >= 3)).await;
+    synco_ai_runtime::app::shutdown(&rt).await;
+}

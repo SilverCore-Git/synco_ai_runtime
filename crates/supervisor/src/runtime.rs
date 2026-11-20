@@ -317,7 +317,7 @@ impl Runtime {
         let mut to_stop = Vec::new();
         {
             let st = self.state.lock().await;
-            let adds = st.vault.org_keys(user, added);
+            let adds = st.vault.org_keys(user, added, now_secs());
             let removes: Vec<KeyEntry> = removed
                 .iter()
                 .filter(|k| matches!(k.kind, KeyKind::Thread | KeyKind::Space))
@@ -540,7 +540,7 @@ impl Runtime {
         lease_epoch: u64,
     ) -> Option<(Init, Vec<KeyEntry>)> {
         let org_id = st.org_id.clone()?;
-        let mut keys = st.vault.keys_for_conversation(user_id, session_id)?;
+        let mut keys = st.vault.keys_for_conversation(user_id, session_id, now_secs())?;
         let policy = st.policy.as_ref();
         let provider_id = policy.and_then(|p| p.default_provider.clone()).unwrap_or_else(|| "custom".to_owned());
         let provider = match provider_id.as_str() {

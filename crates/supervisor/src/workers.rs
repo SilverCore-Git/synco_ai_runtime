@@ -63,7 +63,7 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
             return Err("not_paired");
         }
         let auth = st.auths.get(session_id).cloned().ok_or("authorization_unknown")?;
-        if !st.vault.has_conversation_key(&auth.user_id, session_id) {
+        if !st.vault.has_conversation_key(&auth.user_id, session_id, now_secs()) {
             return Err("conv_key_missing");
         }
         if st.convs.get(session_id).is_some_and(|c| c.worker.is_active()) {
@@ -368,7 +368,7 @@ async fn on_worker_msg(
                 .get(user_id)
                 .map(|d| d.key_ids().into_iter().filter(|k| k.kind == kind && k.reference == n.reference).collect())
                 .unwrap_or_default();
-            let entries = st.vault.org_keys(user_id, &ids);
+            let entries = st.vault.org_keys(user_id, &ids, now_secs());
             drop(st);
             if !entries.is_empty() {
                 for f in KeyFrame::split(KeyOp::Add, entries).unwrap_or_default() {

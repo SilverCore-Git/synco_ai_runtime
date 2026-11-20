@@ -218,8 +218,8 @@ impl Vault {
     /// les clés `thread` et `space`. Jamais `DK`, jamais la `conv` d'une autre conversation.
     /// `None` si le propriétaire n'a pas de délégation ouverte ou si la `conv` manque.
     #[must_use]
-    pub fn keys_for_conversation(&self, owner_id: &str, session_id: &str) -> Option<Vec<KeyEntry>> {
-        let d = self.by_user.get(owner_id)?;
+    pub fn keys_for_conversation(&self, owner_id: &str, session_id: &str, now: u64) -> Option<Vec<KeyEntry>> {
+        let d = self.by_user.get(owner_id).filter(|d| d.ctx.exp > now)?;
         let conv = d.keys.iter().find(|(id, _)| id.kind == KeyKind::Conv && id.reference == session_id)?;
         let mut out = vec![to_entry(conv.0, conv.1)?];
         out.extend(
@@ -233,8 +233,8 @@ impl Vault {
 
     /// Clés précises d'un utilisateur (synchro P11 vers un worker en cours), sans `conv`.
     #[must_use]
-    pub fn org_keys(&self, owner_id: &str, ids: &[KeyId]) -> Vec<KeyEntry> {
-        let Some(d) = self.by_user.get(owner_id) else { return vec![] };
+    pub fn org_keys(&self, owner_id: &str, ids: &[KeyId], now: u64) -> Vec<KeyEntry> {
+        let Some(d) = self.by_user.get(owner_id).filter(|d| d.ctx.exp > now) else { return vec![] };
         ids.iter()
             .filter(|id| matches!(id.kind, KeyKind::Thread | KeyKind::Space))
             .filter_map(|id| d.keys.get(id).and_then(|k| to_entry(id, k)))
@@ -243,9 +243,10 @@ impl Vault {
 
     /// La délégation du propriétaire contient-elle la `conv` de cette conversation ?
     #[must_use]
-    pub fn has_conversation_key(&self, owner_id: &str, session_id: &str) -> bool {
+    pub fn has_conversation_key(&self, owner_id: &str, session_id: &str, now: u64) -> bool {
         self.by_user
             .get(owner_id)
+            .filter(|d| d.ctx.exp > now)
             .is_some_and(|d| d.keys.keys().any(|id| id.kind == KeyKind::Conv && id.reference == session_id))
     }
 }
@@ -331,13 +332,17 @@ mod tests {
             vault.install(d);
         }
         // Le worker de la conversation de A ne reçoit que la clé de salon de A.
-        let keys_a = vault.keys_for_conversation("a", "convA").unwrap();
+        let keys_a = vault.keys_for_conversation("a", "convA", 1_100).unwrap();
         assert!(keys_a.iter().any(|k| k.kind == KeyKind::Thread && k.key.as_slice() == [1u8; 32]));
         assert!(!keys_a.iter().any(|k| k.key.as_slice() == [2u8; 32]), "clé de B jamais donnée pour A");
         // A ne peut pas obtenir la conversation de B, ni B celle de A.
-        assert!(vault.keys_for_conversation("a", "convB").is_none());
-        assert!(vault.keys_for_conversation("b", "convA").is_none());
-        assert!(vault.keys_for_conversation("inconnu", "convA").is_none());
+        assert!(vault.keys_for_conversation("a", "convB", 1_100).is_none());
+        assert!(vault.keys_for_conversation("b", "convA", 1_100).is_none());
+        assert!(vault.keys_for_conversation("inconnu", "convA", 1_100).is_none());
+        // Délégation expirée mais pas encore purgée : aucune clé n'est remise (double verrou).
+        assert!(vault.keys_for_conversation("a", "convA", 1_000 + 86_400).is_none());
+        assert!(!vault.has_conversation_key("a", "convA", 1_000 + 86_400));
+        assert!(vault.org_keys("a", &vault.get("a").unwrap().key_ids(), 1_000 + 86_400).is_empty());
     }
 
     #[test]

@@ -152,13 +152,23 @@ async fn register(
     }
     let id = st.next_client;
     st.next_client = st.next_client.saturating_add(1);
+    let existed = st.convs.contains_key(session_id);
     let conv = rt.conv_entry(&mut st, session_id, &auth);
-    if conv.user_id != user_id {
-        return Err(CloseCode::Forbidden);
+    let refused = if conv.user_id != user_id {
+        Some(CloseCode::Forbidden)
+    } else if conv.clients.len() >= client::MAX_CONNECTIONS_PER_CONVERSATION {
+        Some(CloseCode::TooManyConnections)
+    } else {
+        None
+    };
+    if let Some(code) = refused {
+        // Une entrée créée pour cette tentative ne survit pas au refus.
+        if !existed {
+            st.convs.remove(session_id);
+        }
+        return Err(code);
     }
-    if conv.clients.len() >= client::MAX_CONNECTIONS_PER_CONVERSATION {
-        return Err(CloseCode::TooManyConnections);
-    }
+    let Some(conv) = st.convs.get_mut(session_id) else { return Err(CloseCode::Internal) };
     let mut needs_head = None;
     if let WorkerState::Running(w) = &conv.worker {
         let (mut mode, frames) = ready_plan(resume, w.epoch, &conv.buffer, w.started);

@@ -427,3 +427,24 @@ async fn lancement_refuse_sans_reste() {
     let left: Vec<_> = std::fs::read_dir(run.path().join("w")).unwrap().flatten().map(|e| e.file_name()).collect();
     assert!(left.is_empty(), "restes : {left:?}");
 }
+
+/// M5 : un descripteur hérité par erreur (sans `O_CLOEXEC`) fait échouer le lancement
+/// (`inherited_fd`) au lieu d'entrer dans le bac à sable.
+#[tokio::test]
+#[ignore = "noyau : espaces de noms, cgroup délégué (tests/sandbox-host.sh)"]
+async fn descripteur_herite_refuse() {
+    let run = run_dir();
+    let l = launcher(&run, Mode::Sandboxed, no_proxy()).await;
+    let leak = std::fs::File::open("/dev/null").unwrap();
+    rustix::io::fcntl_setfd(&leak, rustix::io::FdFlags::empty()).unwrap();
+    let args = synco_ai_runtime::sandbox::ChildArgs { payload: "probe".into(), ..Default::default() };
+    let mut w = l.spawn_child(args, &limits(), None, vec![]).await.unwrap();
+    let exit = tokio::time::timeout(Duration::from_secs(10), w.process.wait()).await.unwrap();
+    assert_eq!(exit, WorkerExit::Exited(i32::from(synco_ai_runtime::sandbox::EXIT_SETUP_FAILED)));
+    assert_eq!(w.process.setup_error().await.as_deref(), Some("inherited_fd"));
+    drop(leak);
+    // Sans la fuite, la même sonde passe.
+    let args = synco_ai_runtime::sandbox::ChildArgs { payload: "probe".into(), ..Default::default() };
+    let mut w = l.spawn_child(args, &limits(), None, vec![]).await.unwrap();
+    assert_eq!(tokio::time::timeout(Duration::from_secs(10), w.process.wait()).await.unwrap(), WorkerExit::Exited(0));
+}

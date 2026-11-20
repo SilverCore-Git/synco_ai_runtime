@@ -507,6 +507,19 @@ engagement faux : les clients à jour refusent alors la clé de ce salon et, la 
 (sauf intervention en base). Un runtime compromis peut de toute façon nuire aux salons qu'il crée ; le
 risque est d'abord celui d'un bogue, à couvrir par les vecteurs de L01 et les tests de L07.
 
+**Réalisation par L07 (2026-11-20) : le worker ne signe pas lui-même.** Il n'a ni `csk` ni `DK`
+(mesure 7). Les étapes 2 et 4 (signature `rt1` et chiffrement de l'entrée sous `DK`) sont faites par
+le **superviseur** : après l'étape 1 le worker lui annonce la clé par une trame `0x02` restreinte, et
+reçoit un message `created_key` avec l'enveloppe et le texte chiffré de l'entrée (06 §2.1, §3.3) ; le
+worker exécute lui-même les étapes 3 et 4 par `signed_request`, avec le bail. Garde-fous : le
+superviseur ne signe que pour un salon dont **ce** worker a fait relayer la création réussie, une
+fois par salon, au plus 32 par worker (`created_key_unknown_thread`, `created_key_limit`) ; le coffre
+du superviseur ne remplace jamais une clé différente déjà ouverte. **Écart assumé** : le superviseur
+n'a que la délégation *courante* du propriétaire, pas le `delegationId` de l'autorisation de session ;
+s'ils diffèrent, l'API refuse (signature `400`, entrée `out_of_scope`) : échec fermé, le salon reste
+en TOFU. Les clés RSA publiques des membres utilisées pour sceller la clé du salon ne sont **pas
+épinglées** (borne ≥ 2048 bits seulement) : question ouverte (00 §6, Q25).
+
 ## 11. Salon créé par un autre membre en l'absence de l'utilisateur
 
 Le membre B crée le salon T pendant que A est hors ligne : A a une `ThreadKey` scellée pour lui (RSA),

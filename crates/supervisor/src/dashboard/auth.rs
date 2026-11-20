@@ -103,6 +103,15 @@ pub fn password_is_set(state_dir: &Path) -> bool {
     state_dir.join(PASSWORD_FILE).is_file()
 }
 
+/// Le fichier du mot de passe est-il lisible et bien formé ? (`false` : le dashboard ne démarre pas.)
+#[must_use]
+pub fn password_file_usable(state_dir: &Path) -> bool {
+    std::fs::read(state_dir.join(PASSWORD_FILE))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<PasswordDoc>(&b).ok())
+        .is_some_and(|d| d.v == 1 && d.alg == "argon2id")
+}
+
 /// Demande le mot de passe deux fois sur le terminal (sans écho) puis l'enregistre.
 pub fn set_password_interactive(state_dir: &Path) -> Result<()> {
     let first = seal::prompt_hidden("Nouveau mot de passe du dashboard : ")?;
@@ -527,6 +536,16 @@ mod tests {
             assert!(matches!(a.login(PW, "1.1.1.1", t0).await, Login::Ok { .. }));
         }
         assert_eq!(a.session_count(), MAX_SESSIONS);
+    }
+
+    #[test]
+    fn fichier_de_mot_de_passe_inutilisable_detecte() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!password_file_usable(dir.path()), "absent");
+        std::fs::write(dir.path().join(PASSWORD_FILE), "pas du json").unwrap();
+        assert!(!password_file_usable(dir.path()), "illisible");
+        set_password(dir.path(), PW, FAST).unwrap();
+        assert!(password_file_usable(dir.path()));
     }
 
     #[test]

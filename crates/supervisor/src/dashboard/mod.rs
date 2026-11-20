@@ -71,6 +71,13 @@ pub async fn start(rt: &Arc<Runtime>) -> std::io::Result<Option<Started>> {
         );
         return Ok(None);
     }
+    if !auth::password_file_usable(state_dir) {
+        tracing::warn!(
+            code = "dashboard_password_unreadable",
+            "dashboard désactivé : fichier du mot de passe illisible ou invalide (synco-ai-runtime dashboard-password)"
+        );
+        return Ok(None);
+    }
     let listener = tokio::net::TcpListener::bind(rt.config.listen.dashboard).await?;
     let addr = listener.local_addr()?;
     let auth = Arc::new(auth::Auth::new(state_dir));

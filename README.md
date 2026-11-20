@@ -46,7 +46,7 @@ Puis : mandataire inverse **TLS obligatoire** ([`deploy/nginx/`](deploy/nginx/sy
 | Je veux… | Voir |
 |---|---|
 | Tout le guide (prérequis, appairage, mise à jour, sauvegarde de la clé, désappairage, pièges réseau) | [`docs/deploiement.md`](docs/deploiement.md) |
-| Docker (variante avancée : seccomp et AppArmor dédiés, cgroup délégué) | [`docs/deploiement.md §3`](docs/deploiement.md#3-docker-variante-avancée) |
+| Docker (variante avancée, **non testée, non prise en charge en l'état** : seccomp et AppArmor dédiés, cgroup délégué) | [`docs/deploiement.md §3`](docs/deploiement.md#3-docker-variante-avancée) |
 | Sans conteneur (systemd, `LoadCredentialEncrypted=`, `Delegate=yes`) | [`docs/deploiement.md §4`](docs/deploiement.md#4-systemd-sans-conteneur), [`unité`](crates/supervisor/systemd/synco-ai-runtime.service) |
 | Compose, avec la passerelle Synco AI et Ollama | [`compose.example.yml`](compose.example.yml) |
 | Recette manuelle de la porte C | [`docs/recette-porte-c.md`](docs/recette-porte-c.md) |

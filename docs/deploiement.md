@@ -5,7 +5,7 @@ Guide d'installation pour l'administrateur d'une organisation qui héberge son r
 | Chemin | Statut | Quand |
 |---|---|---|
 | **[Podman](#2-podman-chemin-officiel)** (rootless, une image OCI) | **officiel, testé** | par défaut, y compris avec Quadlet (service systemd utilisateur) ou `podman compose` |
-| **[Docker](#3-docker-variante-avancée)** (profils seccomp et AppArmor dédiés, cgroup délégué) | variante avancée, **non testée** dans ce lot | si Podman n'est pas une option |
+| **[Docker](#3-docker-variante-avancée)** (profils seccomp et AppArmor dédiés, cgroup délégué) | variante avancée, **non testée, non prise en charge en l'état** | si Podman n'est pas une option |
 | **[systemd sans conteneur](#4-systemd-sans-conteneur)** | fourni, unité système **non essayée** (recette manuelle) | machine dédiée, TPM2 disponible |
 
 Dans tous les cas, **un mandataire inverse TLS est obligatoire** ([§5](#5-mandataire-inverse-tls)) : le runtime ne termine
@@ -227,10 +227,11 @@ Pour tout supprimer : `systemctl --user disable --now synco-ai-runtime`, `podman
 
 ## 3. Docker (variante avancée)
 
-> **Non testée dans ce lot** : le démon Docker n'était pas accessible sur la machine de développement (permission refusée
-> sur le socket). Le principe vient de [`plan/10-bac-a-sable.md §10`](plan/10-bac-a-sable.md) et des sources de moby
-> (`docker-v29.9.2`). Les profils ont été validés **sous Podman/crun** (le profil seccomp, voir plus bas), pas sous
-> Docker. À passer par la recette `sandbox-check` avant tout usage.
+> **NON TESTÉE ET NON PRISE EN CHARGE EN L'ÉTAT.** Le démon Docker n'était pas accessible sur la machine de développement
+> (socket refusé) : rien de ce qui suit n'a tourné sous Docker. Le principe vient de
+> [`plan/10-bac-a-sable.md §10`](plan/10-bac-a-sable.md) et de la **lecture** des sources de moby (`docker-v29.9.2`) ; la
+> revue a relevé des défauts de conception dans la première version de cette recette (corrigés ci-dessous ou présentés comme
+> problèmes ouverts). **Utiliser Podman (§2).** Seuls le profil seccomp (sous Podman/crun) a été exécuté.
 
 Docker, par défaut, bloque trois choses dont le bac à sable a besoin :
 
@@ -243,27 +244,48 @@ Docker, par défaut, bloque trois choses dont le bac à sable a besoin :
    (`seccomp=unconfined` fonctionne aussi mais prive le superviseur du filtre de Docker.)
 2. **AppArmor** (`docker-default`, hôtes Ubuntu/Debian) : `deny mount`. → profil dédié
    [`deploy/docker/apparmor-synco-ai-runtime`](../deploy/docker/apparmor-synco-ai-runtime) (docker-default sans
-   `deny mount`, plus `userns`, `mount`, `pivot_root` ; **jamais écrit ni chargé sur un hôte AppArmor ici**).
-   `sudo apparmor_parser -r -W deploy/docker/apparmor-synco-ai-runtime`.
+   `deny mount`, plus `userns`, `mount`, `pivot_root`). **Jamais chargé ni testé** : pas d'hôte AppArmor ici, et la règle
+   `userns` n'existe qu'avec `abi <abi/4.0>` (AppArmor ≥ 4.0). `sudo apparmor_parser -r -W deploy/docker/apparmor-synco-ai-runtime`.
 3. **cgroup v2** : Docker monte `/sys/fs/cgroup` en lecture seule hors `--privileged`, même en `--cgroupns=private`
-   (moby#46763). Selon la décision du projet : un **sous-arbre cgroup délégué de l'hôte**, dédié au conteneur, désigné par
+   (moby#46763). Décision du projet : un **sous-arbre cgroup délégué de l'hôte**, dédié au conteneur, désigné par
    `[sandbox] cgroup_root`. **Jamais** tout `/sys/fs/cgroup`.
 
-Schéma de la recette (à valider) :
+### Problèmes connus de la recette (relevés en revue, établis par lecture)
+
+- **Capacité ambiante** : Docker ne place pas les capacités ajoutées par `--cap-add` dans l'ensemble *ambiant* pour un
+  utilisateur non root (moby#8460, #38664) : **`DAC_OVERRIDE` est inopérant pour l'uid 10001** (contrairement à Podman, où
+  c'est vérifié). La recette ne doit donc pas compter dessus : les fichiers de cgroup doivent appartenir à l'uid 10001.
+- **Migration de cgroup** : avec `--cgroupns=host`, le superviseur se déplace vers `<cgroup_root>/supervisor` ; le noyau
+  exige l'écriture de `cgroup.procs` du plus proche **ancêtre commun** des deux cgroups, ici la racine ou une tranche de
+  l'hôte, qui appartient à root : refus probable (`cgroup_join` / `cgroup_not_delegated`). Piste : placer le cgroup du
+  conteneur **sous** le sous-arbre délégué (`--cgroup-parent`), pour que l'ancêtre commun soit le sous-arbre délégué.
+- **Délégation minimale** : ne **pas** faire `chown -R` du sous-arbre : cela donnerait au conteneur la propriété de
+  `memory.max`, `pids.max`… de la racine du sous-arbre, donc le pouvoir de **lever ses propres plafonds**. Comme systemd,
+  ne déléguer que le répertoire, `cgroup.procs`, `cgroup.subtree_control` et `cgroup.threads`.
+- **Plafonds** : les cgroups des workers sont dans le sous-arbre délégué, **hors** du cgroup du conteneur : `--memory` et
+  `--pids-limit` de Docker **ne les bornent pas**. Les limites globales (`memory.max`, `pids.max`, `cpu.max`) sont à poser
+  **par l'hôte, root, sur la racine du sous-arbre**, et dimensionnées sur `max_workers × 512 Mio`.
+- **Fuite d'information** : `--cgroupns=host` expose au conteneur la **hiérarchie cgroup de l'hôte** (noms de services,
+  PID, identifiants de conteneurs voisins) via `/proc/self/cgroup` et les chemins.
+
+Recette corrigée (toujours **non testée**) :
 
 ```bash
-# Hôte : sous-arbre délégué dédié (contrôleurs memory, pids, cpu activés), propriété de l'uid du conteneur.
-sudo mkdir /sys/fs/cgroup/synco-ai-runtime
-echo "+memory +pids +cpu" | sudo tee /sys/fs/cgroup/cgroup.subtree_control   # si nécessaire
-sudo chown -R 10001:10001 /sys/fs/cgroup/synco-ai-runtime
+# Hôte, en root : sous-arbre dédié ; seuls le répertoire et trois fichiers de contrôle sont délégués à l'uid 10001.
+CG=/sys/fs/cgroup/synco-ai-runtime
+mkdir "$CG"
+echo "+memory +pids +cpu" > /sys/fs/cgroup/cgroup.subtree_control           # si nécessaire
+chown 10001:10001 "$CG" "$CG/cgroup.procs" "$CG/cgroup.subtree_control" "$CG/cgroup.threads"
+# Plafonds posés PAR L'HÔTE (fichiers restés à root) : exemple pour max_workers = 8
+echo 4608M > "$CG/memory.max"; echo 1024 > "$CG/pids.max"; echo "800000 100000" > "$CG/cpu.max"
 
 docker build -t synco-ai-runtime .
 docker run -d --name synco-ai-runtime --restart unless-stopped \
-  --user 10001:10001 --read-only --tmpfs /tmp --cap-drop=ALL --cap-add=DAC_OVERRIDE \
+  --user 10001:10001 --read-only --tmpfs /tmp --cap-drop=ALL \
   --security-opt no-new-privileges \
   --security-opt seccomp=deploy/docker/seccomp-synco-ai-runtime.json \
   --security-opt apparmor=synco-ai-runtime \
-  --cgroupns=host -v /sys/fs/cgroup/synco-ai-runtime:/run/synco-cgroup:rw \
+  --cgroupns=host -v "$CG":/run/synco-cgroup:rw \
   -v synco-ai-runtime-state:/var/lib/synco-ai-runtime \
   -v "$HOME/.config/synco-ai-runtime/config.toml:/etc/synco-ai-runtime/config.toml:ro" \
   -v "$HOME/.config/synco-ai-runtime/passphrase.txt:/run/secrets/synco-ai-runtime-passphrase:ro" \
@@ -273,18 +295,17 @@ docker run -d --name synco-ai-runtime --restart unless-stopped \
 # passphrase.txt (hors du dépôt) : chmod 0400 puis chown 10001:10001 (le runtime exige ce propriétaire).
 ```
 
-Points à vérifier sur un vrai Docker (non résolus) :
+Cette recette **ne résout pas** le problème de l'ancêtre commun (ci-dessus) : à valider ou à abandonner sur un vrai Docker.
 
-- le superviseur se déplace lui-même dans `<cgroup_root>/supervisor` : le noyau exige l'écriture sur le plus proche
-  ancêtre commun des deux cgroups et que la destination soit dans l'espace de noms cgroup du processus ; d'où
-  `--cgroupns=host` et `DAC_OVERRIDE` dans la recette ci-dessus. Si cela échoue, le message est `cgroup_not_delegated` ou
-  `cgroup_join`.
-- **Variante plus simple à évaluer** : les sources de moby 29.9.2 contiennent l'option
-  `--security-opt writable-cgroups=true` (cgroup **du conteneur** inscriptible, incompatible avec `userns-remap` et le
-  mode rootless de Docker). Avec elle, plus besoin de `cgroup_root` ni de `--cgroupns=host` : seul le cgroup du conteneur
-  est exposé. Non essayée ; c'est une décision à confirmer par l'utilisateur ([question ouverte](journal.md)).
-- `userns-remap` et Docker sans root : incompatibles avec la recette ci-dessus (cgroup délégué) ; imbrication à étudier.
-- `HEALTHCHECK` : exécuté nativement par Docker (aucune option à ajouter).
+### Piste : `--security-opt writable-cgroups=true`
+
+Les sources de moby 29.9.2 contiennent cette option (`daemon/daemon_unix.go`, `daemon/oci_linux.go`) : le cgroup **du
+conteneur** est monté inscriptible, sans `cgroup_root` ni `--cgroupns=host` ; incompatible avec `userns-remap` et le mode
+rootless de Docker. Elle ne règle **pas** la propriété : ce cgroup appartient à root, l'uid 10001 ne peut pas y écrire
+(même problème que sous Podman, sans la capacité ambiante pour le contourner). Non essayée ; décision à confirmer par l'utilisateur.
+
+Autres points : `userns-remap` et Docker sans root sont incompatibles avec la recette ; `HEALTHCHECK` est exécuté
+nativement par Docker.
 
 ## 4. systemd sans conteneur
 

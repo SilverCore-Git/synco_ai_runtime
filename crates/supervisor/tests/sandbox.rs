@@ -413,7 +413,8 @@ async fn vrai_worker_et_cout() {
 /// laisse ni répertoire ni socket.
 #[tokio::test]
 async fn lancement_refuse_sans_reste() {
-    let run = run_dir();
+    // Chemin court : le socket du mandataire est bien créé avant le refus de la route.
+    let run = tempfile::tempdir().unwrap();
     let l = launcher(&run, Mode::Insecure, no_proxy()).await;
     let route = LlmRoute {
         provider: "openai".into(),

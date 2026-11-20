@@ -35,6 +35,8 @@ use crate::api::PREFIX;
 pub const MAX_THREADS_PER_CALL: usize = 10;
 /// Destinataires au plus (corps du canal ≤ 256 Kio, 04 §4.3).
 pub const MAX_RECIPIENTS: usize = 300;
+/// Taille minimale d'une clé RSA de membre.
+pub const MIN_RSA_BITS: usize = 2048;
 
 /// Aléa du système pour `rsa` (adaptateur de [`OsRandom`]).
 #[derive(Debug, Default)]
@@ -77,7 +79,13 @@ pub fn rsa_public_from_jwk(jwk: &Value) -> Option<PublicKey> {
     }
     let n = from_b64u(jwk.get("n")?.as_str()?).ok()?;
     let e = from_b64u(jwk.get("e")?.as_str()?).ok()?;
-    PublicKey::new(BoxedUint::from_be_slice_vartime(&n), BoxedUint::from_be_slice_vartime(&e)).ok()
+    // Clé de moins de 2048 bits refusée (l'app génère du 4096) ; 8192 au plus.
+    PublicKey::new_with_size_limits(
+        BoxedUint::from_be_slice_vartime(&n),
+        BoxedUint::from_be_slice_vartime(&e),
+        MIN_RSA_BITS..=PublicKey::MAX_SIZE,
+    )
+    .ok()
 }
 
 /// `encryptThreadKeyForMember` : RSA-OAEP-SHA256 de la clé brute, `b64`.
@@ -114,6 +122,7 @@ pub async fn run(ctx: &ToolCtx<'_>, args: &Value) -> Outcome {
     if !members.ok() {
         return api_failure(&members);
     }
+    let listed = members.body.get("members").and_then(Value::as_array).map_or(0, Vec::len);
     let members: Vec<(String, PublicKey)> = members
         .body
         .get("members")
@@ -126,8 +135,9 @@ pub async fn run(ctx: &ToolCtx<'_>, args: &Value) -> Outcome {
             runtime_protocol::ids::is_identifier(id).then_some(())?;
             Some((id.to_owned(), rsa_public_from_jwk(m.get("publicKey")?)?))
         })
-        .take(MAX_RECIPIENTS)
         .collect();
+    // Membres écartés (clé illisible ou trop courte) : signalés au modèle, jamais en silence.
+    let skipped = listed.saturating_sub(members.len());
     let mut created = Vec::new();
     for t in list {
         let name = t.get("name").and_then(Value::as_str).unwrap_or_default();
@@ -145,6 +155,12 @@ pub async fn run(ctx: &ToolCtx<'_>, args: &Value) -> Outcome {
         let Ok(key) = SymmetricKey::generate(&mut OsRandom) else { return error("tool_failed") };
         let recipients: Vec<&(String, PublicKey)> =
             members.iter().filter(|(id, _)| space.is_none() || id == ctx.user_id).collect();
+        if recipients.len() > MAX_RECIPIENTS {
+            // Corps du canal ≤ 256 Kio (04 §4.3) : erreur explicite plutôt qu'un écartement.
+            return Outcome::Failed(
+                json!({ "error": "too_many_recipients", "max": MAX_RECIPIENTS, "threads": created }),
+            );
+        }
         let mut keys = Vec::new();
         for (id, public) in recipients {
             match seal_for_member(public, &key) {
@@ -207,6 +223,10 @@ pub async fn run(ctx: &ToolCtx<'_>, args: &Value) -> Outcome {
             crate::json_set(&mut out, "warning", json!(w));
         }
         created.push(out);
+    }
+    if skipped > 0 {
+        return Outcome::Done(json!({ "threads": created, "skippedRecipients": skipped,
+            "note": "Des membres n'ont pas reçu la clé (clé publique absente, illisible ou trop courte) : ils devront la recevoir depuis Synco." }));
     }
     Outcome::Done(json!({ "threads": created }))
 }

@@ -853,3 +853,58 @@ async fn confirmation_d_un_autre_appel_et_deny_reverifie() {
     let tool = msgs.iter().find(|m| m["role"] == "tool").unwrap();
     assert_eq!(tool["toolResult"], json!({ "error": "tool_denied_by_policy" }));
 }
+
+/// I5 : clé RSA de membre de moins de 2048 bits refusée (et signalée) ; plus de 300
+/// destinataires : erreur explicite, aucun salon créé.
+#[tokio::test]
+async fn create_thread_cles_courtes_et_trop_de_destinataires() {
+    let rsa = rsa_fixture();
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.with(|st| {
+        st.members = json!([
+            { "userId": USER, "publicKey": rsa["publicJwk"].to_string() },
+            { "userId": MEMBER, "publicKey": rsa["shortPublicJwk"].to_string() },
+        ]);
+    });
+    api.deposit_message(M1, "Crée Projets");
+    llm.push(Script::ok(sse_tool(
+        "call_t",
+        "create_thread",
+        &json!({ "threads": [{ "name": "Projets", "type": "text" }] }),
+        (10, 3),
+    )));
+    llm.push(Script::ok(sse_text(&["Fait."], (10, 3))));
+    let mut ini = init(1);
+    ini.tool_policy = policy(&[("create_thread", ToolPolicy::Auto)]);
+    let (peer, _t) = spawn_worker(&api, &llm, ini.clone(), default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Idle);
+    let created = api.with(|st| st.threads_created.clone());
+    let ids: Vec<&str> = created[0]["keys"].as_array().unwrap().iter().map(|k| k["userId"].as_str().unwrap()).collect();
+    assert_eq!(ids, [USER], "clé de 1024 bits écartée");
+    let msgs = api.clear_messages();
+    assert_eq!(msgs.iter().find(|m| m["role"] == "tool").unwrap()["toolResult"]["skippedRecipients"], 1);
+
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.with(|st| {
+        st.members = Value::Array(
+            (0..301)
+                .map(|i| json!({ "userId": format!("user{i}"), "publicKey": rsa["publicJwk"].to_string() }))
+                .collect(),
+        );
+    });
+    api.deposit_message(M1, "Crée Projets");
+    llm.push(Script::ok(sse_tool(
+        "call_t",
+        "create_thread",
+        &json!({ "threads": [{ "name": "Projets", "type": "text" }] }),
+        (10, 3),
+    )));
+    llm.push(Script::ok(sse_text(&["Trop de membres."], (10, 3))));
+    let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Idle);
+    api.with(|st| assert!(st.threads_created.is_empty()));
+    let msgs = api.clear_messages();
+    assert_eq!(msgs.iter().find(|m| m["role"] == "tool").unwrap()["toolResult"]["error"], "too_many_recipients");
+}

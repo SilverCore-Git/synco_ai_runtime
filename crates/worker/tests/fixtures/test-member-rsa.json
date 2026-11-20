@@ -1,5 +1,5 @@
 {
-  "description": "Clé RSA-OAEP-SHA256 de TEST (membre fictif), générée par WebCrypto : sert seulement aux tests de create_thread et au test croisé TS. Aucune valeur réelle.",
+  "description": "Clé RSA-OAEP-SHA256 de TEST (membre fictif), générée par WebCrypto : sert seulement aux tests de create_thread et au test croisé TS. Aucune valeur réelle. shortPublicJwk : clé de 1024 bits, à refuser.",
   "publicJwk": {
     "alg": "RSA-OAEP-256",
     "e": "AQAB",
@@ -25,5 +25,15 @@
     "p": "3JzCW8Y3K2xXyIIBgm-Qz_Jn87pkUBBQKg3LBuAKiU2uTaVV5YFo4PjbToAPDAnarHwRg3ZsLYGkPd6dHVV25Z32Bg0ukHyRlgA_YIJdPJTMWnPLQof0YN3KWfcjeaBgmt-XcLBs_J8fwiAlStYLS6jn-pOuck3tIVasTjbqeWs",
     "q": "zeyZQQxOQAJSRHactkIVXe3gRFcfOZfbRBYk-FFDXdGYFFIoyjRbaY-IDELhz7B7PSc2dWW1s04_8lT1oefgrOFnJvBqqJInjJ0KMX5z0SZbR6NX-g3ySzlIZvbbZMmrWlGuxbSo5luwpTP2Svjf2gn221fxvCE00Es6NdSTrkM",
     "qi": "gCPK-FO8v1DuFEN6Z_dBzV_i0L6-z_Gg2ny8xhRVqbr1X6g2aOQ4GYG62VM9Uucw_fBaFXCBW9BXi77ZOyDfGel1kH0eMAr3QbaFMDOy7xmDE6A1XUDszeVIX0Rxl0Dtm9ilclhMj0UmjgIjdx4GSvZ4bhR-Rw9p7JRVcBhFzzY"
+  },
+  "shortPublicJwk": {
+    "alg": "RSA-OAEP-256",
+    "e": "AQAB",
+    "ext": true,
+    "key_ops": [
+      "encrypt"
+    ],
+    "kty": "RSA",
+    "n": "rfB8_3W7qpekwDyg8r_AQVfCO5B5akyLMkjOibF5nXW7InerZ7RENwRRd1l3sOPYHYbMfhrdWg3hKVRCGm19pVbI_cA6xi4WmK_LSxy9TBTZ_qtoi1voNdpAXWRaGL9X_K1w6dqpQZsPlR-2OZG8S29C4PI1kiSxEvvSVGsOXLc"
   }
 }

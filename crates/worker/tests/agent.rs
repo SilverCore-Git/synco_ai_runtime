@@ -747,3 +747,63 @@ async fn bail_perdu_aucune_ecriture() {
     });
     assert!(peer.msgs().iter().any(|m| matches!(m, WorkerMsg::Log(l) if l.code == "lease_lost")));
 }
+
+/// I2 : après l'envoi d'une action mutante, une erreur de transport donne `unknown_outcome`
+/// (l'action a pu avoir lieu) ; une erreur explicite de l'API ou un refus local du relais reste un
+/// échec.
+#[tokio::test]
+async fn erreur_de_transport_apres_envoi_issue_inconnue() {
+    async fn run(
+        fail: Option<(&str, &str)>,
+        tool_error: Option<(u16, Value)>,
+        tool: &str,
+        args: Value,
+    ) -> (FakeApi, Value) {
+        let api = FakeApi::new();
+        let llm = FakeLlm::start();
+        api.with(|st| {
+            st.relay_fail = fail.map(|(a, b)| (a.to_owned(), b.to_owned()));
+            st.tool_error = tool_error;
+        });
+        api.deposit_message(M1, "Fais-le");
+        llm.push(Script::ok(sse_tool("call_1", tool, &args, (10, 3))));
+        llm.push(Script::ok(sse_text(&["Je vérifie."], (10, 3))));
+        let mut ini = init(1);
+        ini.tool_policy = policy(&[(tool, ToolPolicy::Auto)]);
+        let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+        assert_eq!(peer.wait_done().await, DoneReason::Idle);
+        let result = api.clear_messages().iter().find(|m| m["role"] == "tool").unwrap()["toolResult"].clone();
+        (api, result)
+    }
+    let task = json!({ "title": "Rapport" });
+    // Réponse perdue après exécution (relay_network) : issue inconnue + journal.
+    let (api, r) = run(Some(("/tools/create_task/execute", "relay_network")), None, "create_task", task.clone()).await;
+    assert_eq!(r, json!({ "error": "unknown_outcome", "note": synco_ai_runtime_worker::agent::UNKNOWN_OUTCOME_NOTE }));
+    api.with(|st| {
+        assert_eq!(st.tool_runs.len(), 1);
+        assert!(st.events.contains(&json!({ "type": "tool_unknown_outcome", "code": "create_task" })));
+    });
+    // Erreur 5xx : issue inconnue aussi.
+    let (_, r) = run(None, Some((500, json!({ "error": "internal" }))), "create_task", task.clone()).await;
+    assert_eq!(r["error"], "unknown_outcome");
+    // Erreur explicite de l'API : échec ordinaire.
+    let (_, r) = run(None, Some((403, json!({ "error": "forbidden" }))), "create_task", task.clone()).await;
+    assert_eq!(r, json!({ "error": "forbidden" }));
+    // Refus local du relais (jamais envoyé) : échec, rien d'exécuté.
+    let (api, r) = run(Some(("/tools/create_task/execute", "relay_busy")), None, "create_task", task).await;
+    assert_eq!(r, json!({ "error": "tool_failed" }));
+    api.with(|st| assert!(st.tool_runs.is_empty() && st.events.is_empty()));
+    // Outil non mutant : un échec de transport reste un échec.
+    let (_, r) = run(Some(("/tools/list_spaces/execute", "relay_network")), None, "list_spaces", json!({})).await;
+    assert_eq!(r, json!({ "error": "tool_failed" }));
+    // create_thread : salon peut-être créé → issue inconnue.
+    let (api, r) = run(
+        Some(("/e2ee/threads", "relay_network")),
+        None,
+        "create_thread",
+        json!({ "threads": [{ "name": "Projets", "type": "text" }] }),
+    )
+    .await;
+    assert_eq!(r["error"], "unknown_outcome");
+    api.with(|st| assert_eq!(st.threads_created.len(), 1));
+}

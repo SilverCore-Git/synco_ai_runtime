@@ -179,7 +179,7 @@ pub struct ToolCtx<'a> {
 /// Exécute un outil accepté (politique déjà appliquée).
 pub async fn execute(ctx: &ToolCtx<'_>, spec: &ToolSpec, args: &Value) -> Outcome {
     if spec.category == "server" {
-        return execute_server(ctx, &spec.name, args).await;
+        return execute_server(ctx, &spec.name, spec.mutating, args).await;
     }
     match spec.name.as_str() {
         "search_messages" => search::run(ctx, args).await,
@@ -188,10 +188,54 @@ pub async fn execute(ctx: &ToolCtx<'_>, spec: &ToolSpec, args: &Value) -> Outcom
     }
 }
 
-async fn execute_server(ctx: &ToolCtx<'_>, name: &str, args: &Value) -> Outcome {
+/// Résultat d'un outil dont l'issue est inconnue (08 §5, texte exact de la spec).
+pub const UNKNOWN_OUTCOME_NOTE: &str =
+    "L'exécution de cet outil a été interrompue : son résultat est inconnu. Vérifie l'état avant de réessayer.";
+
+/// `{"error":"unknown_outcome","note":…}`.
+#[must_use]
+pub fn unknown_outcome() -> Outcome {
+    Outcome::Failed(json!({ "error": "unknown_outcome", "note": UNKNOWN_OUTCOME_NOTE }))
+}
+
+/// Ce qu'on sait d'une requête d'action après coup.
+#[derive(Debug)]
+pub(crate) enum Sent {
+    /// Réponse de l'API (succès ou erreur explicite).
+    Answered(crate::api::ApiResponse),
+    /// Refus **local** du relais, avant tout envoi à l'API (`relay_busy`, `relay_rate_limited`,
+    /// `relay_refused`, `relay_bad_part`) : l'action n'a pas eu lieu.
+    NotSent,
+    /// Envoyée, sans réponse exploitable (délai, pipe fermé, `relay_network`, réponse illisible ou
+    /// trop grande, `5xx`) : l'action a pu avoir lieu.
+    Unknown,
+}
+
+pub(crate) fn sent(r: Result<crate::api::ApiResponse, crate::link::LinkError>) -> Sent {
+    match r {
+        Err(_) => Sent::Unknown,
+        Ok(r) if r.status == 0 => match r.relay_error.as_deref() {
+            Some("relay_busy" | "relay_rate_limited" | "relay_refused" | "relay_bad_part") => Sent::NotSent,
+            _ => Sent::Unknown,
+        },
+        Ok(r) if r.status >= 500 => Sent::Unknown,
+        Ok(r) => Sent::Answered(r),
+    }
+}
+
+/// Échec d'une action envoyée : issue inconnue pour un outil mutant (l'action a pu avoir lieu),
+/// simple échec sinon.
+#[must_use]
+pub fn transport_failure(mutating: bool) -> Outcome {
+    if mutating { unknown_outcome() } else { error("tool_failed") }
+}
+
+async fn execute_server(ctx: &ToolCtx<'_>, name: &str, mutating: bool, args: &Value) -> Outcome {
     let body = json!({ "leaseEpoch": ctx.lease_epoch, "args": args });
-    let Ok(r) = ctx.api.conv(HttpMethod::Post, &format!("/tools/{name}/execute"), Some(&body)).await else {
-        return error("tool_failed");
+    let r = match sent(ctx.api.conv(HttpMethod::Post, &format!("/tools/{name}/execute"), Some(&body)).await) {
+        Sent::Answered(r) => r,
+        Sent::NotSent => return error("tool_failed"),
+        Sent::Unknown => return transport_failure(mutating),
     };
     if r.ok() {
         return match r.body.get("ok").and_then(Value::as_bool) {

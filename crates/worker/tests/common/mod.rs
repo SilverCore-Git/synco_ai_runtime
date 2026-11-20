@@ -112,6 +112,11 @@ pub struct ApiState {
     pub seen: Vec<Seen>,
     pub refused: Vec<String>,
     pub tickets: u32,
+    /// Échec de relais simulé : (suffixe du chemin, code `relay_*`). `relay_network` : la requête
+    /// est arrivée à l'API, la réponse est perdue ; autres codes : refus local avant envoi.
+    pub relay_fail: Option<(String, String)>,
+    /// Réponse d'erreur imposée à `tools/:name/execute` (statut, corps), après enregistrement.
+    pub tool_error: Option<(u16, Value)>,
 }
 
 impl ApiState {
@@ -336,6 +341,9 @@ impl FakeApi {
                         return Err(err(403, "tool_denied_by_policy"));
                     }
                     st.tool_runs.push(((*name).to_owned(), b.get("args").cloned().unwrap_or(Value::Null)));
+                    if let Some((status, body)) = st.tool_error.clone() {
+                        return Err((status, body));
+                    }
                     Ok(st.block_tool.as_deref() == Some(*name))
                 });
                 match blocked {
@@ -648,6 +656,20 @@ where
                                 let wtx = wtx.clone();
                                 tokio::spawn(async move {
                                     let body = body.into_body();
+                                    let fail = api.with(|st| {
+                                        st.relay_fail.clone().filter(|(suffix, _)| head.path.ends_with(suffix.as_str()))
+                                    });
+                                    if let Some((_, code)) = fail {
+                                        if code == "relay_network" {
+                                            let _ = api.handle(head.method.as_str(), &head.path, &body).await;
+                                        }
+                                        let _ = wtx
+                                            .send(Ok(SupervisorMsg::SignedRequestResponse(SignedResponse::failure(
+                                                &id, &code,
+                                            ))))
+                                            .await;
+                                        return;
+                                    }
                                     let (status, resp) = api.handle(head.method.as_str(), &head.path, &body).await;
                                     let bytes = if resp.is_null() { Vec::new() } else { resp.to_string().into_bytes() };
                                     for p in SignedResponse::split(&id, status, &BTreeMap::new(), &bytes) {

@@ -40,8 +40,7 @@ use crate::tools::{self, Decision, Outcome, ToolCtx, ToolSpec};
 use crate::transcript::{self, Message, PendingToolCall, Role, ToolCall, ToolStatus};
 
 /// Résultat d'un outil dont l'exécution a été interrompue (08 §5, texte exact de la spec).
-pub const UNKNOWN_OUTCOME_NOTE: &str =
-    "L'exécution de cet outil a été interrompue : son résultat est inconnu. Vérifie l'état avant de réessayer.";
+pub use crate::tools::UNKNOWN_OUTCOME_NOTE;
 /// Refus de l'utilisateur (même texte que `aiTurnRunner.ts`).
 pub const REJECTED_BY_USER: &str = "Action refusée par l'utilisateur.";
 /// Plafond de `consumedInbox` par écriture (04 §4.2).
@@ -1363,6 +1362,9 @@ impl Agent {
                 Ok(Flow::Continue)
             }
             Outcome::Failed(v) => {
+                if v.get("error").and_then(Value::as_str) == Some("unknown_outcome") {
+                    self.events.push(unknown_event(&tc.name));
+                }
                 self.close_call(&tc.id, &tc.name, ToolStatus::Error, v).await?;
                 self.persist("running", None).await?;
                 Ok(Flow::Continue)

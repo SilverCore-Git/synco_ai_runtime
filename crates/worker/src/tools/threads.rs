@@ -85,6 +85,13 @@ pub fn seal_for_member(public: &PublicKey, key: &SymmetricKey) -> Option<String>
     public.encrypt(&mut SysRng, Oaep::<Sha256>::new(), key.as_bytes()).ok().map(|c| b64(&c))
 }
 
+fn unknown_with(created: Vec<Value>) -> Outcome {
+    if created.is_empty() {
+        return super::unknown_outcome();
+    }
+    Outcome::Failed(json!({ "error": "unknown_outcome", "note": super::UNKNOWN_OUTCOME_NOTE, "threads": created }))
+}
+
 fn api_failure(r: &crate::api::ApiResponse) -> Outcome {
     match r.code() {
         Some("lease_conflict") => Outcome::LeaseLost,
@@ -156,8 +163,17 @@ pub async fn run(ctx: &ToolCtx<'_>, args: &Value) -> Outcome {
         {
             crate::json_set(&mut body, "categoryId", json!(c));
         }
-        let Ok(r) = ctx.api.call(HttpMethod::Post, &format!("{PREFIX}/e2ee/threads"), Some(&body)).await else {
-            return error("tool_failed");
+        let r = match super::sent(ctx.api.call(HttpMethod::Post, &format!("{PREFIX}/e2ee/threads"), Some(&body)).await)
+        {
+            super::Sent::Answered(r) => r,
+            super::Sent::NotSent if created.is_empty() => return error("tool_failed"),
+            super::Sent::NotSent => {
+                return Outcome::Failed(json!({ "error": "tool_failed", "threads": created }));
+            }
+            // Le salon a pu être créé : issue inconnue (08 §5), jamais « échec ».
+            super::Sent::Unknown => {
+                return unknown_with(created);
+            }
         };
         if !r.ok() {
             // Salons déjà créés dans cet appel : rendus avec l'erreur.
@@ -170,7 +186,8 @@ pub async fn run(ctx: &ToolCtx<'_>, args: &Value) -> Outcome {
         let Some(thread_id) =
             r.body.get("id").and_then(Value::as_str).filter(|i| runtime_protocol::ids::is_identifier(i))
         else {
-            return error("tool_failed");
+            // Créé (2xx) mais sans identifiant lisible : issue inconnue.
+            return unknown_with(created);
         };
         let thread_id = thread_id.to_owned();
         let warning = register_key(ctx, &thread_id, &key).await;

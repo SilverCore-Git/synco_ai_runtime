@@ -5,44 +5,62 @@
 //! du fournisseur **de cette conversation** (et d'aucun autre hôte), en TLS, sans suivre de
 //! redirection, et :
 //!
-//! - n'accepte que `POST` du chemin de chat et `GET` de la liste des modèles ([`allowed_request`]),
-//!   sans chaîne de requête (I2) ;
+//! - n'accepte que deux requêtes (I2) : `POST` du chemin de chat et `GET` de la liste des modèles
+//!   ([`allowed_request`]), sans chaîne de requête ;
 //! - pour `openai`, `mistral`, `gemini`, `custom` : retire tout `authorization` du worker et ajoute
-//!   `Authorization: Bearer <clé>` depuis la configuration du runtime (D1) ; la clé ne passe jamais
-//!   par le pipe ni par le worker ;
-//! - pour `gateway` : relaie l'`authorization` du worker (ticket `sgt1` obtenu par
-//!   `signed_request`, 02 §4), la passerelle n'ayant pas de clé.
+//!   `Authorization: Bearer <clé>` depuis la configuration du runtime (D1), clé cherchée avec le même
+//!   identifiant que l'URL (B1, `Runtime::build_init`) ;
+//! - pour `gateway` : relaie l'`authorization` du worker (ticket `sgt1`), n'ajoute aucune clé, et ne
+//!   joint qu'une adresse **publique** (résolveur [`PublicOnlyResolver`]) ;
+//! - borne la mémoire qu'un worker peut lui faire consommer (I1) : 4 connexions par socket, place
+//!   prise **avant** la lecture du corps, corps ≤ [`MAX_REQUEST_BYTES`] lu en 30 s au plus, octets en
+//!   tampon plafonnés par worker et pour tout le runtime ;
 //!
-//! Aucun corps ni en-tête n'est journalisé.
+//! Refus : statut HTTP et corps `{"error":"proxy_<code>"}`, sans appel au fournisseur. Aucun corps ni
+//! en-tête n'est journalisé.
 
 use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr};
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use axum::body::{Body, Bytes};
-use axum::extract::{DefaultBodyLimit, State};
-use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
+use axum::extract::{Request, State};
+use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use http_body_util::BodyExt as _;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use zeroize::Zeroizing;
 
 use crate::config::ProviderSecret;
 use crate::launcher::LlmRoute;
 
-/// Corps de requête maximal (historique + images en base64).
-pub const MAX_REQUEST_BYTES: usize = 32 * 1024 * 1024;
-/// Requêtes simultanées par worker.
-pub const MAX_IN_FLIGHT_PER_WORKER: usize = 4;
+/// Corps de requête maximal : l'historique d'une conversation est plafonné à 8 Mio sérialisés
+/// (09 §4) ; une requête de chat (historique, définitions d'outils, résultats d'outils ≤ 256 Kio
+/// chacun) n'a aucune raison légitime de le dépasser. La passerelle accepte 1 Mio.
+pub const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
+/// Connexions simultanées par socket de worker (une requête à la fois par connexion HTTP/1.1).
+pub const MAX_CONNECTIONS_PER_WORKER: usize = 4;
+/// Octets de corps de requête en tampon pour un worker.
+pub const WORKER_BUFFER_BYTES: usize = 16 * 1024 * 1024;
+/// Octets de corps de requête en tampon pour tout le runtime.
+pub const GLOBAL_BUFFER_BYTES: usize = 64 * 1024 * 1024;
+/// Délai de lecture d'un corps de requête.
+pub const BODY_READ_TIMEOUT: Duration = Duration::from_secs(30);
 /// Silence maximal de l'amont (09 §2).
 pub const READ_TIMEOUT: Duration = Duration::from_secs(120);
 /// Durée totale maximale d'un appel (09 §2).
 pub const TOTAL_TIMEOUT: Duration = Duration::from_secs(600);
 
-/// Mandataire partagé (clés des fournisseurs, client HTTP).
+/// Mandataire partagé (clés des fournisseurs, clients HTTP, tampons du runtime).
 pub struct LlmProxy {
     http: reqwest::Client,
     public_http: reqwest::Client,
     secrets: BTreeMap<String, ProviderSecret>,
+    global_bytes: Arc<Semaphore>,
 }
 
 impl core::fmt::Debug for LlmProxy {
@@ -55,7 +73,7 @@ struct RouteCtx {
     proxy: Arc<LlmProxy>,
     route: LlmRoute,
     base: String,
-    in_flight: Arc<tokio::sync::Semaphore>,
+    bytes: Arc<Semaphore>,
 }
 
 /// Adresse non publique (boucle locale, privée, lien local, métadonnées, ULA, non spécifiée,
@@ -88,6 +106,21 @@ pub fn ip_is_private(ip: IpAddr) -> bool {
                 || (seg[0] == 0x2001 && seg[1] == 0x0db8)
         }
     }
+}
+
+/// URL de base admise pour un fournisseur **configuré dans le runtime** : `https://…`, ou `http://`
+/// vers la boucle locale (développement, tests), sans identifiants, requête ni fragment.
+#[must_use]
+pub fn base_url_allowed(url: &str) -> bool {
+    reqwest::Url::parse(url).is_ok_and(|u| {
+        let loopback = matches!(u.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+        (u.scheme() == "https" || (u.scheme() == "http" && loopback))
+            && u.username().is_empty()
+            && u.password().is_none()
+            && u.query().is_none()
+            && u.fragment().is_none()
+            && u.host_str().is_some()
+    })
 }
 
 /// URL de passerelle venue de la **politique de l'org** (donc de l'API) : `https` seulement, nom
@@ -139,21 +172,6 @@ impl reqwest::dns::Resolve for PublicOnlyResolver {
     }
 }
 
-/// URL de base admise : `https://…`, ou `http://` vers la boucle locale (développement, tests),
-/// sans identifiants, requête ni fragment.
-#[must_use]
-pub fn base_url_allowed(url: &str) -> bool {
-    reqwest::Url::parse(url).is_ok_and(|u| {
-        let loopback = matches!(u.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
-        (u.scheme() == "https" || (u.scheme() == "http" && loopback))
-            && u.username().is_empty()
-            && u.password().is_none()
-            && u.query().is_none()
-            && u.fragment().is_none()
-            && u.host_str().is_some()
-    })
-}
-
 /// Couples (méthode, chemin) admis pour un fournisseur (I2) : chat et liste des modèles, chemins
 /// relatifs à l'URL de base, **sans** chaîne de requête. API compatibles OpenAI : `POST
 /// /chat/completions`, `GET /models` ; passerelle Synco : `POST /v1/chat/completions`, `GET /models`
@@ -181,14 +199,73 @@ fn client(public_only: bool) -> Result<reqwest::Client, &'static str> {
     b.build().map_err(|_| "llm_proxy_client")
 }
 
+/// Connexion comptée (sa place est rendue à la fermeture).
+struct LimitedConn {
+    io: tokio::net::UnixStream,
+    _permit: OwnedSemaphorePermit,
+}
+
+impl AsyncRead for LimitedConn {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.io).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for LimitedConn {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.io).poll_write(cx, buf)
+    }
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.io).poll_flush(cx)
+    }
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.io).poll_shutdown(cx)
+    }
+}
+
+/// Écouteur qui n'accepte une connexion que s'il reste une place (les suivantes attendent dans la
+/// file du noyau).
+struct LimitedListener {
+    inner: tokio::net::UnixListener,
+    slots: Arc<Semaphore>,
+}
+
+impl axum::serve::Listener for LimitedListener {
+    type Io = LimitedConn;
+    type Addr = tokio::net::unix::SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            let Ok(permit) = Arc::clone(&self.slots).acquire_owned().await else {
+                // Sémaphore jamais fermé ; par prudence, on ralentit.
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            };
+            match self.inner.accept().await {
+                Ok((io, addr)) => return (LimitedConn { io, _permit: permit }, addr),
+                Err(_) => tokio::time::sleep(Duration::from_millis(50)).await,
+            }
+        }
+    }
+
+    fn local_addr(&self) -> std::io::Result<Self::Addr> {
+        self.inner.local_addr()
+    }
+}
+
 impl LlmProxy {
     /// Mandataire avec les clés des fournisseurs (lues de la configuration, D1).
     pub fn new(secrets: BTreeMap<String, ProviderSecret>) -> Result<Arc<Self>, &'static str> {
-        Ok(Arc::new(Self { http: client(false)?, public_http: client(true)?, secrets }))
+        Ok(Arc::new(Self {
+            http: client(false)?,
+            public_http: client(true)?,
+            secrets,
+            global_bytes: Arc::new(Semaphore::new(GLOBAL_BUFFER_BYTES)),
+        }))
     }
 
     /// Sert `route` sur `listener` jusqu'à l'abandon de la tâche rendue. Refus si l'URL de base
-    /// n'est pas admise.
+    /// n'est pas admise (passerelle : [`gateway_url_allowed`] ou URL configurée).
     pub fn serve(
         self: &Arc<Self>,
         listener: tokio::net::UnixListener,
@@ -206,9 +283,10 @@ impl LlmProxy {
             proxy: Arc::clone(self),
             base: route.base_url.trim_end_matches('/').to_owned(),
             route,
-            in_flight: Arc::new(tokio::sync::Semaphore::new(MAX_IN_FLIGHT_PER_WORKER)),
+            bytes: Arc::new(Semaphore::new(WORKER_BUFFER_BYTES)),
         });
-        let app = axum::Router::new().fallback(handle).layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)).with_state(ctx);
+        let app = axum::Router::new().fallback(handle).with_state(ctx);
+        let listener = LimitedListener { inner: listener, slots: Arc::new(Semaphore::new(MAX_CONNECTIONS_PER_WORKER)) };
         Ok(tokio::spawn(async move {
             if axum::serve(listener, app).await.is_err() {
                 tracing::debug!(code = "llm_proxy_stopped", "mandataire LLM arrêté");
@@ -227,45 +305,84 @@ impl LlmProxy {
     }
 }
 
-async fn handle(
-    State(ctx): State<Arc<RouteCtx>>,
-    method: Method,
-    uri: Uri,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
-    if method != Method::GET && method != Method::POST {
+/// Lit le corps en réservant ses octets (par worker et pour le runtime) au fil de l'eau.
+async fn read_body(
+    ctx: &RouteCtx,
+    body: Body,
+) -> Result<(Bytes, Vec<OwnedSemaphorePermit>), (StatusCode, &'static str)> {
+    let mut body = body;
+    let mut buf = Vec::new();
+    let mut permits = Vec::new();
+    let read = async {
+        while let Some(frame) = body.frame().await {
+            let frame = frame.map_err(|_| (StatusCode::BAD_REQUEST, "proxy_body"))?;
+            let Ok(data) = frame.into_data() else { continue };
+            if buf.len().saturating_add(data.len()) > MAX_REQUEST_BYTES {
+                return Err((StatusCode::PAYLOAD_TOO_LARGE, "proxy_body_too_large"));
+            }
+            let n = u32::try_from(data.len()).map_err(|_| (StatusCode::PAYLOAD_TOO_LARGE, "proxy_body_too_large"))?;
+            if n > 0 {
+                let w = Arc::clone(&ctx.bytes)
+                    .try_acquire_many_owned(n)
+                    .map_err(|_| (StatusCode::TOO_MANY_REQUESTS, "proxy_busy"))?;
+                let g = Arc::clone(&ctx.proxy.global_bytes)
+                    .try_acquire_many_owned(n)
+                    .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "proxy_busy"))?;
+                permits.push(w);
+                permits.push(g);
+            }
+            buf.extend_from_slice(&data);
+        }
+        Ok(())
+    };
+    match tokio::time::timeout(BODY_READ_TIMEOUT, read).await {
+        Ok(Ok(())) => Ok((Bytes::from(buf), permits)),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err((StatusCode::REQUEST_TIMEOUT, "proxy_body_timeout")),
+    }
+}
+
+async fn handle(State(ctx): State<Arc<RouteCtx>>, req: Request) -> Response {
+    let (parts, body) = req.into_parts();
+    let path = parts.uri.path_and_query().map_or("/", |p| p.as_str());
+    if parts.method != Method::GET && parts.method != Method::POST {
         return refuse(StatusCode::METHOD_NOT_ALLOWED, "proxy_method");
     }
-    let path = uri.path_and_query().map_or("/", |p| p.as_str());
-    if !allowed_request(&ctx.route.provider, &method, path) {
+    if !allowed_request(&ctx.route.provider, &parts.method, path) {
         return refuse(StatusCode::NOT_FOUND, "proxy_path");
     }
-    let Ok(permit) = Arc::clone(&ctx.in_flight).try_acquire_owned() else {
-        return refuse(StatusCode::TOO_MANY_REQUESTS, "proxy_busy");
+    let declared =
+        parts.headers.get(header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<usize>().ok());
+    if declared.is_some_and(|n| n > MAX_REQUEST_BYTES) {
+        return refuse(StatusCode::PAYLOAD_TOO_LARGE, "proxy_body_too_large");
+    }
+    let (body, permits) = match read_body(&ctx, body).await {
+        Ok(b) => b,
+        Err((status, code)) => return refuse(status, code),
     };
-    let url = format!("{}{}", ctx.base, path);
     let gateway = ctx.route.provider == "gateway";
     let http = if gateway && !base_url_allowed(&ctx.route.base_url) { &ctx.proxy.public_http } else { &ctx.proxy.http };
-    let mut req = http.request(if method == Method::POST { reqwest::Method::POST } else { reqwest::Method::GET }, url);
+    let url = format!("{}{}", ctx.base, path);
+    let method = if parts.method == Method::POST { reqwest::Method::POST } else { reqwest::Method::GET };
+    let mut up = http.request(method, url);
     for name in [header::CONTENT_TYPE, header::ACCEPT] {
-        if let Some(v) = headers.get(&name) {
-            req = req.header(name.as_str(), v.as_bytes());
+        if let Some(v) = parts.headers.get(&name) {
+            up = up.header(name.as_str(), v.as_bytes());
         }
     }
     if gateway {
-        if let Some(v) = headers.get(header::AUTHORIZATION) {
+        if let Some(v) = parts.headers.get(header::AUTHORIZATION) {
             let mut v = v.clone();
             v.set_sensitive(true);
-            req = req.header(header::AUTHORIZATION.as_str(), v);
+            up = up.header(header::AUTHORIZATION.as_str(), v);
         }
     } else if let Some(v) = ctx.proxy.bearer(&ctx.route.provider) {
-        req = req.header(header::AUTHORIZATION.as_str(), v);
+        up = up.header(header::AUTHORIZATION.as_str(), v);
     }
-    if method == Method::POST {
-        req = req.body(body);
+    if parts.method == Method::POST {
+        up = up.body(body);
     }
-    let resp = match req.send().await {
+    let resp = match up.send().await {
         Ok(r) => r,
         Err(e) => {
             let code = if e.is_timeout() { "proxy_upstream_timeout" } else { "proxy_upstream_unreachable" };
@@ -273,6 +390,8 @@ async fn handle(
             return refuse(StatusCode::BAD_GATEWAY, code);
         }
     };
+    // Corps de la requête envoyé : ses octets ne sont plus en tampon.
+    drop(permits);
     let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     tracing::debug!(code = "llm_proxy_response", status = status.as_u16(), provider = %ctx.route.provider, "appel LLM relayé");
     let mut out = Response::builder().status(status);
@@ -281,11 +400,11 @@ async fn handle(
             out = out.header(name.as_str(), v.as_bytes());
         }
     }
-    // Corps relayé en flux ; la place est rendue à la fin du corps.
-    let stream = futures_util::stream::unfold(Some((resp, permit)), |state| async move {
-        let (mut resp, permit) = state?;
+    // Corps relayé en flux.
+    let stream = futures_util::stream::unfold(Some(resp), |state| async move {
+        let mut resp = state?;
         match resp.chunk().await {
-            Ok(Some(b)) => Some((Ok::<Bytes, std::io::Error>(b), Some((resp, permit)))),
+            Ok(Some(b)) => Some((Ok::<Bytes, std::io::Error>(b), Some(resp))),
             Ok(None) => None,
             Err(_) => Some((Err(std::io::Error::other("proxy_upstream_body")), None)),
         }
@@ -296,6 +415,17 @@ async fn handle(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn urls() {
+        assert!(base_url_allowed("https://api.openai.com/v1"));
+        assert!(base_url_allowed("http://127.0.0.1:8080/v1"));
+        assert!(!base_url_allowed("http://api.openai.com/v1"));
+        assert!(!base_url_allowed("https://u:p@api.openai.com/v1"));
+        assert!(!base_url_allowed("https://api.openai.com/v1?x=1"));
+        assert!(!base_url_allowed("file:///etc/passwd"));
+        assert!(!base_url_allowed(""));
+    }
 
     #[test]
     fn url_de_passerelle_publique_seulement() {
@@ -347,16 +477,5 @@ mod tests {
         ] {
             assert!(!allowed_request("openai", &m, p), "{m} {p}");
         }
-    }
-
-    #[test]
-    fn urls_et_chemins() {
-        assert!(base_url_allowed("https://api.openai.com/v1"));
-        assert!(base_url_allowed("http://127.0.0.1:8080/v1"));
-        assert!(!base_url_allowed("http://api.openai.com/v1"));
-        assert!(!base_url_allowed("https://u:p@api.openai.com/v1"));
-        assert!(!base_url_allowed("https://api.openai.com/v1?x=1"));
-        assert!(!base_url_allowed("file:///etc/passwd"));
-        assert!(!base_url_allowed(""));
     }
 }

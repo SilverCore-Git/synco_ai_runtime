@@ -1955,6 +1955,7 @@ dependencies = [
  "bytes",
  "ed25519-dalek",
  "futures-util",
+ "http-body-util",
  "landlock",
  "libc",
  "reqwest",

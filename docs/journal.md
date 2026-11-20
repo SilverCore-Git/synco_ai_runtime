@@ -490,3 +490,93 @@ prendre) ; `LlmError::TooLarge` ajouté à l'interface L07b ; codes `created_key
 **Non vérifié** : renouvellement du bail après un vrai délai de 150 s (seule la décision est testée,
 `agent::tests::renouvellement_du_bail`) ; délégation **expirée** (et non retirée) au moment de
 `created_key` (même branche que la délégation retirée).
+
+## 2026-11-20 — L07b : adaptateurs LLM Mistral et Gemini
+
+Fichiers : `crates/worker/src/provider/{mistral,gemini}.rs` (nouveaux), `openai.rs` (décodeur SSE
+paramétrable `DecodeOptions`, aides `add_tool_names` / `wire_tools`), `think.rs`
+(`ThinkTagSplitter::thought_tags`), `mod.rs` (seules les branches `Mistral` / `Gemini` de `adapter_for`
+changent ; `custom_named` supprimé), `tests/agent.rs` (2 tests d'agent). **L'interface (`LlmAdapter`,
+`StreamDecoder`, `ChatRequest`, `LlmEvent`, `LlmError`, bornes M4) n'est pas modifiée.** Le mandataire et
+le superviseur ne sont pas touchés.
+
+### Sources consultées (à la date du lot)
+
+- Gemini, compatibilité OpenAI : <https://ai.google.dev/gemini-api/docs/openai> (redirigé vers
+  <https://aistudio.google.com/docs/openai>) : base `https://generativelanguage.googleapis.com/v1beta/openai/` ;
+  `reasoning_effort` ∈ `minimal|low|medium|high|xhigh` (`xhigh` seulement Gemini 4, `none` seulement 2.5),
+  non combinable avec `thinking_level` / `thinking_budget` ; `include_thoughts` seulement par
+  `extra_body.google.thinking_config` ; `stream_options.include_usage` utilisé dans l'exemple. **Non
+  documenté** : forme des pensées en flux, `index`/`id` des appels en flux, champs d'usage détaillés,
+  `max_tokens`/`max_completion_tokens`, `parallel_tool_calls`, format d'erreur.
+- Complément (retours publiés, non officiels) : forum Google
+  <https://discuss.ai.google.dev/t/gemini-openai-compatibility-issue-with-tool-call-streaming/59886>
+  (appels sans `index`), <https://github.com/openai/openai-agents-js/issues/2116>,
+  <https://github.com/simonw/llm/pull/1826> (appels parallèles entiers, `index` absent ou 0, identifiant
+  parfois vide) ; pensées : <https://discuss.ai.google.dev/t/how-can-i-get-thinking-content-from-gemini-2-5-pro-or-flash-with-openai-sdk/93130>,
+  <https://github.com/NousResearch/hermes-agent/issues/147482> (`delta.extra_content.google.thought: true`,
+  balises `<thought>`) ; <https://github.com/zy1233/pi-python/pull/138> (`reasoning_effort` avec
+  `thinking_config` refusé en 400).
+- Mistral : <https://docs.mistral.ai/api/endpoint/chat> (`POST /v1/chat/completions`, `max_tokens`,
+  `parallel_tool_calls` booléen, `reasoning_effort` `none…xhigh`, pas de `stream_options` documenté),
+  <https://docs.mistral.ai/capabilities/reasoning/> (`delta.content` en liste `thinking` / `text`,
+  `reasoning_effort` : `mistral-large-4-0` = low/medium/high ; `mistral-small-2603` et
+  `mistral-medium-3-5` = high/none), <https://docs.mistral.ai/capabilities/function_calling/> (exemple
+  d'identifiant `D681PevKs`, message `tool` avec `name`). Identifiants `^[a-zA-Z0-9]{9}$` : exigence
+  rapportée par plusieurs dépôts (Zed #53034, mistral-vibe #1075, vLLM #59212…), erreur 400 code 3280.
+
+### Comportements repris de `providerAdapters/*.ts` (un test chacun)
+
+| Comportement TS | Mistral | Gemini |
+|---|---|---|
+| requête, outils, `tool_choice auto`, une température de 0,5 | `requete_mistral` | `requete_gemini` |
+| flux de texte, usage | `flux_texte_usage_dans_le_dernier_morceau` | `texte_et_usage_avec_raisonnement` |
+| raisonnement (`<think>` / champ dédié / `part.thought`) | `raisonnement_think_en_ligne`, `raisonnement_en_contenu_structure_puis_texte` | `texte_et_usage_avec_raisonnement` (drapeau `thought`, `<thought>`) |
+| usage entrée / sortie / raisonnement | idem (`reasoning_tokens`) | idem |
+| appel d'outil réassemblé, plusieurs appels | `appel_d_outil_*` | `plusieurs_appels_sans_index_et_finish_stop`, `appel_en_plusieurs_morceaux_*` |
+| fin `tool_calls` même si le fournisseur dit `stop` | — | idem |
+| erreurs sans texte du fournisseur | `erreurs_du_fournisseur_sans_texte` | idem |
+| bornes M4, erreur dans le flux, flux coupé | `flux_coupe_trop_grand_et_erreur_dans_le_flux` | `coupe_trop_grand_erreur_dans_le_flux` |
+| nom de l'outil dans le résultat (`functionResponse.name`) | `name` du message `tool` | idem |
+
+Tests d'agent avec `FakeLlm` : `fournisseur_mistral_outil_et_identifiants_de_neuf_caracteres`,
+`fournisseur_gemini_tour_simple`. Les flux sont **écrits d'après la documentation et les retours
+publiés, pas enregistrés sur les fournisseurs réels** (aucune clé disponible).
+
+### Décisions et écarts
+
+1. **Identifiants Mistral** : le worker tire `call_<24 hex>` (L07, M3), que Mistral refuse (9 caractères
+   alphanumériques). L'adaptateur les traduit dans la requête seulement (hachage FNV-1a en base 62,
+   déterministe, sans collision dans la requête) ; l'historique garde l'identifiant du worker.
+2. **Un flux fermé sans `finish_reason` ni `[DONE]` est `BadStream`** (réessayable) pour Mistral et
+   Gemini, au lieu d'une fin `stop` silencieuse comme dans `openai.rs` et le TS. Un flux coupé ne doit pas
+   passer pour une réponse complète. Non appliqué à OpenAI / `custom` / passerelle (comportement L07
+   inchangé) : à décider.
+3. **Gemini, écarts avec `gemini.ts` (API native, inatteignable)** :
+   - `include_thoughts` n'est pas demandé : le TS ne l'envoie pas non plus (`includeThoughts` « Phase 4 »)
+     et Google refuserait (selon un retour tiers) `reasoning_effort` combiné à `thinking_config`. Le
+     décodeur lit quand même `extra_content.google.thought` et `<thought>` si un serveur les rend ;
+   - `reasoning_effort` (absent du TS natif) est envoyé pour `gemini-2.5*`, `-3*`, `-4*` seulement ;
+     `minimal`, `none`, `xhigh` ne sont jamais envoyés ;
+   - `thoughtsTokenCount` natif : seul `completion_tokens_details.reasoning_tokens` est lu, présence
+     **non documentée** ; sinon `reasoning_tokens` reste `None` ;
+   - le TS n'envoie pas `max_output_tokens` ; ici `max_tokens` = `maxOutputTokensPerCall` (nom de champ
+     non documenté pour Gemini, `max_tokens` est le plus courant) ;
+   - `parallel_tool_calls` non envoyé (non documenté) ; le worker n'exécute de toute façon que le
+     premier appel (`agent.rs`, inchangé) ;
+   - le schéma des outils est transmis tel quel comme dans `gemini.ts` (`$schema`, `additionalProperties`
+     peuvent être refusés par l'endpoint : à vérifier en réel).
+   `base_url` du runtime : `https://generativelanguage.googleapis.com/v1beta/openai` ; Mistral :
+   `https://api.mistral.ai/v1`.
+4. **Mistral** : `reasoning_effort` seulement pour `mistral-large-4*` (valeurs `low|medium|high`) ; les
+   autres modèles n'acceptent que `high|none`, la correspondance avec l'effort de l'org est une décision
+   produit non prise (le TS n'envoie rien). `stream_options` non envoyé ; `usage` attendu dans le dernier
+   morceau (non garanti par la documentation lue) : sans usage, la boucle estime déjà les tokens.
+5. `classify_error` Gemini lit seulement le code `status` de Google (`UNAUTHENTICATED`, `RESOURCE_EXHAUSTED`…)
+   et `API_KEY_INVALID`, jamais le message.
+
+### Non vérifié
+
+Aucun appel réel à Mistral ni à Gemini : formats d'appels en flux, usage, pensées, refus de schémas ou de
+champs sont à vérifier en recette manuelle avec de vraies clés (une réponse texte, un outil, plusieurs
+outils, un modèle raisonnant par fournisseur).

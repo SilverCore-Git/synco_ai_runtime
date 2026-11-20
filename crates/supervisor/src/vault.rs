@@ -76,8 +76,19 @@ impl OpenDelegation {
         match (opened, parsed) {
             (Ok(key), Some(kind)) => {
                 let id = KeyId { kind, reference: reference.to_owned(), version };
-                self.keys.insert(id.clone(), key);
-                Some(id)
+                // Une seconde entrée ne remplace jamais silencieusement une clé différente déjà
+                // ouverte pour la même identité : la première est gardée, le rejet est compté.
+                match self.keys.get(&id) {
+                    Some(existing) if existing != &key => {
+                        self.entries_rejected = self.entries_rejected.saturating_add(1);
+                        None
+                    }
+                    Some(_) => Some(id),
+                    None => {
+                        self.keys.insert(id.clone(), key);
+                        Some(id)
+                    }
+                }
             }
             _ => {
                 self.entries_rejected = self.entries_rejected.saturating_add(1);
@@ -365,6 +376,16 @@ mod tests {
         // … et pas sous une autre référence ou version.
         assert!(d.add_entry("thread", "tAutre", 1, &ct).is_none());
         assert!(d.add_entry("thread", "tNew", 2, &ct).is_none());
+        // Une seconde entrée pour la même identité avec une AUTRE clé n'écrase pas la première.
+        let rejected = d.entries_rejected();
+        let other = d.seal_created_thread_entry("tNew", &SymmetricKey::from_bytes([8; 32])).unwrap();
+        assert!(d.add_entry("thread", "tNew", 1, &other).is_none());
+        assert_eq!(d.entries_rejected(), rejected + 1);
+        assert!(d.add_entry("thread", "tNew", 1, &ct).is_some(), "la même clé reste acceptée");
+        let mut v = Vault::default();
+        v.install(d);
+        let k = v.org_keys("a", &[KeyId { kind: KeyKind::Thread, reference: "tNew".into(), version: 1 }], 1_100);
+        assert_eq!(k[0].key.as_slice(), &[7; 32], "la première clé est gardée");
     }
 
     #[test]

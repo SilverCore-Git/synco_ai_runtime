@@ -505,3 +505,239 @@ async fn snapshot_pendant_le_flux_et_arret_demande() {
         assert!(st.lease_released);
     });
 }
+
+/// Clé privée RSA de test (JWK) pour ouvrir les scellés comme le ferait un membre.
+fn rsa_private() -> rsa::PrivateKey {
+    use rsa::BoxedUint;
+    let j = rsa_fixture()["privateJwk"].clone();
+    let n = synco_e2ee::encoding::from_b64u(j["n"].as_str().unwrap()).unwrap();
+    let bits = u32::try_from(n.len() * 8).unwrap();
+    let int = |k: &str| {
+        BoxedUint::from_be_slice(&synco_e2ee::encoding::from_b64u(j[k].as_str().unwrap()).unwrap(), bits).unwrap()
+    };
+    rsa::PrivateKey::from_components(int("n"), int("e"), int("d"), vec![int("p"), int("q")]).unwrap()
+}
+
+#[tokio::test]
+async fn outil_e2ee_create_thread_enveloppe_rt1_et_entree() {
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.deposit_message(M1, "Crée le salon Projets à l'accueil et un salon vocal dans Marketing");
+    let args = json!({ "threads": [
+        { "name": "Projets", "type": "text", "categoryId": "cm3categoryhome0000000001" },
+        { "name": "Réunions", "type": "voice", "spaceId": SPACE }
+    ] });
+    llm.push(Script::ok(sse_tool("call_t", "create_thread", &args, (10, 3))));
+    llm.push(Script::ok(sse_text(&["Salons créés."], (10, 3))));
+    let mut ini = init(1);
+    ini.tool_policy = policy(&[("create_thread", ToolPolicy::Auto)]);
+    let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Idle);
+
+    let private = rsa_private();
+    let (created, envelopes, entries) =
+        api.with(|st| (st.threads_created.clone(), st.envelopes.clone(), st.entries.clone()));
+    assert_eq!(created.len(), 2);
+    // Accueil : tous les membres dont la clé RSA est lisible ; espace : le seul propriétaire.
+    let home_keys: Vec<&str> =
+        created[0]["keys"].as_array().unwrap().iter().map(|k| k["userId"].as_str().unwrap()).collect();
+    assert_eq!(home_keys, [USER, MEMBER]);
+    let space_keys: Vec<&str> =
+        created[1]["keys"].as_array().unwrap().iter().map(|k| k["userId"].as_str().unwrap()).collect();
+    assert_eq!(space_keys, [USER]);
+    assert_eq!(created[1]["type"], "vocal");
+    assert_eq!(created[1]["spaceId"], SPACE);
+    assert_eq!(created[0]["categoryId"], "cm3categoryhome0000000001");
+    assert_eq!(created[0]["leaseEpoch"], 1);
+    assert!(created[0].get("commitment").is_none(), "Q11 = B : enveloppe posée après la création");
+    assert_eq!(envelopes.len(), 2);
+    assert_eq!(entries.len(), 2);
+    let csk_pub = peer.delegation.csk.public_key().unwrap();
+    for (i, (tid, env)) in envelopes.iter().enumerate() {
+        // Le membre ouvre la clé (RSA-OAEP-SHA256)…
+        let sealed = synco_e2ee::encoding::from_b64(created[i]["keys"][0]["encryptedKey"].as_str().unwrap()).unwrap();
+        let raw = private.decrypt(rsa::Oaep::<rsa::sha2::Sha256>::new(), &sealed).unwrap();
+        assert_eq!(raw.len(), 32);
+        // … vérifie l'enveloppe rt1 signée par la csk du runtime pour ce salon…
+        let ctx = format!("thread:{tid}");
+        assert_eq!(env["ctx"], ctx);
+        let sig = synco_e2ee::keys::KeyEnvelopeSignature {
+            commitment: env["commitment"].as_str().unwrap().into(),
+            signature: env["signature"].as_str().unwrap().into(),
+        };
+        synco_e2ee::keys::verify_rt1_envelope(&csk_pub, &raw, &ctx, 1, DELEGATION, &sig).unwrap();
+        // … et l'entrée posée dans la délégation s'ouvre avec DK.
+        let (d, body) = &entries[i];
+        assert_eq!(d, DELEGATION);
+        let e = &body["entries"][0];
+        assert_eq!(e["ref"], tid.as_str());
+        let k = synco_e2ee::delegation::open_entry(
+            &peer.delegation.dk,
+            &peer.delegation.ctx,
+            "thread",
+            tid,
+            1,
+            e["ciphertext"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(k.as_bytes().as_slice(), raw.as_slice());
+    }
+    let msgs = api.clear_messages();
+    let tool = msgs.iter().find(|m| m["role"] == "tool").unwrap();
+    assert_eq!(tool["toolResult"]["threads"].as_array().unwrap().len(), 2);
+    assert!(tool["toolResult"]["threads"][0].get("warning").is_none());
+
+    // Fixture pour le test croisé TS (bun crates/worker/tests/ts/read-from-worker.ts).
+    if std::env::var_os("L07_WRITE_FIXTURES").is_some() {
+        let (tid, env) = &envelopes[0];
+        let fixture = json!({
+            "description": "Produit par le worker (test outil_e2ee_create_thread_enveloppe_rt1_et_entree) : relu par le code TS de synco_app.",
+            "sessionId": SID,
+            "ckHex": synco_e2ee::encoding::hex(&CK),
+            "messages": api.with(|st| st.messages.clone()),
+            "expectedClear": msgs,
+            "thread": {
+                "threadId": tid,
+                "encryptedKey": created[0]["keys"][0]["encryptedKey"],
+                "memberPrivateJwk": rsa_fixture()["privateJwk"],
+                "ctx": env["ctx"], "version": 1,
+                "commitment": env["commitment"], "signature": env["signature"],
+                "delegationId": DELEGATION,
+                "cskPublic": serde_json::from_str::<Value>(&csk_pub.to_canonical()).unwrap(),
+            },
+        });
+        std::fs::write(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/transcript-from-worker.json"),
+            serde_json::to_string_pretty(&fixture).unwrap() + "\n",
+        )
+        .unwrap();
+    }
+}
+
+/// Le fixture croisé (relu par le TS de synco_app) reste lisible par le worker lui-même.
+#[test]
+fn fixture_croise_relu_par_le_worker() {
+    let f: Value = serde_json::from_str(include_str!("fixtures/transcript-from-worker.json")).unwrap();
+    let msgs = synco_ai_runtime_worker::transcript::decode_messages(&ck(), SID, &f["messages"]);
+    assert_eq!(msgs.len(), f["expectedClear"].as_array().unwrap().len());
+    for (m, e) in msgs.iter().zip(f["expectedClear"].as_array().unwrap()) {
+        assert_eq!(m.content.as_deref(), e["content"].as_str());
+        assert_ne!(m.content.as_deref(), Some(synco_ai_runtime_worker::transcript::UNREADABLE));
+    }
+    // Tous les champs de contenu sont chiffrés (contrôle de l'API, checkConvContent).
+    for m in f["messages"].as_array().unwrap() {
+        for k in ["content", "toolResult", "thinking"] {
+            assert!(m.get(k).is_none_or(|v| v.is_null() || v.as_str().unwrap().starts_with("gcm1:")), "{k}");
+        }
+    }
+}
+
+/// Aucun contenu en clair dans ce qui sort du worker hors des canaux prévus pour du clair (corps
+/// des appels au fournisseur, arguments de `tools/:name/execute`) : journaux, métriques, statuts,
+/// évènements et écritures de l'historique ne portent que du chiffré ou des codes.
+#[tokio::test]
+async fn aucun_contenu_en_clair_dans_les_journaux() {
+    const SECRETS: [&str; 5] = [
+        "MARQUEUR-UTILISATEUR-7f3a",
+        "MARQUEUR-MODELE-91bc",
+        "MARQUEUR-ARGUMENT-55d0",
+        "MARQUEUR-RESULTAT-c0de",
+        "MARQUEUR-PENSEE-1a2b",
+    ];
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.with(|st| {
+        st.tool_data.insert("list_spaces".into(), json!([{ "name": SECRETS[3] }]));
+    });
+    api.deposit_message(M1, &format!("Question {}", SECRETS[0]));
+    llm.push(Script::ok(sse_tool("call_1", "list_spaces", &json!({ "filtre": SECRETS[2] }), (10, 3))));
+    llm.push(Script::ok(sse_text(
+        &[&format!("<think>{}</think>", SECRETS[4]), &format!("Réponse {}", SECRETS[1])],
+        (10, 3),
+    )));
+    for _ in 0..4 {
+        llm.push(Script::error(500, json!({ "error": { "message": SECRETS[1] } })));
+    }
+    let mut ini = init(1);
+    ini.limits.idle_shutdown_secs = 5;
+    let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+    // Second message, au tour suivant (même worker), qui échoue : journaux d'erreur couverts.
+    for _ in 0..200 {
+        if api.with(|st| st.pushes.contains(&"AI_TURN_DONE".to_owned())) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let second = message_frame(M2, &format!("Encore {}", SECRETS[0]));
+    api.deposit(M2, second.clone());
+    peer.send(SupervisorMsg::Inbox(InboxMsg { items: vec![second] })).await;
+    assert_eq!(peer.wait_done().await, DoneReason::Failed);
+    // Le scénario a bien véhiculé les marqueurs (sinon le test ne prouverait rien).
+    let clear = serde_json::to_string(&api.clear_messages()).unwrap();
+    for s in SECRETS {
+        assert!(clear.contains(s), "{s} absent du scénario");
+    }
+    // 1. Toutes les trames du worker vers le superviseur (log, metrics, status, event, …).
+    let raw = peer.raw.lock().unwrap().join("\n");
+    for s in SECRETS {
+        assert!(!raw.contains(s), "{s} en clair dans une trame du pipe");
+    }
+    assert!(peer.msgs().iter().filter(|m| matches!(m, WorkerMsg::Log(_))).count() >= 2, "des journaux ont été émis");
+    // 2. Tout ce que le worker envoie à l'API, sauf les arguments d'un outil serveur (clair par
+    //    conception, 04 §5).
+    api.with(|st| {
+        for seen in st.seen.iter().filter(|s| !s.path.ends_with("/execute")) {
+            for s in SECRETS {
+                assert!(!seen.body.contains(s), "{s} en clair vers {}", seen.path);
+            }
+        }
+    });
+}
+
+#[tokio::test]
+async fn passerelle_ticket_sgt1_par_signed_request() {
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.deposit_message(M1, "Bonjour");
+    llm.push(Script::ok(sse_tool("call_1", "list_spaces", &json!({}), (5, 1))));
+    llm.push(Script::ok(sse_text(&["Salut"], (5, 1))));
+    let mut ini = init(1);
+    ini.llm.provider = runtime_protocol::pipe::LlmProvider::Gateway;
+    ini.llm.reasoning_effort = runtime_protocol::pipe::ReasoningEffort::High;
+    let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Idle);
+    let heads = llm.st.lock().unwrap().headers.clone();
+    assert!(heads.iter().all(|h| h.starts_with("post /v1/chat/completions ")), "{heads:?}");
+    assert!(heads.iter().all(|h| h.contains("authorization: bearer sgt1.test1")), "ticket réutilisé");
+    assert_eq!(api.with(|st| st.tickets), 1);
+    let req = &llm.requests()[0];
+    assert_eq!(req["reasoning_effort"], "high");
+    assert!(req["messages"][0]["content"].as_str().unwrap().contains("<think>"), "consigne d'effort élevé");
+}
+
+#[tokio::test]
+async fn bail_perdu_aucune_ecriture() {
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.deposit_message(M1, "Bonjour");
+    let release = Arc::new(Notify::new());
+    llm.push(Script {
+        status: 200,
+        chunks: sse_text(&["Bon", "jour"], (5, 1)),
+        hold_before: Some(1),
+        release: Some(Arc::clone(&release)),
+    });
+    let (peer, _t) = spawn_worker(&api, &llm, init(1), default_keys(false));
+    llm.wait_requests(1).await;
+    // Un autre worker a pris le bail : le renouvellement échoue.
+    api.with(|st| st.lease_conflict = true);
+    tokio::time::sleep(Duration::from_millis(450)).await;
+    release.notify_one();
+    assert_eq!(peer.wait_done().await, DoneReason::Shutdown);
+    api.with(|st| {
+        assert!(!st.statuses.iter().any(|(s, _)| s == "idle"), "plus aucune écriture");
+        assert!(!st.lease_released, "le bail n'est pas « rendu » : il n'est plus à nous");
+        assert!(st.messages.len() <= 1);
+    });
+    assert!(peer.msgs().iter().any(|m| matches!(m, WorkerMsg::Log(l) if l.code == "lease_lost")));
+}

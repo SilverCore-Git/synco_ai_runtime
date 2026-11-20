@@ -1,0 +1,159 @@
+{
+  "ckHex": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "description": "Produit par le worker (test outil_e2ee_create_thread_enveloppe_rt1_et_entree) : relu par le code TS de synco_app.",
+  "expectedClear": [
+    {
+      "content": "Crée le salon Projets à l'accueil et un salon vocal dans Marketing",
+      "createdAt": "2026-11-20T10:00:00.000Z",
+      "id": "3c2b1a09-8f7e-4d6c-9b5a-493827161504",
+      "role": "user"
+    },
+    {
+      "content": null,
+      "createdAt": "2026-11-20T16:05:22.134Z",
+      "id": "959fa944-fa61-4da4-80d6-7d02a4214a42",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "arguments": {
+            "threads": [
+              {
+                "categoryId": "cm3categoryhome0000000001",
+                "name": "Projets",
+                "type": "text"
+              },
+              {
+                "name": "Réunions",
+                "spaceId": "cm3spaceexample0000000001",
+                "type": "voice"
+              }
+            ]
+          },
+          "category": "client",
+          "id": "call_t",
+          "mutating": true,
+          "name": "create_thread",
+          "status": "done"
+        }
+      ],
+      "usage": {
+        "completionTokens": 3,
+        "promptTokens": 10,
+        "totalTokens": 13
+      }
+    },
+    {
+      "content": null,
+      "createdAt": "2026-11-20T16:05:22.145Z",
+      "id": "fe6a305c-b390-4a14-89cf-f37f4cad31ff",
+      "role": "tool",
+      "toolCallId": "call_t",
+      "toolResult": {
+        "threads": [
+          {
+            "id": "cm3threadnew0000000000001",
+            "name": "Projets",
+            "type": "text"
+          },
+          {
+            "id": "cm3threadnew0000000000002",
+            "name": "Réunions",
+            "type": "vocal",
+            "workspaceId": "cm3spaceexample0000000001"
+          }
+        ]
+      }
+    },
+    {
+      "content": "Salons créés.",
+      "createdAt": "2026-11-20T16:05:22.159Z",
+      "id": "e87de9f0-308a-4127-bd54-6d83f43c21f5",
+      "role": "assistant",
+      "usage": {
+        "completionTokens": 3,
+        "promptTokens": 10,
+        "totalTokens": 13
+      }
+    }
+  ],
+  "messages": [
+    {
+      "content": "gcm1:Rh+TwfTnK53wTtleq2QWrgpecRaz19U/oPdBeMVoOIFSOhdjovFIHoq4nyZpzJxRd8/NJf8z/8qRb3n/zyGRLCk1XXGIGuPPe6YmpoHCWuXL4CxRLjcnfVyD976xHuBl",
+      "createdAt": "2026-11-20T10:00:00.000Z",
+      "id": "3c2b1a09-8f7e-4d6c-9b5a-493827161504",
+      "role": "user"
+    },
+    {
+      "content": null,
+      "createdAt": "2026-11-20T16:05:22.134Z",
+      "id": "959fa944-fa61-4da4-80d6-7d02a4214a42",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "arguments": "gcm1:unaBXVYXH3sYultfgHaj02Ful9iZv+Z7FyXphygpDq3M6c1fJTmG5ETWevg0E4CESzqZcjAM4eHoORoQNIhR/k4l3D10DJvTq68httaNwYA/agJLaQRr3zx9/QOxTkYhquj6jjbs9Y5liI11LKihjnjdwl5V8S3YpMejVIKaO1F963CaeFKYYScB8xk3El2Bv+O+zmSNsaceIcovJ+HSayL4XmU7SavULzhinGWp56KlhT6WOtnZ5MX9TsVC",
+          "category": "client",
+          "id": "call_t",
+          "mutating": true,
+          "name": "create_thread",
+          "status": "done"
+        }
+      ],
+      "usage": {
+        "completionTokens": 3,
+        "promptTokens": 10,
+        "totalTokens": 13
+      }
+    },
+    {
+      "content": null,
+      "createdAt": "2026-11-20T16:05:22.145Z",
+      "id": "fe6a305c-b390-4a14-89cf-f37f4cad31ff",
+      "role": "tool",
+      "toolCallId": "call_t",
+      "toolResult": "gcm1:y9lNPjcJCiVVYOicah2XanCrpASwo5BsDRu4PqYnuaQMZRBxId2/BG59pedcD0EFwVfmVjkW83X7vepmA2x8Gk5IvSgomHmkuPEgLuMdjIftKLBvgW2+wxJc2iEdSdS7F8TvmrXHIiWXPTb1+6WrXzzL04bKmZLgWF3MM3K4HOtYQS4HdTqYC+cj8Ne1artlj7qton6JtV3sk86uUM5qMQEOtSTpx5sU9XtlPxEzM1xit74UgzrEX7ENoCUfUNADuL8T3cNmYT7w4xoIfQ6IOvs3IKA/s8fOGHo="
+    },
+    {
+      "content": "gcm1:8okwi1b0x5Zqf1Z9ylOn79QvJ+bzOKw0L0LZwhF0TlPikVPBbHWLiRQUOw==",
+      "createdAt": "2026-11-20T16:05:22.159Z",
+      "id": "e87de9f0-308a-4127-bd54-6d83f43c21f5",
+      "role": "assistant",
+      "usage": {
+        "completionTokens": 3,
+        "promptTokens": 10,
+        "totalTokens": 13
+      }
+    }
+  ],
+  "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+  "thread": {
+    "commitment": "FfFMnPtKz3h7+V5/26rM393R9iZGBzqhPkrHweXI+h4=",
+    "cskPublic": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "OtOGGpViE5JRa7WT7wVYPtLlhm9ctiYKMBcjf9ibkK8",
+      "y": "0JYcfjcHWmeRo5xh9WKVsCttJlZ7YV5gqkHuHI6DOI0"
+    },
+    "ctx": "thread:cm3threadnew0000000000001",
+    "delegationId": "d1e2f3a4-b5c6-4d7e-8f90-a1b2c3d4e5f6",
+    "encryptedKey": "g2/MtMbd5rRBNTrpaRsxGT0ii6pOE5FDDcYyDfRUsfYgT4hJgV55lRi15bXqGzac+asPOG7nKJbdvJG29tphnvrQwIbf3Lxst9OiSEg+CNHi9dx5KsgW7YAYD++mCgnx4UbvPCqvaPhzvZqv0mfSWrNhQbb2U15vf/MDdZJs5DDgHhoEaeaZ+EjV8kseG1n5MYK5SsKixhW75hlUBPPiCO0AKmTl5qoZb2qUr4AP1kgcH9xu0ZH0IyP633I1TNQoYaOgIwJ28UaQPPrmvyvbP2FPKFzdYqEKWnXXdianIknoB4x9N4OrKJ5+jffy2BqalcWTtUcR5yI2/HqYzQA7sQ==",
+    "memberPrivateJwk": {
+      "alg": "RSA-OAEP-256",
+      "d": "Ne0sd1HtNjloCx_-RyUt_meksstomWbZBjy20pjNx4MgkZjL217HVM3WZaxDz9moSzj8pxXZ8LlIPX-MZxQSP9nEa7WObVHVrAqj2F7CbGH3QrwkVzhE9v-ZGEiGIA4aKSixsinHBx7-pCJBXzJRuL01vc7elln3_yzMCKY0Glq941SC392Es2Qoy8QLwcLjHj5bn7YlVXgFxXajLPnnjt6tFkc2F_NORt8UkxV-raXgPMyR64hEh0fOEAEY0lViCqVcvQhhUO2aaIRw6lFMkCeQ1pKRH8kwBFuxvcMjCJn8DxWSpiYNvFbyEp5kXqiqilcYLzeGr85xyzcx78bGRw",
+      "dp": "wqKa5xUtv2XK3N-2LTn47T3UcLfVoL2DvFaG9P3czd53FZH1ApL10OY9tjhNDjXzc5HSccWdE1j5aoxo2WR5jYObdyNSHa-JUmnNgHwDfltZH8RhY8VG2d9Tk6Py7G-OS5VQqt88iHRrNH3f6PKG7K2MXQrGMZqGx48MXcUdgRk",
+      "dq": "WO8mAQHfiaV3Ajp30_8WW0qw4NL_mVAMUot9zADMp2gt1hjlpO6XzC9BAoqgG6KMlwyoaGtU3eudkns-2n3aes-eTSLn7YWxrvjjvhxuyJVYNshE5qm_St2id1WFyzGN36QHZztu9o4C7FZUuGxjwTcsde61aBqvRIY4zabRYSE",
+      "e": "AQAB",
+      "ext": true,
+      "key_ops": [
+        "decrypt"
+      ],
+      "kty": "RSA",
+      "n": "sXVsOGjl427NGOsmKOiF_OxT6ybU3WvVd1escClydxtZPMyVCPYQ8xB2aFjREGBBQoFghHulW9pzvMTtP0gL0zCp2aEs7j7BL5JGL0Xnz11ChgzHNTffpi5rCUuRvkDNJTEsG5QdwaTfbCKzRaJeP6DBeG72pr2KkJu7jnlKQpb_bws2JZ92nUdTV1OaPIQewthuCB1GneJlJ7CU906DixmSbvDh5TRM0rdgQ-cREzlNzQRAgtlFeYv8hlGHSK6lT2c-4EQ6bjKRWXJjaN5bN1x6JbuEjGsouDykA2pss6AAv9fV5NwkwqL7Vx8jplnOX3_HQFAG7-VZllgjElWBAQ",
+      "p": "3JzCW8Y3K2xXyIIBgm-Qz_Jn87pkUBBQKg3LBuAKiU2uTaVV5YFo4PjbToAPDAnarHwRg3ZsLYGkPd6dHVV25Z32Bg0ukHyRlgA_YIJdPJTMWnPLQof0YN3KWfcjeaBgmt-XcLBs_J8fwiAlStYLS6jn-pOuck3tIVasTjbqeWs",
+      "q": "zeyZQQxOQAJSRHactkIVXe3gRFcfOZfbRBYk-FFDXdGYFFIoyjRbaY-IDELhz7B7PSc2dWW1s04_8lT1oefgrOFnJvBqqJInjJ0KMX5z0SZbR6NX-g3ySzlIZvbbZMmrWlGuxbSo5luwpTP2Svjf2gn221fxvCE00Es6NdSTrkM",
+      "qi": "gCPK-FO8v1DuFEN6Z_dBzV_i0L6-z_Gg2ny8xhRVqbr1X6g2aOQ4GYG62VM9Uucw_fBaFXCBW9BXi77ZOyDfGel1kH0eMAr3QbaFMDOy7xmDE6A1XUDszeVIX0Rxl0Dtm9ilclhMj0UmjgIjdx4GSvZ4bhR-Rw9p7JRVcBhFzzY"
+    },
+    "signature": "f8bQA0IPw5rwLcLvN+yeRd2tUZU0bUWcQkhrpYxkmhLqcsXyryScbjjPwR+N5VYw3DJfz/AZKXYyg2k/8UzMHg==",
+    "threadId": "cm3threadnew0000000000001",
+    "version": 1
+  }
+}

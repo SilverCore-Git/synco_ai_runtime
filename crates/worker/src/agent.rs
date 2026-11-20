@@ -342,9 +342,10 @@ impl Agent {
         }
         self.load_tools().await?;
         self.fetch_inbox().await?;
-        let rerun = self.recover();
+        let (rerun, unknown) = self.recover();
 
-        let mut need_model = false;
+        // Un résultat inconnu est donné au modèle, qui décide de la suite (08 §5).
+        let mut need_model = unknown > 0;
         let has_work = !self.queue.is_empty() || !rerun.is_empty() || !self.events.is_empty();
         if has_work {
             self.set_running().await?;
@@ -461,7 +462,7 @@ impl Agent {
 
     /// Reprise (08 §5) : outils `executing` mutants jamais relancés ; non mutants et `accepted`
     /// (confirmés, en attente d'une clé) rendus à exécuter.
-    fn recover(&mut self) -> Vec<String> {
+    fn recover(&mut self) -> (Vec<String>, usize) {
         let answered: HashSet<String> = self.messages.iter().filter_map(|m| m.tool_call_id.clone()).collect();
         let mut rerun = Vec::new();
         let mut unknown = Vec::new();
@@ -480,6 +481,7 @@ impl Agent {
                 }
             }
         }
+        let unknown_count = unknown.len();
         for (id, name) in unknown {
             let mut t = Message::new(uuid(), Role::Tool, now());
             t.tool_call_id = Some(id);
@@ -497,7 +499,7 @@ impl Agent {
             self.pending = None;
             self.awaiting_key = None;
         }
-        rerun
+        (rerun, unknown_count)
     }
 
     // ------------------------------------------------------------------

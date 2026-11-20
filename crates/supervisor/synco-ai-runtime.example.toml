@@ -75,6 +75,15 @@ worker_signed_requests_burst = 50
 # Délai laissé aux workers pour finir l'étape en cours à l'arrêt (SIGTERM).
 shutdown_grace_secs = 30
 
+[sandbox]
+# Bac à sable des workers (docs/plan/10-bac-a-sable.md). Sans fonction noyau requise (espaces de
+# noms utilisateur, cgroup v2 délégué, landlock, seccomp), le runtime refuse de démarrer ;
+# `run --insecure-no-sandbox` est réservé au développement. Vérification : `sandbox-check`.
+# Base du sous-arbre cgroup délégué (défaut : le cgroup du service, avec Delegate=yes).
+# cgroup_root = "/sys/fs/cgroup/system.slice/synco-ai-runtime.service"
+# Sockets du mandataire LLM, un sous-répertoire 0700 par worker (défaut : <state_dir>/workers).
+# run_dir = "/var/lib/synco-ai-runtime/workers"
+
 # Fournisseurs LLM (décision D1 : les clés vivent ici, jamais dans Synco). L'identifiant est celui
 # de la politique de l'org (openai, mistral, gemini, custom, gateway).
 [llm.providers.openai]
@@ -83,5 +92,7 @@ api_key_file = "/run/credentials/synco-ai-runtime.service/openai"
 input_eur_per_mtok = 2.3
 output_eur_per_mtok = 9.2
 
+# Les clés ne sont jamais transmises au worker : son seul accès réseau est le mandataire LLM du
+# superviseur, qui ajoute la clé à chaque appel vers base_url.
 # La passerelle Synco n'a pas de clé : le worker obtient un ticket sgt1 par l'API.
 [llm.providers.gateway]

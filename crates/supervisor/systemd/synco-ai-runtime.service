@@ -30,10 +30,22 @@ LoadCredentialEncrypted=synco-ai-runtime-keys:/var/lib/synco-ai-runtime/keys.cre
 LimitCORE=0
 MemorySwapMax=0
 
-# Durcissement. ATTENTION (lot L06) : le bac à sable des workers crée des espaces de noms
-# utilisateur et applique seccomp / landlock / cgroups ; ne pas ajouter RestrictNamespaces=,
-# SystemCallFilter= ni PrivateUsers= sans les valider avec L06. Delegate= sera nécessaire pour
-# que le superviseur gère les cgroups des workers.
+# Bac à sable des workers (lot L06, docs/plan/10-bac-a-sable.md). Validé avec `sandbox-check` dans
+# une unité utilisateur portant ces mêmes options (une unité système n'a pas pu être essayée).
+# - Delegate=yes : le service reçoit son sous-arbre cgroup ; le superviseur se place dans
+#   <cgroup>/supervisor et crée <cgroup>/w-<n> par worker (memory.max, pids.max, cpu.max).
+# - ProtectControlGroups=private (systemd ≥ 257) : espace de noms cgroup propre, sous-arbre délégué
+#   en écriture. =yes (lecture seule) fait REFUSER le démarrage (cgroup_not_delegated) ; avec un
+#   systemd plus ancien, retirer la ligne.
+# - RestrictNamespaces= : seulement les espaces de noms que crée le bac à sable.
+# - SystemCallFilter= : @system-service (dont unshare), @mount (montages et pivot_root du worker),
+#   @sandbox (seccomp, landlock), sethostname. Le filtre propre du worker est bien plus strict.
+# - ProtectHostname=yes interdit sethostname : le worker garde le nom de la machine (sans effet).
+Delegate=yes
+ProtectControlGroups=private
+RestrictNamespaces=user pid net mnt ipc uts cgroup
+SystemCallFilter=@system-service @mount @sandbox sethostname
+SystemCallArchitectures=native
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
@@ -42,7 +54,6 @@ PrivateDevices=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes
-ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
 ProtectProc=invisible

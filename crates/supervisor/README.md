@@ -74,8 +74,18 @@ Le mandataire ne doit pas journaliser les corps ; les tickets ne sont jamais dan
   `api_key_file` avec un identifiant systemd. Le lanceur des workers (L06) doit vider leur
   environnement (`env_clear`) : un worker ne doit jamais hériter de cette variable.
 
-## Workers
+## Workers : bac à sable (L06)
 
-Lancés derrière le trait `launcher::WorkerLauncher`. En L05, un bouchon tourne dans le superviseur
-sans isolation (`InProcessStubLauncher`) ; le bac à sable (L06) lance chaque worker par
-`fork` + `exec` (jamais un `fork` seul d'un processus tokio qui détient des clés).
+Un processus isolé par conversation active, lancé par `fork` + `exec` du binaire du superviseur
+(`__sandbox-helper` puis `__sandbox-worker`), environnement vidé, pipe seul sur le descripteur 3 :
+espaces de noms user, pid, mount (racine vide en lecture seule), net (aucune interface), ipc, uts,
+cgroup ; capacités retirées, `no_new_privs`, landlock, seccomp en liste blanche ; un cgroup v2 par
+worker (`memory.max`, pas d'espace d'échange, `pids.max`, `cpu.max`). Seul accès réseau : le
+mandataire LLM du superviseur (socket Unix), qui ajoute lui-même la clé du fournisseur (D1).
+Conception, coût mesuré, systemd et Docker : [`docs/plan/10-bac-a-sable.md`](../../docs/plan/10-bac-a-sable.md).
+
+- Démarrage **refusé** si une fonction noyau manque (le message donne le code et la cause), avant
+  le descellement des clés. Développement seulement : `run --insecure-no-sandbox`.
+- Vérifier l'environnement réel : `synco-ai-runtime --config … sandbox-check`.
+- systemd : `Delegate=yes` et `ProtectControlGroups=private` (unité d'exemple).
+- Tests sur l'hôte : `host-spawn sh crates/supervisor/tests/sandbox-host.sh`.

@@ -192,3 +192,91 @@ d'exemple n'a ni `RestrictNamespaces=` ni `SystemCallFilter=` (à décider avec 
 4 / 8 en vol ; 05 §1 délai du `hello` 5 s et plafonds de connexions non authentifiées (429) ;
 05 §3 ordre `snapshot` / évènements en direct et repli `reload` ; 03 §4 vérification du mandat avec
 la seule clé courante (remplace le point 9 de la liste précédente).
+
+## 2026-11-20 — L06 : bac à sable des workers
+
+**Branche** : `syncoai/L06-bac-a-sable` (depuis `feature/syncoai-refonte` à `30f2fbc`).
+
+**Fait** (conception : `docs/plan/10-bac-a-sable.md`) :
+
+- `crates/supervisor/src/sandbox/` : `SandboxLauncher` (implémente `WorkerLauncher`), lancement par
+  `fork` + `exec` du binaire du superviseur en deux étapes (`__sandbox-helper`, `__sandbox-worker`),
+  environnement vidé, pipe seul (stdin → descripteur 3), espaces de noms user/pid/mount/net/ipc/
+  uts/cgroup, racine `tmpfs` vide en lecture seule, capacités retirées, `no_new_privs`, landlock,
+  seccomp (fatals + liste blanche, défaut `ENOSYS`), cgroup v2 par worker (`memory.max`,
+  `memory.swap.max = 0`, `memory.oom.group`, `pids.max`, `cpu.max`, `cgroup.kill`, compteurs) ;
+  mandataire LLM par worker (socket Unix, clé ajoutée par le superviseur, sans redirection) ;
+  autotest (`sandbox-check`) ; sonde au démarrage et refus de démarrer, `--insecure-no-sandbox`.
+- `unsafe` : un seul bloc (`unshare_unsafe`) dans `sandbox/sys.rs` ; workspace en `deny`, chaque
+  autre crate garde `#![forbid(unsafe_code)]`, `tests/unsafe_scope.rs` le vérifie.
+- `crates/worker` : `entry::run` (point d'entrée isolé, fd 3) et `llm` (client `hyper` du
+  mandataire, pour L07) ; le binaire autonome n'est plus utilisé.
+- `WorkerSpec.allowed_hosts` remplacé par `llm: Option<LlmRoute>` ; `WorkerLauncher::
+  injects_llm_credentials` : avec le bac à sable, aucune clé LLM ne passe par le pipe.
+- Configuration `[sandbox]` (`cgroup_root`, `run_dir`) ; unité systemd : `Delegate=yes`,
+  `ProtectControlGroups=private`, `RestrictNamespaces=`, `SystemCallFilter=`.
+
+**Dépendances ajoutées** (épinglées, dates crates.io) : landlock 0.4.7 (2026-07-27), seccompiler
+0.5.0 (2025-03-07), enumflags2 / enumflags2_derive 0.7.12 (2025-06-09, transitive de landlock).
+Déjà au `Cargo.lock`, désormais directes : libc 0.2.191, hyper 1.12.0, hyper-util 0.1.21,
+http-body-util 0.1.5, bytes 1.12.1. Fonctions `rustix` ajoutées : `mount`, `thread`, `system`,
+`stdio`, `fs`, `net`.
+
+**Vérifié** : `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo fmt --check` (flatpak) ; sur l'hôte (`host-spawn sh crates/supervisor/tests/sandbox-host.sh`,
+noyau 7.2.15) : 8 tests de `tests/sandbox.rs` (tentatives d'évasion, témoin qui survit à l'OOM, à la
+boucle de fils et à l'appel fatal d'un autre worker, couches indépendantes, mandataire, coût) et
+l'aller-retour complet avec un worker isolé ; `sandbox-check` en scope délégué et dans une unité
+utilisateur transitoire avec tout le durcissement de l'unité d'exemple. Mutations : `memory.max` /
+`pids.max` non écrits → `sandbox-check` en échec ; couches retirées → évasion constatée.
+Coût (`--release`) : 3,9 ms du lancement à `ready`, ≈ 1,3 Mio facturés au cgroup, PSS 4,6 Mio.
+
+**Écarts avec docs/plan (à reporter)** :
+1. 09 §2 : `memory.high` non appliqué (sans swap, il bloque le worker au lieu de le laisser être
+   tué) ; `worker_memory_high_mib` ignoré.
+2. 06 §2–§3.1 (D1) : la trame `llm_credential` n'est plus envoyée ; le mandataire ajoute la clé.
+   `net_request` / `net_response` n'existent pas : le réseau passe par le socket du mandataire.
+3. 06 §1 : le pipe arrive par stdin de l'assistant puis sur le descripteur 3 du worker ; le worker
+   est le binaire du superviseur, pas `synco-ai-runtime-worker`.
+4. 06 §6 : l'API n'est jamais jointe directement par le worker (seulement `signed_request`).
+5. Workers simultanés : comptage inchangé (L05) ; 2 processus par worker (assistant + worker) dans
+   `pids.max`.
+
+**Non vérifié (recette manuelle)** : unité systemd **système** (root) avec `Delegate=yes` et
+`ProtectControlGroups=private` ; conteneur Docker/Podman (L09) ; aarch64 ; vrai fournisseur LLM
+derrière le mandataire (L07) ; noyau sans landlock ou avec ABI < 6.
+
+### 2026-11-20 — L06, corrections après relecture indépendante
+
+**Corrigé** (un commit par point, chacun avec son test qui échoue sans lui) :
+
+1. **B1** (`c141d17`) : l'URL et la clé d'un fournisseur LLM viennent de la seule configuration du
+   runtime, cherchées avec le même identifiant (`base_url` obligatoire sauf `gateway`) ;
+   `gatewayUrl` de la politique ne sert qu'à `gateway` (sans clé), `https` vers un nom public,
+   résolution filtrée (`PublicOnlyResolver`) ; fournisseur non configuré → pas de worker, `failed`
+   `provider_error`, bail rendu. Test : `integration.rs` `fournisseur_non_configure_refuse` (mutation
+   vers l'ancien repli : échec).
+2. **I2** (`682048c`) : mandataire limité à `POST /chat/completions` (`/v1/chat/completions` pour la
+   passerelle) et `GET /models`, sans chaîne de requête.
+3. **I1** (`7e1e23e`) : 4 connexions par socket, place prise avant la lecture, corps ≤ 8 Mio lu en
+   30 s, tampons 16 Mio par worker et 64 Mio pour le runtime. Tests `tests/proxy.rs` (sans borne :
+   blocage, puis échec).
+4. **I3** (`e00d4fa`) : quotas D6 par le mandataire (appels et tokens par tour, tokens de la vie du
+   worker, débit par worker et du runtime, tokens du runtime par heure, durée d'un appel), décompte
+   par `usage` ou estimation bornée.
+5. **M1** (`026ce55`) : sans `memory.swap.max`, refus de démarrer tant qu'un swap est actif.
+6. **M4** (`61bb201`, `99e7168`) : aucun reste si le lancement échoue.
+7. `worker_memory_high_mib` : avertissement de `--check-config` (`66230d4`).
+8. **M3** (`bce19af`) et **M2** (`f979991`, `aa61ae4`) : `forbid(unsafe_code)` sur le binaire du
+   worker ; contrôle de `unsafe` insensible à la mise en forme et racines de crate vérifiées.
+   Racines restantes sans `forbid` propre (couvertes par `unsafe_code = "deny"` du workspace et le
+   balayage) : `crates/synco-e2ee/examples/*.rs` et les fichiers `tests/*.rs`.
+9. **M5** (`207a626`) : descripteur hérité sans `O_CLOEXEC` → `inherited_fd`.
+
+**Vérifié** : `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo fmt --check`, check-secrets ; hôte : `host-spawn sh crates/supervisor/tests/sandbox-host.sh`
+(10/10 + aller-retour isolé). Aucune version nouvelle au `Cargo.lock` (http-body-util devient
+dépendance directe du superviseur, version déjà présente).
+
+**Écart à reporter** : code d'erreur dédié `provider_not_configured` absent de la liste de l'API
+(08 §6, `CONVERSATION_ERROR_CODES`) ; `provider_error` utilisé en attendant.

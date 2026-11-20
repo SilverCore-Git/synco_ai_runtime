@@ -7,10 +7,12 @@
 //! utilisateur) ; routage des WebSocket des clients vers le worker de chaque conversation ;
 //! arrêt propre.
 //!
-//! Les workers sont lancés derrière [`launcher::WorkerLauncher`] (bouchon en L05, bac à sable en
-//! L06).
+//! Les workers sont lancés derrière [`launcher::WorkerLauncher`] : bac à sable
+//! [`sandbox::SandboxLauncher`] (L06) en fonctionnement, bouchon en processus pour les tests.
 
-#![forbid(unsafe_code)]
+// `deny` (et non `forbid`) pour que le seul module `sandbox::sys` puisse lever l'interdiction ;
+// `tests/unsafe_scope.rs` vérifie qu'aucun autre fichier n'emploie `unsafe`.
+#![deny(unsafe_code)]
 
 pub mod api;
 pub mod app;
@@ -25,6 +27,7 @@ pub mod launcher;
 pub mod pins;
 pub mod ratelimit;
 pub mod runtime;
+pub mod sandbox;
 pub mod seal;
 pub mod server;
 pub mod state;

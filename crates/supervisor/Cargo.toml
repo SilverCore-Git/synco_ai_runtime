@@ -35,7 +35,12 @@ toml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 argon2.workspace = true
-rustix.workspace = true
+rustix = { workspace = true, features = ["mount", "thread", "system", "stdio", "fs", "net"] }
+landlock.workspace = true
+seccompiler.workspace = true
+libc.workspace = true
+bytes.workspace = true
+http-body-util.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

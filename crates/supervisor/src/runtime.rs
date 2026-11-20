@@ -22,7 +22,7 @@ use crate::api::ApiClient;
 use crate::clock::now_secs;
 use crate::config::{Config, ProviderSecret};
 use crate::keys::RuntimeKeys;
-use crate::launcher::WorkerLauncher;
+use crate::launcher::{LlmRoute, WorkerLauncher};
 use crate::state::{Authorization, ClientOut, Conv, ReplayBuffer, State, ToWorker, WorkerState};
 use crate::vault::{KeyId, OpenDelegation};
 
@@ -565,7 +565,15 @@ impl Runtime {
         });
     }
 
-    /// Paramètres d'`init` et clés initiales d'une conversation (sous verrou).
+    /// Paramètres d'`init`, clés initiales et route du mandataire LLM d'une conversation (sous
+    /// verrou). Erreur = code machine.
+    ///
+    /// Route LLM (B1) : l'identifiant du fournisseur vient de la politique de l'org, mais l'**URL**
+    /// et la **clé** viennent de la configuration du runtime, cherchées avec ce même identifiant.
+    /// `gateway_url` de la politique ne sert qu'au fournisseur `gateway` (aucune clé injectée), et
+    /// seulement si c'est une URL publique en `https` (`proxy::gateway_url_allowed`). Un
+    /// fournisseur absent de la configuration est refusé : aucune URL fournie par le serveur ne
+    /// reçoit jamais une clé du runtime.
     pub(crate) fn build_init(
         &self,
         st: &State,
@@ -573,9 +581,9 @@ impl Runtime {
         user_id: &str,
         auth_id: &str,
         lease_epoch: u64,
-    ) -> Option<(Init, Vec<KeyEntry>)> {
-        let org_id = st.org_id.clone()?;
-        let mut keys = st.vault.keys_for_conversation(user_id, session_id, now_secs())?;
+    ) -> Result<(Init, Vec<KeyEntry>, Option<LlmRoute>), &'static str> {
+        let org_id = st.org_id.clone().ok_or("init_unavailable")?;
+        let mut keys = st.vault.keys_for_conversation(user_id, session_id, now_secs()).ok_or("init_unavailable")?;
         let policy = st.policy.as_ref();
         let provider_id = policy.and_then(|p| p.default_provider.clone()).unwrap_or_else(|| "custom".to_owned());
         let provider = match provider_id.as_str() {
@@ -583,14 +591,30 @@ impl Runtime {
             "mistral" => LlmProvider::Mistral,
             "gemini" => LlmProvider::Gemini,
             "gateway" => LlmProvider::Gateway,
-            _ => LlmProvider::Custom,
+            "custom" => LlmProvider::Custom,
+            _ => return Err("llm_provider_not_configured"),
         };
         let entry = policy.and_then(|p| p.providers.iter().find(|x| x.id == provider_id));
         let configured = self.config.llm.providers.get(&provider_id);
-        let base_url = configured
-            .and_then(|c| c.base_url.clone())
-            .or_else(|| entry.and_then(|e| e.gateway_url.clone()))
-            .unwrap_or_default();
+        let base_url = if provider == LlmProvider::Gateway {
+            let url = configured
+                .and_then(|c| c.base_url.clone())
+                .or_else(|| entry.and_then(|e| e.gateway_url.clone()))
+                .ok_or("llm_provider_not_configured")?;
+            if configured.and_then(|c| c.base_url.as_ref()).is_none()
+                && !crate::sandbox::proxy::gateway_url_allowed(&url)
+            {
+                return Err("llm_gateway_url_refused");
+            }
+            url
+        } else {
+            configured.and_then(|c| c.base_url.clone()).ok_or("llm_provider_not_configured")?
+        };
+        let route = Some(LlmRoute {
+            provider: provider_id.clone(),
+            base_url: base_url.clone(),
+            budget: crate::launcher::LlmBudget::default(),
+        });
         let pricing = configured.and_then(|c| match (c.input_eur_per_mtok, c.output_eur_per_mtok) {
             (Some(i), Some(o)) => Some(Pricing { input_per_m_tok: i, output_per_m_tok: o }),
             _ => None,
@@ -613,7 +637,10 @@ impl Runtime {
             idle_shutdown_secs: l.idle_shutdown_secs,
         };
         // D1 : le secret du fournisseur choisi, depuis la configuration du runtime, en trame 0x02.
-        if let Some(secret) = self.provider_secrets.get(&provider_id) {
+        // Avec le bac à sable (L06), le mandataire LLM ajoute la clé lui-même : rien ne part au worker.
+        if let Some(secret) =
+            self.provider_secrets.get(&provider_id).filter(|_| !self.launcher.injects_llm_credentials())
+        {
             keys.push(KeyEntry {
                 kind: KeyKind::LlmCredential,
                 reference: provider_id.clone(),
@@ -640,7 +667,8 @@ impl Runtime {
             tool_policy: policy.map(|p| p.runtime.tool_policy.clone()).unwrap_or_default(),
             log_level: self.config.log_level.clone(),
         };
-        Some((init, keys))
+        let route = route.map(|r| LlmRoute { budget: crate::launcher::LlmBudget::from_limits(&init.limits), ..r });
+        Ok((init, keys, route))
     }
 
     /// Arrête le worker d'une conversation, ferme ses clients (`4403`) et l'oublie.

@@ -43,12 +43,18 @@ pub struct Config {
     /// Fournisseurs LLM (D1).
     #[serde(default)]
     pub llm: Llm,
+    /// Bac à sable des workers (L06, docs/plan/10).
+    #[serde(default)]
+    pub sandbox: Sandbox,
     /// Journal : `error`, `warn`, `info`, `debug`.
     #[serde(default = "default_log_level")]
     pub log_level: String,
     /// Développement uniquement : accepte une `public_url` en `http://localhost|127.0.0.1`.
     #[serde(default)]
     pub dev_allow_http_public_url: bool,
+    /// `limits.worker_memory_high_mib` écrit dans le fichier (ignoré, `--check-config` avertit).
+    #[serde(skip)]
+    pub memory_high_set: bool,
 }
 
 fn default_log_level() -> String {
@@ -207,6 +213,28 @@ impl Default for Limits {
     }
 }
 
+/// Bac à sable des workers (L06).
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Sandbox {
+    /// Base du sous-arbre cgroup v2 délégué (défaut : le cgroup du service, `Delegate=yes`).
+    pub cgroup_root: Option<PathBuf>,
+    /// Répertoire des sockets du mandataire LLM (défaut : `<state_dir>/workers`).
+    pub run_dir: Option<PathBuf>,
+}
+
+impl Config {
+    /// Réglages effectifs du bac à sable.
+    #[must_use]
+    pub fn sandbox_settings(&self) -> crate::sandbox::SandboxSettings {
+        crate::sandbox::SandboxSettings {
+            program: None,
+            cgroup_root: self.sandbox.cgroup_root.clone(),
+            run_dir: self.sandbox.run_dir.clone().unwrap_or_else(|| self.state_dir.join("workers")),
+        }
+    }
+}
+
 /// Fournisseurs LLM.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -266,13 +294,24 @@ impl Config {
 
     /// Lit et valide un texte TOML.
     pub fn parse(text: &str) -> Result<Self> {
-        let config: Self = toml::from_str(text).map_err(|e| invalid(format!("TOML invalide : {e}")))?;
+        let mut config: Self = toml::from_str(text).map_err(|e| invalid(format!("TOML invalide : {e}")))?;
+        config.memory_high_set = toml::from_str::<toml::Table>(text).ok().is_some_and(|t| {
+            t.get("limits").and_then(toml::Value::as_table).is_some_and(|l| l.contains_key("worker_memory_high_mib"))
+        });
         config.validate()?;
         Ok(config)
     }
 
     /// Contrôles de cohérence (sans effet de bord ni lecture de secret).
     pub fn validate(&self) -> Result<()> {
+        // Un socket Unix tient en 108 octets : `<run_dir>/w-<n>-<pid>/llm.sock` doit y entrer.
+        let run_dir = self.sandbox_settings().run_dir;
+        if !run_dir.is_absolute() || run_dir.as_os_str().len() > 72 {
+            return Err(invalid("sandbox.run_dir (ou state_dir) : chemin absolu de 72 octets au plus"));
+        }
+        if self.sandbox.cgroup_root.as_ref().is_some_and(|p| !p.starts_with(crate::sandbox::cgroup::CGROUP_FS)) {
+            return Err(invalid("sandbox.cgroup_root : sous /sys/fs/cgroup attendu"));
+        }
         let canonical = canonical_runtime_url(&self.public_url, self.dev_allow_http_public_url)
             .map_err(|_| invalid("public_url : URL https canonique attendue (01 §3)"))?;
         if canonical != self.public_url {
@@ -336,6 +375,12 @@ impl Config {
             if id == "gateway" && (p.api_key_file.is_some() || p.api_key_env.is_some()) {
                 return Err(invalid("llm.providers.gateway : pas de clé, la passerelle reçoit un ticket sgt1"));
             }
+            // B1 : l'URL d'un fournisseur (et donc la destination de sa clé) vient de cette
+            // configuration, jamais de la politique fournie par l'API ; seule `gateway` (sans clé)
+            // peut prendre l'URL publique de la politique.
+            if id != "gateway" && p.base_url.is_none() {
+                return Err(invalid(format!("llm.providers.{id}.base_url : obligatoire")));
+            }
             if let Some(url) = &p.base_url {
                 let ok = reqwest::Url::parse(url).is_ok_and(|u| {
                     u.scheme() == "https"
@@ -358,6 +403,13 @@ impl Config {
     #[must_use]
     pub fn warnings(&self) -> Vec<String> {
         let mut out = Vec::new();
+        if self.memory_high_set {
+            out.push(
+                "limits.worker_memory_high_mib est ignoré : memory.high n'est pas appliqué aux workers (sans espace \
+                 d'échange, il les ralentit au lieu de les laisser être tués à memory.max ; docs/plan/10 §5, décision en attente)"
+                    .to_owned(),
+            );
+        }
         if self.listen.trust_proxy_hops == 0 {
             out.push(
                 "listen.trust_proxy_hops = 0 : derrière un mandataire, toutes les connexions sembleront venir de lui \
@@ -494,6 +546,15 @@ allowed_origins = ["https://app.example.com"]
             "pas de clé pour la passerelle"
         );
         assert!(Config::parse(&format!("{MIN}\n[llm.providers.inconnu]\n")).is_err());
+        // B1 : un fournisseur (avec ou sans clé) sans URL configurée est refusé ; la passerelle peut
+        // prendre l'URL de la politique.
+        assert!(Config::parse(&format!("{MIN}\n[llm.providers.openai]\napi_key_env = \"X\"\n")).is_err());
+        assert!(Config::parse(&format!("{MIN}\n[llm.providers.custom]\n")).is_err());
+        assert!(Config::parse(&format!("{MIN}\n[llm.providers.gateway]\n")).is_ok());
+        // `worker_memory_high_mib` présent → avertissement.
+        let c = Config::parse(&format!("{MIN}\n[limits]\nworker_memory_high_mib = 448\n")).unwrap();
+        assert!(c.warnings().iter().any(|w| w.contains("worker_memory_high_mib")));
+        assert!(!Config::parse(MIN).unwrap().warnings().iter().any(|w| w.contains("worker_memory_high_mib")));
         let open = "[listen]\npublic = \"0.0.0.0:8790\"\ndashboard = \"127.0.0.1:8791\"\ntrust_proxy_hops = 1\n";
         assert!(Config::parse(&format!("{MIN}\n{open}")).is_err(), "écoute non locale refusée");
         let c = Config::parse(&format!("{MIN}\n{open}allow_non_loopback_plain_http = true\n")).unwrap();

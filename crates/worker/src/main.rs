@@ -4,6 +4,8 @@
 //! (`synco-ai-runtime __sandbox-helper` puis `__sandbox-worker`) : la racine du worker est vide et
 //! seccomp interdit `execve`, donc aucun autre binaire ne peut y être exécuté (docs/plan/10 §2).
 
+#![forbid(unsafe_code)]
+
 use std::process::ExitCode;
 
 fn main() -> ExitCode {

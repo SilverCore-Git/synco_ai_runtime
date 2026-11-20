@@ -31,6 +31,9 @@ public = "127.0.0.1:8790"
 dashboard = "127.0.0.1:8791"
 # Nombre de mandataires de confiance devant `public` (adresse du client lue dans X-Forwarded-For).
 trust_proxy_hops = 1
+# Le runtime ne termine pas TLS : une adresse non locale est refusée, sauf (mandataire sur une autre
+# machine d'un réseau de confiance, trafic non chiffré entre les deux) :
+# allow_non_loopback_plain_http = true
 
 [key_sealing]
 # Scellement de la clé privée du runtime au repos :

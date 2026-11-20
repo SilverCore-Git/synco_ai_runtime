@@ -65,6 +65,10 @@ pub struct Listen {
     pub dashboard: SocketAddr,
     /// Mandataires de confiance devant `public` (adresse du client lue dans `X-Forwarded-For`).
     pub trust_proxy_hops: usize,
+    /// Accepte une adresse d'écoute non locale, en HTTP sans chiffrement (mandataire TLS sur une
+    /// autre machine d'un réseau de confiance). Refusé par défaut : le runtime ne termine pas TLS.
+    #[serde(default)]
+    pub allow_non_loopback_plain_http: bool,
 }
 
 impl Default for Listen {
@@ -73,6 +77,7 @@ impl Default for Listen {
             public: SocketAddr::from(([127, 0, 0, 1], 8790)),
             dashboard: SocketAddr::from(([127, 0, 0, 1], 8791)),
             trust_proxy_hops: 1,
+            allow_non_loopback_plain_http: false,
         }
     }
 }
@@ -288,6 +293,17 @@ impl Config {
                 "api_url : origine https sans chemin ni barre finale (http seulement en boucle locale)",
             ));
         }
+        for (name, addr) in [("listen.public", self.listen.public), ("listen.dashboard", self.listen.dashboard)] {
+            if !addr.ip().is_loopback() && !self.listen.allow_non_loopback_plain_http {
+                return Err(invalid(format!(
+                    "{name} : adresse de boucle locale attendue (HTTP sans TLS derrière le mandataire) ; \
+                     sinon listen.allow_non_loopback_plain_http = true"
+                )));
+            }
+        }
+        if self.listen.trust_proxy_hops > 4 {
+            return Err(invalid("listen.trust_proxy_hops : au plus 4"));
+        }
         if !self.state_dir.is_absolute() {
             return Err(invalid("state_dir : chemin absolu attendu"));
         }
@@ -336,6 +352,32 @@ impl Config {
             }
         }
         Ok(())
+    }
+
+    /// Avertissements de `--check-config` (configuration valide mais probablement incohérente).
+    #[must_use]
+    pub fn warnings(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if self.listen.trust_proxy_hops == 0 {
+            out.push(
+                "listen.trust_proxy_hops = 0 : derrière un mandataire, toutes les connexions sembleront venir de lui \
+                 (limites par adresse partagées) ; mettre 1 pour un mandataire"
+                    .to_owned(),
+            );
+        }
+        if self.listen.allow_non_loopback_plain_http {
+            out.push(
+                "listen.allow_non_loopback_plain_http : le trafic entre le mandataire et le runtime n'est pas chiffré"
+                    .to_owned(),
+            );
+            if !self.listen.public.ip().is_loopback() && self.listen.trust_proxy_hops == 0 {
+                out.push("écoute non locale sans mandataire déclaré : le runtime serait exposé sans TLS".to_owned());
+            }
+        }
+        if self.dev_allow_http_public_url {
+            out.push("dev_allow_http_public_url : réservé au développement".to_owned());
+        }
+        out
     }
 
     /// Lit les secrets des fournisseurs (D1). Jamais journalisés.
@@ -452,6 +494,11 @@ allowed_origins = ["https://app.example.com"]
             "pas de clé pour la passerelle"
         );
         assert!(Config::parse(&format!("{MIN}\n[llm.providers.inconnu]\n")).is_err());
+        let open = "[listen]\npublic = \"0.0.0.0:8790\"\ndashboard = \"127.0.0.1:8791\"\ntrust_proxy_hops = 1\n";
+        assert!(Config::parse(&format!("{MIN}\n{open}")).is_err(), "écoute non locale refusée");
+        let c = Config::parse(&format!("{MIN}\n{open}allow_non_loopback_plain_http = true\n")).unwrap();
+        assert!(!c.warnings().is_empty());
+        assert!(Config::parse(MIN).unwrap().warnings().is_empty());
     }
 
     #[test]

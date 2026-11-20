@@ -126,6 +126,9 @@ pub async fn execute(args: Args) -> Result<()> {
                 seal::Backend::SystemdCreds { .. } => "systemd-creds",
                 seal::Backend::Passphrase { .. } => "phrase de passe",
             };
+            for w in config.warnings() {
+                out(&format!("avertissement : {w}"));
+            }
             out(&format!(
                 "configuration valide : {} ; scellement : {sealing} ; fournisseurs avec clé : {}",
                 args.config.display(),

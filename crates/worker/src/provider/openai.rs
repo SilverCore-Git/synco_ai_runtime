@@ -186,6 +186,8 @@ pub struct SseDecoder {
     finish: Option<String>,
     usage: Option<Usage>,
     done: bool,
+    text_bytes: usize,
+    args_bytes: usize,
 }
 
 impl core::fmt::Debug for SseDecoder {
@@ -199,6 +201,11 @@ fn u(v: &Value, k: &str) -> Option<u64> {
 }
 
 impl SseDecoder {
+    fn count_text(&mut self, n: usize) -> Result<(), LlmError> {
+        self.text_bytes = self.text_bytes.saturating_add(n);
+        if self.text_bytes > super::MAX_STREAM_TEXT_BYTES { Err(LlmError::TooLarge) } else { Ok(()) }
+    }
+
     fn line(&mut self, line: &[u8], out: &mut Vec<LlmEvent>) -> Result<(), LlmError> {
         let text = String::from_utf8_lossy(line);
         let trimmed = text.trim();
@@ -223,10 +230,12 @@ impl SseDecoder {
         let delta = choice.get("delta").unwrap_or(&empty);
         for key in ["reasoning_content", "reasoning"] {
             if let Some(r) = delta.get(key).and_then(Value::as_str).filter(|s| !s.is_empty()) {
+                self.count_text(r.len())?;
                 out.push(LlmEvent::Thinking(r.to_owned()));
             }
         }
         if let Some(c) = delta.get("content").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+            self.count_text(c.len())?;
             let s = self.splitter.push(c);
             if !s.thinking.is_empty() {
                 out.push(LlmEvent::Thinking(s.thinking));
@@ -245,20 +254,26 @@ impl SseDecoder {
                 while self.calls.len() <= index {
                     self.calls.push(PartialCall::default());
                 }
-                let Some(call) = self.calls.get_mut(index) else { continue };
-                if let Some(id) = tc.get("id").and_then(Value::as_str) {
-                    call.id = id.to_owned();
+                if let Some(id) = tc.get("id").and_then(Value::as_str)
+                    && let Some(call) = self.calls.get_mut(index)
+                {
+                    id.clone_into(&mut call.id);
                 }
                 if let Some(f) = tc.get("function") {
-                    if let Some(n) = f.get("name").and_then(Value::as_str) {
-                        call.name.push_str(n);
-                    }
-                    match f.get("arguments") {
-                        Some(Value::String(a)) => call.arguments.push_str(a),
+                    let piece = match f.get("arguments") {
+                        Some(Value::String(a)) => a.clone(),
                         // Certains serveurs (Ollama) donnent un objet déjà décodé.
-                        Some(v @ Value::Object(_)) => call.arguments.push_str(&v.to_string()),
-                        _ => {}
+                        Some(v @ Value::Object(_)) => v.to_string(),
+                        _ => String::new(),
+                    };
+                    let name = f.get("name").and_then(Value::as_str).unwrap_or_default();
+                    self.args_bytes = self.args_bytes.saturating_add(piece.len()).saturating_add(name.len());
+                    if self.args_bytes > super::MAX_TOOL_ARGS_BYTES {
+                        return Err(LlmError::TooLarge);
                     }
+                    let Some(call) = self.calls.get_mut(index) else { continue };
+                    call.name.push_str(name);
+                    call.arguments.push_str(&piece);
                 }
             }
         }
@@ -443,6 +458,24 @@ mod tests {
                 LlmEvent::Done(FinishReason::ToolCalls),
             ]
         );
+        // M4 : arguments ou texte cumulés au-delà des bornes.
+        let mut d = SseDecoder::default();
+        let big = "x".repeat(600 * 1024);
+        let chunk = format!(
+            "data: {}\n",
+            json!({ "choices": [{ "delta": { "tool_calls": [{ "index": 0, "function": { "name": "n", "arguments": big } }] } }] })
+        );
+        let mut out = Vec::new();
+        d.push(chunk.as_bytes(), &mut out).unwrap();
+        assert_eq!(d.push(chunk.as_bytes(), &mut out).unwrap_err(), LlmError::TooLarge);
+        let mut d = SseDecoder::default();
+        let text = format!("data: {}\n", json!({ "choices": [{ "delta": { "content": "y".repeat(1024 * 1024) } }] }));
+        let mut res = Ok(());
+        for _ in 0..5 {
+            res = d.push(text.as_bytes(), &mut out);
+        }
+        assert_eq!(res.unwrap_err(), LlmError::TooLarge);
+        assert!(!LlmError::TooLarge.retryable());
         // Erreur annoncée dans le flux.
         let mut d = SseDecoder::default();
         assert_eq!(

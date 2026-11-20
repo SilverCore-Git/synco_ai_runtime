@@ -221,6 +221,9 @@ pub enum LlmError {
     },
     /// Flux illisible ou erreur annoncée dans le flux.
     BadStream,
+    /// Réponse au-delà des bornes du worker (texte ou arguments d'outil cumulés) : pas de nouvel
+    /// essai, la conversation échoue en `provider_error`.
+    TooLarge,
 }
 
 impl LlmError {
@@ -246,11 +249,19 @@ impl LlmError {
             Self::Rejected { .. } => "llm_rejected",
             Self::Provider { .. } => "llm_provider",
             Self::BadStream => "llm_bad_stream",
+            Self::TooLarge => "llm_too_large",
         }
     }
 }
 
-/// Décodeur du flux d'une réponse `2xx`, alimenté octet par octet.
+/// Texte et raisonnement cumulés au plus dans une réponse (bien au-delà de `maxOutputTokensPerCall`).
+pub const MAX_STREAM_TEXT_BYTES: usize = 4 * 1024 * 1024;
+/// Arguments d'outils cumulés au plus dans une réponse.
+pub const MAX_TOOL_ARGS_BYTES: usize = 1024 * 1024;
+
+/// Décodeur du flux d'une réponse `2xx`, alimenté octet par octet. Tout décodeur borne le texte
+/// cumulé ([`MAX_STREAM_TEXT_BYTES`]) et les arguments d'outils ([`MAX_TOOL_ARGS_BYTES`]) :
+/// au-delà, [`LlmError::TooLarge`].
 pub trait StreamDecoder: Send {
     /// Morceau reçu : ajoute les évènements complets à `out`.
     fn push(&mut self, chunk: &[u8], out: &mut Vec<LlmEvent>) -> Result<(), LlmError>;

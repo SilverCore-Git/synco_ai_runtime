@@ -378,8 +378,20 @@ impl Agent {
                     other => return Ok(self.flow_reason(other)),
                 }
             }
-            if self.pending.is_some() {
+            if let Some(p) = &self.pending {
                 // Attente d'une décision : le worker s'arrête (P3), la décision relancera un worker.
+                // Les éléments consommés entre-temps (décision périmée) sont écrits, avec l'état
+                // d'attente (l'API a pu passer `queued` au dépôt).
+                if !self.consumed.is_empty() || self.status == "queued" {
+                    let status = if self.awaiting_key.is_some() {
+                        "awaiting_key"
+                    } else if p.interactive {
+                        "awaiting_user"
+                    } else {
+                        "awaiting_confirmation"
+                    };
+                    self.persist(status, None).await?;
+                }
                 return Ok(DoneReason::Awaiting);
             }
             if !self.wait_for_work().await? {

@@ -807,3 +807,49 @@ async fn erreur_de_transport_apres_envoi_issue_inconnue() {
     assert_eq!(r["error"], "unknown_outcome");
     api.with(|st| assert_eq!(st.threads_created.len(), 1));
 }
+
+/// I4 : une confirmation pour un autre appel ne déclenche rien (`stale_decision`), l'attente est
+/// réécrite ; une politique devenue `deny` est revérifiée au moment d'exécuter un appel confirmé.
+#[tokio::test]
+async fn confirmation_d_un_autre_appel_et_deny_reverifie() {
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.deposit_message(M1, "Crée la tâche Rapport");
+    llm.push(Script::ok(sse_tool("call_1", "create_task", &json!({ "title": "Rapport" }), (10, 3))));
+    let (peer, _t) = spawn_worker(&api, &llm, init(1), default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Awaiting);
+
+    // Confirmation d'un autre appel : périmée, rien d'exécuté, toujours en attente de call_1.
+    api.with(|st| {
+        st.lease_epoch = 2;
+        st.status = "queued".into();
+    });
+    api.deposit("confirm:call_9", json!({ "t": "confirm", "toolCallId": "call_9", "decision": "accept" }));
+    let (peer, _t) = spawn_worker(&api, &llm, init(2), default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Awaiting);
+    assert!(peer.events().iter().any(|e| e["t"] == "error" && e["code"] == "stale_decision"));
+    api.with(|st| {
+        assert!(st.tool_runs.is_empty());
+        assert_eq!(st.status, "awaiting_confirmation");
+        assert_eq!(st.pending["id"], "call_1");
+        assert!(st.inbox.iter().all(|i| i.2), "décision périmée consommée");
+    });
+    assert_eq!(llm.requests().len(), 1);
+
+    // La politique de l'org passe à `deny` avant la décision : l'appel confirmé n'est pas exécuté
+    // (l'API simulée, elle, ne refuse rien ici : c'est le worker qui revérifie).
+    api.with(|st| {
+        st.lease_epoch = 3;
+        st.status = "queued".into();
+    });
+    api.deposit("confirm:call_1", json!({ "t": "confirm", "toolCallId": "call_1", "decision": "accept" }));
+    llm.push(Script::ok(sse_text(&["Interdit par l'organisation."], (10, 3))));
+    let mut ini = init(3);
+    ini.tool_policy = policy(&[("create_task", ToolPolicy::Deny)]);
+    let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Idle);
+    api.with(|st| assert!(st.tool_runs.is_empty(), "outil deny jamais exécuté"));
+    let msgs = api.clear_messages();
+    let tool = msgs.iter().find(|m| m["role"] == "tool").unwrap();
+    assert_eq!(tool["toolResult"], json!({ "error": "tool_denied_by_policy" }));
+}

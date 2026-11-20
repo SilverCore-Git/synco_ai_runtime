@@ -31,7 +31,7 @@ fn statuses(api: &FakeApi) -> Vec<String> {
 async fn tour_simple() {
     let api = FakeApi::new();
     let llm = FakeLlm::start();
-    api.deposit_message(M1, "Bonjour, qui es-tu ?");
+    let frame = api.deposit_message(M1, "Bonjour, qui es-tu ?");
     llm.push(Script::ok(sse_text(&["<think>Je me présente.</think>Bon", "jour, je suis Synco AI."], (12, 7))));
     let (peer, _t) = spawn_worker(&api, &llm, init(1), default_keys(false));
     assert_eq!(peer.wait_done().await, DoneReason::Idle);
@@ -46,6 +46,7 @@ async fn tour_simple() {
     assert_eq!(msgs[1]["thinking"], "Je me présente.");
     assert_eq!(msgs[1]["usage"]["totalTokens"], 19);
     api.with(|st| {
+        assert_eq!(st.messages[0]["content"], frame["content"], "message utilisateur gardé tel quel");
         assert_eq!(st.status, "idle");
         assert!(st.inbox.iter().all(|i| i.2), "message consommé");
         assert_eq!(st.pushes, ["AI_TURN_DONE"]);

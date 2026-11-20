@@ -138,6 +138,10 @@ pub struct Message {
     pub role: Role,
     /// Texte.
     pub content: Option<String>,
+    /// Valeur `gcm1:` d'origine de `content`, réécrite **telle quelle** (message de l'utilisateur
+    /// « tel quel », 05 §6.2 ; historique stable d'une écriture à l'autre). À remettre à `None` si
+    /// `content` change.
+    pub content_sealed: Option<String>,
     /// Raisonnement.
     pub thinking: Option<String>,
     /// Appels d'outils (assistant).
@@ -173,6 +177,7 @@ impl Message {
             id,
             role,
             content: None,
+            content_sealed: None,
             thinking: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
@@ -224,9 +229,10 @@ pub fn encode_message(ck: &SymmetricKey, sid: &str, m: &Message) -> Result<Value
     let mut o = m.extra.clone();
     o.insert("id".into(), Value::String(m.id.clone()));
     o.insert("role".into(), Value::String(m.role.as_str().into()));
-    let content = match &m.content {
-        Some(t) => enc_text(ck, sid, &m.id, &FieldName::Content, t)?,
-        None => Value::Null,
+    let content = match (&m.content, &m.content_sealed) {
+        (Some(_), Some(sealed)) => Value::String(sealed.clone()),
+        (Some(t), None) => enc_text(ck, sid, &m.id, &FieldName::Content, t)?,
+        (None, _) => Value::Null,
     };
     o.insert("content".into(), content);
     if let Some(t) = &m.thinking {
@@ -306,6 +312,9 @@ pub fn decode_message(ck: &SymmetricKey, sid: &str, v: &Value) -> Option<Message
     let mut m = Message::new(id, role, created_at);
     if let Some(c) = o.remove("content") {
         m.content = dec_text(ck, sid, &m.id, "content", &c);
+        if m.content.as_deref() != Some(UNREADABLE) {
+            m.content_sealed = is_gcm1(&c).map(str::to_owned);
+        }
     }
     if let Some(t) = o.remove("thinking") {
         m.thinking = dec_text(ck, sid, &m.id, "thinking", &t);
@@ -414,7 +423,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(args, r#"{"title":"secret"}"#);
-        let back = decode_messages(&ck, SID, &Value::Array(enc));
+        let mut back = decode_messages(&ck, SID, &Value::Array(enc.clone()));
+        // Chiffré d'origine gardé et réécrit tel quel.
+        assert_eq!(back[0].content_sealed.as_deref(), enc[0]["content"].as_str());
+        assert_eq!(encode_message(&ck, SID, &back[0]).unwrap()["content"], enc[0]["content"]);
+        back[0].content_sealed = None;
         assert_eq!(back, vec![a, t]);
     }
 

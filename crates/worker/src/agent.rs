@@ -740,6 +740,7 @@ impl Agent {
             m.created_at = now();
         }
         m.content = Some(text);
+        m.content_sealed = Some(content.to_owned());
         self.messages.push(m);
         Ok(true)
     }

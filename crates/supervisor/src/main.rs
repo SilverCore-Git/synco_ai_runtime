@@ -1,9 +1,16 @@
-//! Binaire `synco-ai-runtime` (voir `synco_ai_runtime::cli`).
+//! Binaire `synco-ai-runtime` (voir `synco_ai_runtime::cli`). Relancé par le bac à sable pour
+//! chaque worker (`__sandbox-helper`, `__sandbox-worker`) : ces étapes passent **avant** le moteur
+//! asynchrone (un seul fil d'exécution, condition de `unshare(CLONE_NEWUSER)`).
+
+#![forbid(unsafe_code)]
 
 use std::io::Write as _;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
+    if let Some(code) = synco_ai_runtime::sandbox::child_main() {
+        return code;
+    }
     let result = synco_ai_runtime::cli::parse(std::env::args().skip(1)).and_then(|args| {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()

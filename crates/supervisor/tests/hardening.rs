@@ -19,6 +19,8 @@ async fn processus_durci_apres_initialisation() {
         ),
     )
     .unwrap();
-    synco_ai_runtime::cli::execute(Args { config, command: Command::CheckConfig }).await.unwrap();
+    synco_ai_runtime::cli::execute(Args { config, command: Command::CheckConfig, insecure_no_sandbox: false })
+        .await
+        .unwrap();
     assert!(synco_ai_runtime::hardening::is_hardened(), "PR_SET_DUMPABLE=0 et RLIMIT_CORE=0 attendus");
 }

@@ -43,6 +43,9 @@ pub struct Config {
     /// Fournisseurs LLM (D1).
     #[serde(default)]
     pub llm: Llm,
+    /// Bac à sable des workers (L06, docs/plan/10).
+    #[serde(default)]
+    pub sandbox: Sandbox,
     /// Journal : `error`, `warn`, `info`, `debug`.
     #[serde(default = "default_log_level")]
     pub log_level: String,
@@ -207,6 +210,28 @@ impl Default for Limits {
     }
 }
 
+/// Bac à sable des workers (L06).
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Sandbox {
+    /// Base du sous-arbre cgroup v2 délégué (défaut : le cgroup du service, `Delegate=yes`).
+    pub cgroup_root: Option<PathBuf>,
+    /// Répertoire des sockets du mandataire LLM (défaut : `<state_dir>/workers`).
+    pub run_dir: Option<PathBuf>,
+}
+
+impl Config {
+    /// Réglages effectifs du bac à sable.
+    #[must_use]
+    pub fn sandbox_settings(&self) -> crate::sandbox::SandboxSettings {
+        crate::sandbox::SandboxSettings {
+            program: None,
+            cgroup_root: self.sandbox.cgroup_root.clone(),
+            run_dir: self.sandbox.run_dir.clone().unwrap_or_else(|| self.state_dir.join("workers")),
+        }
+    }
+}
+
 /// Fournisseurs LLM.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -273,6 +298,14 @@ impl Config {
 
     /// Contrôles de cohérence (sans effet de bord ni lecture de secret).
     pub fn validate(&self) -> Result<()> {
+        // Un socket Unix tient en 108 octets : `<run_dir>/w-<n>-<pid>/llm.sock` doit y entrer.
+        let run_dir = self.sandbox_settings().run_dir;
+        if !run_dir.is_absolute() || run_dir.as_os_str().len() > 72 {
+            return Err(invalid("sandbox.run_dir (ou state_dir) : chemin absolu de 72 octets au plus"));
+        }
+        if self.sandbox.cgroup_root.as_ref().is_some_and(|p| !p.starts_with(crate::sandbox::cgroup::CGROUP_FS)) {
+            return Err(invalid("sandbox.cgroup_root : sous /sys/fs/cgroup attendu"));
+        }
         let canonical = canonical_runtime_url(&self.public_url, self.dev_allow_http_public_url)
             .map_err(|_| invalid("public_url : URL https canonique attendue (01 §3)"))?;
         if canonical != self.public_url {

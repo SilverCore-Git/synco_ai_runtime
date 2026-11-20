@@ -613,7 +613,10 @@ impl Runtime {
             idle_shutdown_secs: l.idle_shutdown_secs,
         };
         // D1 : le secret du fournisseur choisi, depuis la configuration du runtime, en trame 0x02.
-        if let Some(secret) = self.provider_secrets.get(&provider_id) {
+        // Avec le bac à sable (L06), le mandataire LLM ajoute la clé lui-même : rien ne part au worker.
+        if let Some(secret) =
+            self.provider_secrets.get(&provider_id).filter(|_| !self.launcher.injects_llm_credentials())
+        {
             keys.push(KeyEntry {
                 kind: KeyKind::LlmCredential,
                 reference: provider_id.clone(),

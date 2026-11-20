@@ -8,9 +8,9 @@
 //! - L05 fournit [`InProcessStubLauncher`] : le bouchon de `synco-ai-runtime-worker` tourne dans
 //!   une tâche du superviseur, relié par un `tokio::io::duplex`. **Aucune isolation** : réservé aux
 //!   tests et au développement.
-//! - L06 implémente `WorkerLauncher` pour un vrai process (`socketpair` sur le descripteur 3,
-//!   namespaces, seccomp, landlock, cgroup v2 avec [`ResourceLimits`], réseau limité à
-//!   [`WorkerSpec::allowed_hosts`]) et le passe à `app::run` à la place du bouchon.
+//! - L06 : [`crate::sandbox::SandboxLauncher`] lance un vrai processus isolé (`socketpair` sur le
+//!   descripteur 3, espaces de noms, seccomp, landlock, cgroup v2 avec [`ResourceLimits`], réseau
+//!   réduit au mandataire LLM de [`WorkerSpec::llm`]) ; `cli.rs` le branche à la place du bouchon.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -47,8 +47,19 @@ pub struct WorkerSpec {
     pub user_id: String,
     /// Plafonds.
     pub resources: ResourceLimits,
-    /// Hôtes que le worker peut joindre (API, fournisseurs LLM configurés, passerelle) : `hôte:port`.
-    pub allowed_hosts: Vec<String>,
+    /// Fournisseur LLM joignable par le worker, **seul** accès réseau (mandataire du superviseur,
+    /// docs/plan/10 §4). L'API n'est jointe que par `signed_request` (06 §4). `None` : aucun.
+    pub llm: Option<LlmRoute>,
+}
+
+/// Route du mandataire LLM d'un worker. Aucun secret : la clé du fournisseur reste dans le
+/// mandataire (D1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LlmRoute {
+    /// Identifiant du fournisseur (`openai`, `mistral`, `gemini`, `custom`, `gateway`).
+    pub provider: String,
+    /// URL de base (`https://…`), celle d'`init.llm.baseUrl`.
+    pub base_url: String,
 }
 
 /// Fin d'un worker.
@@ -119,6 +130,12 @@ pub trait WorkerLauncher: Send + Sync + 'static {
 
     /// Nom du lanceur (journal, dashboard).
     fn name(&self) -> &'static str;
+
+    /// Le lanceur ajoute-t-il lui-même la clé du fournisseur LLM aux appels du worker (mandataire,
+    /// D1) ? Si oui, `init` ne transmet **aucune** clé LLM au worker.
+    fn injects_llm_credentials(&self) -> bool {
+        false
+    }
 }
 
 /// Bouchon de L05 : le worker de `synco-ai-runtime-worker` dans une tâche, sans isolation.

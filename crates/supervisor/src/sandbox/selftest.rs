@@ -105,6 +105,12 @@ fn list_procs(stream: UnixStream, args: &[String]) -> u8 {
                 detail.push(format!("open_ok:/proc/{pid}/{file}"));
             }
         }
+        // Superviseur processus 1 d'un conteneur : dans son propre espace de noms de PID, le worker est
+        // lui-même le PID 1, donc `kill(1, 0)` réussit trivialement et ne prouve rien (faux positif).
+        if *pid == std::process::id().to_string() {
+            detail.push("kill0_same_pid".into());
+            continue;
+        }
         let signalled = pid
             .parse::<i32>()
             .ok()

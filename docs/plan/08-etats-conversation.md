@@ -177,8 +177,11 @@ interroge `GET /api/runtime/v1/conversations?state=pending` (04 §4.1), qui incl
 `running` dont le bail a expiré (et, depuis la vague B, les `idle` avec un message non consommé) ;
 il prend le bail (`queued` implicite) puis lance le worker.
 
-Journal : aucune route du canal ne permet aujourd'hui au worker d'écrire l'`AiChatSessionEvent`
-`tool_unknown_outcome` de l'étape 2 (00 §6 Q15).
+Journal (révisé après L03c, 2026-11-20 ; Q15 = A) : le worker écrit lui-même l'`AiChatSessionEvent`
+`tool_unknown_outcome` de l'étape 2 (et `lease_lost`) par le champ facultatif `events: [{ type, code? }]`
+de `PUT …/transcript` et `POST …/status` (04 §4.2, 07 §5), dans la transaction de l'écriture qui les
+porte. Un worker qui a perdu le bail ne peut pas écrire son propre `lease_lost` : le worker suivant le
+constate et l'écrit.
 
 ## 6. Codes d'erreur (`lastErrorCode`, évènement `error`)
 

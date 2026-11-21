@@ -371,7 +371,7 @@ pub(crate) async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> bool {
             && match rt.api.sign_key(&user).await {
                 Ok(r) => {
                     let history = SignHistory { keys: &sign, bound_rsa: bound.as_deref() };
-                    chain_vouches(&user, &history, &crate::pins::chain_from(&r.transitions), &key)
+                    chain_vouches(&user, &history, &crate::pins::chain_from(&r.transitions), &from, &key)
                 }
                 Err(_) => false,
             };

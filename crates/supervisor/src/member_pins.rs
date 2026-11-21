@@ -163,7 +163,9 @@ pub struct SignHistory<'a> {
 /// 1. **reproduire exactement** l'historique épinglé : ses premières clés de signature sont
 ///    `history.keys[1..]`, dans l'ordre et sans écart (une branche signée par une clé retirée,
 ///    même si elle rejoint ensuite la clé courante, est refusée) ;
-/// 2. aboutir (dernier maillon) **exactement** à la clé RSA présentée, introduite une seule fois ;
+/// 2. aboutir (dernier maillon) **exactement** à la clé RSA présentée, introduite une seule fois et
+///    différente de l'épinglée (`pinned_rsa`, donc placée avant elle si la chaîne la contient) ; le
+///    magasin refuse en plus toute clé déjà épinglée par le passé ([`MemberPinStore::rotate`]) ;
 /// 3. et cette clé RSA doit être garantie par une clé **non retirée** : soit le maillon qui
 ///    l'introduit est signé par la clé de signature courante ou une successeure (la chaîne
 ///    continue au-delà de la clé courante) ; soit la chaîne s'arrête sur la clé courante et la clé
@@ -171,7 +173,13 @@ pub struct SignHistory<'a> {
 ///    époque où la clé signataire n'était pas retirée. Un maillon servi aujourd'hui et signé par
 ///    une clé retirée (peut-être compromise) ne suffit jamais.
 #[must_use]
-pub fn chain_vouches(user_id: &str, history: &SignHistory<'_>, chain: &[IdentityTransition], key: &MemberKey) -> bool {
+pub fn chain_vouches(
+    user_id: &str,
+    history: &SignHistory<'_>,
+    chain: &[IdentityTransition],
+    pinned_rsa: &str,
+    key: &MemberKey,
+) -> bool {
     let Ok(canon) = history.keys.iter().map(|k| ec_canonical_json(k)).collect::<core::result::Result<Vec<_>, _>>()
     else {
         return false;
@@ -190,6 +198,11 @@ pub fn chain_vouches(user_id: &str, history: &SignHistory<'_>, chain: &[Identity
         path.iter().map(|k| MemberKey::from_jwk_str(&k.public_key).map(|m| m.fingerprint)).collect();
     let Some((Some(end), before)) = rsas.split_last() else { return false };
     if *end != key.fingerprint || before.iter().flatten().any(|f| *f == key.fingerprint) {
+        return false;
+    }
+    // La clé RSA épinglée, si la chaîne la contient, vient AVANT la nouvelle (revue I2) : jamais une
+    // chaîne qui la place après, ni qui « renouvelle » vers elle-même.
+    if *end == pinned_rsa {
         return false;
     }
     // 3. Garantie par une clé non retirée.
@@ -338,9 +351,14 @@ impl MemberPinStore {
     }
 
     /// Rotation prouvée ([`chain_vouches`]) : remplace l'épingle **si** elle vaut toujours
-    /// `from_fingerprint` (aucun autre changement entre-temps). Rend vrai si remplacée.
+    /// `from_fingerprint` (aucun autre changement entre-temps) et si la nouvelle clé n'est ni
+    /// l'épinglée ni une clé **précédente** (aucun retour arrière, revue I2). Rend vrai si remplacée.
     pub fn rotate(&mut self, org_id: &str, user_id: &str, from_fingerprint: &str, key: &MemberKey) -> bool {
-        if self.get(org_id, user_id).is_none_or(|p| p.fingerprint != from_fingerprint) {
+        let Some(pin) = self.get(org_id, user_id) else { return false };
+        if pin.fingerprint != from_fingerprint
+            || key.fingerprint == pin.fingerprint
+            || pin.previous.contains(&key.fingerprint)
+        {
             return false;
         }
         self.replace(org_id, user_id, key);
@@ -470,7 +488,7 @@ mod tests {
             (keys.to_vec(), bound.map(|b| b.fingerprint.clone()))
         };
         let vouch = |(keys, bound): &(Vec<String>, Option<String>), chain: &[IdentityTransition], k: &MemberKey| {
-            chain_vouches("u1", &SignHistory { keys, bound_rsa: bound.as_deref() }, chain, k)
+            chain_vouches("u1", &SignHistory { keys, bound_rsa: bound.as_deref() }, chain, "épinglée", k)
         };
         let only_k1 = h(&[pub_of(&k1)], None);
         assert!(vouch(&only_k1, &[t1.clone(), t2.clone()], &k3_rsa), "bout de chaîne");
@@ -482,6 +500,7 @@ mod tests {
                 "u2",
                 &SignHistory { keys: &only_k1.0, bound_rsa: None },
                 &[t1.clone(), t2.clone()],
+                "épinglée",
                 &k3_rsa
             ),
             "autre utilisateur"
@@ -511,6 +530,9 @@ mod tests {
         // Sans clé plus récente que k1, une chaîne signée par k1 (courante) est suivie.
         let x_rsa = MemberKey::from_jwk_str(&rsa_x).unwrap();
         assert!(vouch(&only_k1, &[b1], &x_rsa));
+        // I2 (revue) : chaîne qui aboutit à la clé RSA déjà épinglée : pas une rotation.
+        let pinned_k3 = SignHistory { keys: &only_k1.0, bound_rsa: None };
+        assert!(!chain_vouches("u1", &pinned_k3, &[t1.clone(), t2.clone()], &k3_rsa.fingerprint, &k3_rsa));
         // Rotation : seulement depuis l'épingle attendue.
         let mut s = MemberPinStore::in_memory();
         s.check("o", "u1", &key(1), 1);
@@ -518,6 +540,11 @@ mod tests {
         assert!(s.rotate("o", "u1", &key(1).fingerprint, &k3_rsa));
         assert_eq!(s.check("o", "u1", &k3_rsa, 2), Verdict::Trusted);
         assert_eq!(s.get("o", "u1").unwrap().previous, vec![key(1).fingerprint]);
+        // I2 (revue) : retour arrière vers une clé précédente refusé (R1 → R3, puis R3 → R1 ou R3 → R3).
+        assert!(!s.rotate("o", "u1", &k3_rsa.fingerprint, &key(1)), "retour arrière");
+        assert!(!s.rotate("o", "u1", &k3_rsa.fingerprint, &k3_rsa), "même clé");
+        assert!(s.rotate("o", "u1", &k3_rsa.fingerprint, &k2_rsa), "clé jamais épinglée");
+        assert!(!s.rotate("o", "u1", &k2_rsa.fingerprint, &k3_rsa), "R3 → R2 → R3 : R3 est précédente");
     }
 
     #[test]

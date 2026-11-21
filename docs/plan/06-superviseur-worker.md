@@ -221,7 +221,9 @@ relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pi
   présentée, et cette clé doit être garantie par une clé **non retirée** : maillon signé par la
   clé de signature courante ou une successeure, ou bien chaîne qui s'arrête sur la clé courante
   avec la clé RSA que `pins.rs` a liée à cette clé quand elle a été acceptée
-  (`UserPin.rsaFingerprint`) ; sinon **refus**.
+  (`UserPin.rsaFingerprint`) ; sinon **refus**. **Aucun retour arrière** (revue I2) : une clé
+  déjà épinglée par le passé (`previous`, 16 dernières) ou égale à l'épinglée n'est jamais acceptée
+  par rotation, et la clé épinglée, si la chaîne la contient, la précède.
 - **Refus global** : la réponse entière est remplacée par `409 {"error":"member_key_changed"}` ;
   `create_thread` rend `member_key_changed` (§9) sans créer ni sceller quoi que ce soit, y compris
   pour un salon d'espace (choix le plus sûr : un salon créé sans un membre serait surprenant, et un

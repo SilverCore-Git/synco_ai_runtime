@@ -188,7 +188,8 @@ impl LlmAdapter for OpenAiCompatible {
     }
 
     fn decoder(&self) -> Box<dyn StreamDecoder> {
-        Box::new(SseDecoder::default())
+        // PC9 : un flux fermé sans fin est `BadStream` (réessayable) pour tous les fournisseurs.
+        Box::new(SseDecoder::with_options(DecodeOptions { strict_end: true, ..DecodeOptions::default() }))
     }
 }
 
@@ -615,5 +616,25 @@ mod tests {
             d.push(b"data: {\"error\":{\"message\":\"x\"}}\n", &mut Vec::new()).unwrap_err(),
             LlmError::BadStream
         );
+    }
+
+    /// PC9 : flux fermé sans fin = `BadStream` réessayable pour openai, passerelle et custom.
+    #[test]
+    fn flux_coupe_est_une_erreur_reessayable_pour_tous_les_dialectes() {
+        for a in [OpenAiCompatible::openai(), OpenAiCompatible::gateway(), OpenAiCompatible::custom()] {
+            let mut d = a.decoder();
+            let mut out = Vec::new();
+            d.push(b"data: {\"choices\":[{\"delta\":{\"content\":\"Bon\"}}]}\n\n", &mut out).unwrap();
+            let e = d.finish(&mut out).unwrap_err();
+            assert_eq!(e, LlmError::BadStream);
+            assert!(e.retryable());
+            assert!(!out.iter().any(|ev| matches!(ev, LlmEvent::Done(_))), "aucune fin synthétique");
+            // `[DONE]` seul ou `finish_reason` : fin normale.
+            let mut d = a.decoder();
+            let mut out = Vec::new();
+            d.push(b"data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\ndata: [DONE]\n\n", &mut out).unwrap();
+            d.finish(&mut out).unwrap();
+            assert_eq!(out.last(), Some(&LlmEvent::Done(FinishReason::Stop)));
+        }
     }
 }

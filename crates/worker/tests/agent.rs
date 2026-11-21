@@ -1034,3 +1034,60 @@ async fn fournisseur_gemini_tour_simple() {
     assert_eq!(msgs[1]["content"], "Salut !");
     assert_eq!(msgs[1]["usage"]["totalTokens"], 7);
 }
+
+/// PC9 : un flux fermé sans `finish_reason` ni `[DONE]` est une erreur réessayable pour tous les
+/// fournisseurs (OpenAI, `custom`, Mistral, Gemini), jamais une réponse tronquée passée pour complète.
+#[tokio::test]
+async fn flux_coupe_reessaye_pour_tous_les_fournisseurs() {
+    use runtime_protocol::pipe::LlmProvider;
+    let role = "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"}}]}\n\n".to_owned();
+    let partial = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Bon\"}}]}\n\n".to_owned();
+    for (provider, model) in [
+        (LlmProvider::Openai, "gpt-test"),
+        (LlmProvider::Custom, "llama3"),
+        (LlmProvider::Mistral, "mistral-small-latest"),
+        (LlmProvider::Gemini, "gemini-2.5-flash"),
+    ] {
+        let setup = |api: &FakeApi| {
+            api.deposit_message(M1, "Bonjour");
+            let mut ini = init(1);
+            ini.llm.provider = provider;
+            ini.llm.model = model.into();
+            ini
+        };
+        // Coupé avant tout contenu : nouvel essai selon la politique de l'agent, puis réponse complète.
+        let api = FakeApi::new();
+        let llm = FakeLlm::start();
+        let ini = setup(&api);
+        llm.push(Script::ok(vec![role.clone()]));
+        llm.push(Script::ok(sse_text(&["Salut"], (5, 2))));
+        let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+        assert_eq!(peer.wait_done().await, DoneReason::Idle, "{provider:?}");
+        assert_eq!(llm.requests().len(), 2, "{provider:?} : un nouvel essai");
+        assert_eq!(api.clear_messages()[1]["content"], "Salut", "{provider:?}");
+
+        // Coupé après du texte déjà diffusé : pas de nouvel essai (doublon), échec, rien d'enregistré.
+        let api = FakeApi::new();
+        let llm = FakeLlm::start();
+        let ini = setup(&api);
+        llm.push(Script::ok(vec![partial.clone()]));
+        let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+        assert_eq!(peer.wait_done().await, DoneReason::Failed, "{provider:?}");
+        assert_eq!(llm.requests().len(), 1, "{provider:?}");
+        let msgs = api.clear_messages();
+        assert!(msgs.iter().all(|m| m["role"] != "assistant"), "{provider:?} : réponse tronquée enregistrée");
+        api.with(|st| assert_eq!(st.last_error.as_deref(), Some("provider_error")));
+
+        // Toujours coupé : 1 essai + 3 nouveaux essais, puis `provider_error`.
+        let api = FakeApi::new();
+        let llm = FakeLlm::start();
+        let ini = setup(&api);
+        for _ in 0..4 {
+            llm.push(Script::ok(vec![role.clone()]));
+        }
+        let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+        assert_eq!(peer.wait_done().await, DoneReason::Failed, "{provider:?}");
+        assert_eq!(llm.requests().len(), 4, "{provider:?}");
+        api.with(|st| assert_eq!(st.last_error.as_deref(), Some("provider_error")));
+    }
+}

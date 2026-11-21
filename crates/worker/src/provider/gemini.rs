@@ -7,7 +7,8 @@
 //!
 //! - `reasoning_effort` (`low|medium|high`) pour les modèles à raisonnement (`gemini-2.5`, `-3`, `-4`),
 //!   jamais combiné à `thinking_config` ; `include_thoughts` n'est pas demandé (comme `gemini.ts`,
-//!   où `includeThoughts` n'est jamais envoyé) ;
+//!   où `includeThoughts` n'est jamais envoyé) : **raisonnement Gemini désactivé jusqu'à un test réel
+//!   avec une clé** (décision PC11, 2026-11-21) ; le décodeur lit seulement ce que le serveur rendrait ;
 //! - raisonnement, s'il est rendu : `delta.extra_content.google.thought == true`, ou balises
 //!   `<thought>…</thought>` dans le contenu ;
 //! - appels d'outils rendus **entiers** et **sans `index`** (parfois sans identifiant) : rangés par

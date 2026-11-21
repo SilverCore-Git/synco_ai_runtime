@@ -45,7 +45,7 @@ Source : `SYNCOAI_REFONTE_FEATURE.md` §13.5, §13.7.
 | `idleShutdownSecs` | **60 s** | runtime | superviseur | Le worker ne vit que lorsqu'il travaille (P3) ; 60 s évitent de relancer pour un message tapé juste après. |
 | Workers simultanés par utilisateur | **3** | org | superviseur | Au-delà, la conversation reste `queued`. |
 | Workers simultanés par runtime | **8** par défaut ; recommandé : ⌊RAM libre × 0,6 / 512 Mio⌋ | runtime | superviseur | Dimensionnement à ajuster avec la mesure de L06. |
-| RAM par worker (`memory.max`) | **512 Mio** (`memory.high` 448 Mio **non appliqué** : écart L06, question ouverte à la porte C, 00 §6 Q22 ; 10 §5) | runtime | cgroup (L06) | Un worker = boucle + client HTTP + historique en mémoire ; la recherche sémantique locale (Q6) peut demander plus : à mesurer. Dépassement → OOM de **ce** worker seul. |
+| RAM par worker (`memory.max`) | **512 Mio**, `memory.max` seul (**D6 révisée le 2026-11-21** : `memory.high` retiré, Q22 tranchée ; 10 §5) | runtime | cgroup (L06) | Un worker = boucle + client HTTP + historique en mémoire ; la recherche sémantique locale (Q6) peut demander plus : à mesurer. Dépassement → OOM de **ce** worker seul. |
 | CPU par worker (`cpu.max`) | **1 CPU** (`100000 100000`) | runtime | cgroup | Le travail est surtout de l'attente réseau. |
 | Process par worker (`pids.max`) | **64** | runtime | cgroup | Empêche les bombes de fork. |
 | Durée d'un appel au fournisseur | 120 s sans octet reçu ; 10 min au total | runtime | worker | |

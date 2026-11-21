@@ -8,8 +8,10 @@
 //! - le message `tool` porte `name` (exemple de la documentation) ;
 //! - ni `stream_options` (non documenté ; Mistral rend `usage` dans le dernier morceau) ni
 //!   `max_completion_tokens` : `max_tokens` ; `parallel_tool_calls: false` (documenté) ;
-//! - `reasoning_effort` seulement pour les modèles dont la documentation donne les valeurs
-//!   `low|medium|high` (`mistral-large-4…`) : les autres refusent ou n'acceptent que `high|none` ;
+//! - `reasoning_effort` seulement pour les modèles dont la documentation donne les valeurs :
+//!   `low|medium|high` (`mistral-large-4…`, effort de Synco transmis tel quel) ou `high|none`
+//!   (`mistral-small-2603`, `mistral-medium-3-5` : `high` si l'effort de Synco est `medium` ou
+//!   `high`, rien n'est envoyé sinon, décision PC10) ; les autres modèles refusent le champ ;
 //! - raisonnement : `delta.content` en liste (`thinking` / `text`, Magistral récent), ou `<think>` en
 //!   ligne (Magistral ancien), via [`super::think::ThinkTagSplitter`].
 
@@ -93,9 +95,34 @@ fn map_ids(messages: &[ChatMessage]) -> Vec<ChatMessage> {
         .collect()
 }
 
-/// Modèle dont la documentation donne `reasoning_effort` ∈ `low|medium|high`.
-fn accepts_effort(model: &str) -> bool {
-    model.starts_with("mistral-large-4")
+/// Valeurs de `reasoning_effort` acceptées par un modèle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EffortKind {
+    /// `low|medium|high` (`mistral-large-4…`).
+    Levels,
+    /// `high|none` seulement (`mistral-small-2603`, `mistral-medium-3-5`).
+    HighNone,
+    /// Champ refusé ou non documenté : jamais envoyé.
+    Unsupported,
+}
+
+fn effort_kind(model: &str) -> EffortKind {
+    if model.starts_with("mistral-large-4") {
+        EffortKind::Levels
+    } else if ["mistral-small-2603", "mistral-medium-3-5"].iter().any(|p| model.starts_with(p)) {
+        EffortKind::HighNone
+    } else {
+        EffortKind::Unsupported
+    }
+}
+
+/// Valeur de `reasoning_effort` à envoyer (PC10), `None` = champ absent.
+fn effort_value(model: &str, effort: ReasoningEffort) -> Option<&'static str> {
+    match effort_kind(model) {
+        EffortKind::Levels => Some(effort_str(effort)),
+        EffortKind::HighNone => matches!(effort, ReasoningEffort::Medium | ReasoningEffort::High).then_some("high"),
+        EffortKind::Unsupported => None,
+    }
 }
 
 impl LlmAdapter for Mistral {
@@ -114,9 +141,8 @@ impl LlmAdapter for Mistral {
             "temperature": 0.5,
             "max_tokens": req.max_output_tokens,
         });
-        if accepts_effort(&req.model) {
-            let e: ReasoningEffort = req.reasoning_effort;
-            crate::json_set(&mut body, "reasoning_effort", json!(effort_str(e)));
+        if let Some(e) = effort_value(&req.model, req.reasoning_effort) {
+            crate::json_set(&mut body, "reasoning_effort", json!(e));
         }
         if !req.tools.is_empty() {
             crate::json_set(&mut body, "tools", wire_tools(req));
@@ -192,6 +218,31 @@ mod tests {
         no_tools.tools.clear();
         let n = body(&Mistral.build(&no_tools).unwrap());
         assert!(n.get("tools").is_none() && n.get("parallel_tool_calls").is_none());
+    }
+
+    /// PC10 : table de correspondance de l'effort Synco vers `reasoning_effort`.
+    #[test]
+    fn effort_mistral_table_de_correspondance() {
+        use ReasoningEffort::{High, Low, Medium};
+        for (model, effort, want) in [
+            ("mistral-large-4-0", Low, Some("low")),
+            ("mistral-large-4-0", Medium, Some("medium")),
+            ("mistral-large-4-0", High, Some("high")),
+            ("mistral-small-2603", Low, None),
+            ("mistral-small-2603", Medium, Some("high")),
+            ("mistral-small-2603", High, Some("high")),
+            ("mistral-medium-3-5", Low, None),
+            ("mistral-medium-3-5", Medium, Some("high")),
+            ("mistral-medium-3-5", High, Some("high")),
+            ("mistral-small-latest", High, None),
+            ("codestral-latest", High, None),
+        ] {
+            assert_eq!(effort_value(model, effort), want, "{model} {effort:?}");
+            let mut r = req(model, &[]);
+            r.reasoning_effort = effort;
+            let b = body(&Mistral.build(&r).unwrap());
+            assert_eq!(b.get("reasoning_effort").and_then(Value::as_str), want, "corps {model} {effort:?}");
+        }
     }
 
     #[test]

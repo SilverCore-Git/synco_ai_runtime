@@ -212,11 +212,16 @@ relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pi
   silencieuse).
 - **Règle**, pour chaque membre de la réponse dont la clé est lisible et dans les bornes (sinon le
   worker l'écarte, `skippedRecipients`) : première vue du couple (org, utilisateur) → épinglée ;
-  même empreinte → acceptée ; empreinte différente → **rotation** acceptée seulement si la chaîne
-  de transitions d'identité (`GET /users/:userId/sign-key`, au plus 8 vérifications par réponse)
-  suivie depuis la plus ancienne clé de signature épinglée de l'utilisateur (`user-pins.json`),
-  **passant par la clé de signature épinglée courante**, aboutit exactement à cette clé RSA (les
-  transitions signent la nouvelle clé RSA, 03 §4) ; sinon **refus**.
+  même empreinte → acceptée ; empreinte différente → **rotation** acceptée seulement selon une
+  règle stricte (corrigée après revue, I1) : la chaîne de transitions d'identité
+  (`GET /users/:userId/sign-key`, au plus 8 vérifications par réponse), suivie depuis la plus
+  ancienne clé de signature épinglée (`user-pins.json`), doit **reproduire exactement**
+  l'historique épinglé (mêmes clés de signature, dans l'ordre : une branche signée par une clé
+  retirée est refusée même si elle rejoint ensuite la clé courante), aboutir exactement à la clé RSA
+  présentée, et cette clé doit être garantie par une clé **non retirée** : maillon signé par la
+  clé de signature courante ou une successeure, ou bien chaîne qui s'arrête sur la clé courante
+  avec la clé RSA que `pins.rs` a liée à cette clé quand elle a été acceptée
+  (`UserPin.rsaFingerprint`) ; sinon **refus**.
 - **Refus global** : la réponse entière est remplacée par `409 {"error":"member_key_changed"}` ;
   `create_thread` rend `member_key_changed` (§9) sans créer ni sceller quoi que ce soit, y compris
   pour un salon d'espace (choix le plus sûr : un salon créé sans un membre serait surprenant, et un

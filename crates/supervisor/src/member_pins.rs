@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use synco_e2ee::encoding::{from_b64u, hex};
-use synco_e2ee::identity::{IdentityTransition, identity_chain_path, rsa_canonical_json};
+use synco_e2ee::identity::{IdentityTransition, ec_canonical_json, identity_chain_path, rsa_canonical_json};
 use synco_e2ee::primitives::sha256;
 
 use crate::error::{Error, Result};
@@ -145,32 +145,58 @@ impl MemberKey {
     }
 }
 
-/// Rotation légitime (03 §4) : la chaîne de transitions, chaque maillon signé par la clé de
-/// signature qu'il remplace, aboutit (dernier maillon valide) **exactement** à la clé RSA présentée.
+/// Clés de signature épinglées d'un utilisateur (`pins.rs`), vues par la règle de rotation.
+#[derive(Debug, Clone, Copy)]
+pub struct SignHistory<'a> {
+    /// De la plus ancienne à la **courante** (`UserPin::previous` puis `sign_key`) : `pins.rs` y
+    /// range chaque clé traversée par une chaîne vérifiée, dans l'ordre.
+    pub keys: &'a [String],
+    /// `SHA-256(SPKI)` de la clé RSA que la chaîne vérifiée par `pins.rs` liait à la clé de
+    /// signature courante **au moment où l'épingle de signature a avancé** (`UserPin::rsa_fingerprint`).
+    pub bound_rsa: Option<&'a str>,
+}
+
+/// Rotation légitime (03 §4) : règle **stricte**. La chaîne de transitions (chaque maillon signé par
+/// la clé de signature qu'il remplace) est suivie depuis la plus ancienne clé de signature épinglée
+/// et doit :
 ///
-/// `trusted_sign_keys` : clés de signature épinglées de l'utilisateur (`pins.rs`), de la plus
-/// ancienne à la **courante** (`UserPin::previous` puis `sign_key`). La chaîne est suivie depuis la
-/// plus ancienne, car l'épingle de signature peut avoir déjà avancé (ouverture d'une délégation
-/// après la rotation) alors que l'épingle RSA est restée en arrière ; elle doit alors **passer par
-/// la clé courante** : une branche signée par une clé retirée (peut-être compromise) qui s'écarte
-/// de l'identité épinglée est refusée. Une clé intermédiaire n'est jamais acceptée.
+/// 1. **reproduire exactement** l'historique épinglé : ses premières clés de signature sont
+///    `history.keys[1..]`, dans l'ordre et sans écart (une branche signée par une clé retirée,
+///    même si elle rejoint ensuite la clé courante, est refusée) ;
+/// 2. aboutir (dernier maillon) **exactement** à la clé RSA présentée, introduite une seule fois ;
+/// 3. et cette clé RSA doit être garantie par une clé **non retirée** : soit le maillon qui
+///    l'introduit est signé par la clé de signature courante ou une successeure (la chaîne
+///    continue au-delà de la clé courante) ; soit la chaîne s'arrête sur la clé courante et la clé
+///    RSA est celle que `pins.rs` a liée à cette clé quand il l'a acceptée (`bound_rsa`), à une
+///    époque où la clé signataire n'était pas retirée. Un maillon servi aujourd'hui et signé par
+///    une clé retirée (peut-être compromise) ne suffit jamais.
 #[must_use]
-pub fn chain_vouches(
-    user_id: &str,
-    trusted_sign_keys: &[String],
-    chain: &[IdentityTransition],
-    key: &MemberKey,
-) -> bool {
-    let (Some(root), Some(current)) = (trusted_sign_keys.first(), trusted_sign_keys.last()) else { return false };
+pub fn chain_vouches(user_id: &str, history: &SignHistory<'_>, chain: &[IdentityTransition], key: &MemberKey) -> bool {
+    let Ok(canon) = history.keys.iter().map(|k| ec_canonical_json(k)).collect::<core::result::Result<Vec<_>, _>>()
+    else {
+        return false;
+    };
+    let Some((root, pinned_after_root)) = canon.split_first() else { return false };
     let Ok(path) = identity_chain_path(user_id, root, chain) else { return false };
-    let Ok(current) = synco_e2ee::identity::ec_canonical_json(current) else { return false };
-    let through_current = synco_e2ee::identity::ec_canonical_json(root).is_ok_and(|r| r == current)
-        || path.iter().any(|k| k.public_sign_key == current);
-    through_current
-        && path
-            .last()
-            .and_then(|end| MemberKey::from_jwk_str(&end.public_key))
-            .is_some_and(|end| end.fingerprint == key.fingerprint)
+    // 1. Historique épinglé reproduit exactement.
+    let signs: Vec<&str> = path.iter().map(|k| k.public_sign_key.as_str()).collect();
+    if signs.len() < pinned_after_root.len()
+        || signs.iter().zip(pinned_after_root).any(|(served, pinned)| *served != pinned.as_str())
+    {
+        return false;
+    }
+    // 2. Bout de chaîne = clé présentée, introduite une seule fois.
+    let rsas: Vec<Option<String>> =
+        path.iter().map(|k| MemberKey::from_jwk_str(&k.public_key).map(|m| m.fingerprint)).collect();
+    let Some((Some(end), before)) = rsas.split_last() else { return false };
+    if *end != key.fingerprint || before.iter().flatten().any(|f| *f == key.fingerprint) {
+        return false;
+    }
+    // 3. Garantie par une clé non retirée.
+    if path.len() > pinned_after_root.len() {
+        return true;
+    }
+    !pinned_after_root.is_empty() && history.bound_rsa == Some(key.fingerprint.as_str())
 }
 
 // ---------------------------------------------------------------------------
@@ -440,26 +466,51 @@ mod tests {
         let t2 = sign_identity_transition(&k2, "u1", 1, &rsa3, &pub_of(&k3)).unwrap();
         let k3_rsa = MemberKey::from_jwk_str(&rsa3).unwrap();
         let k2_rsa = MemberKey::from_jwk_str(&rsa2).unwrap();
-        let only_k1 = [pub_of(&k1)];
-        assert!(chain_vouches("u1", &only_k1, &[t1.clone(), t2.clone()], &k3_rsa), "bout de chaîne");
-        assert!(!chain_vouches("u1", &only_k1, &[t1.clone(), t2.clone()], &k2_rsa), "clé intermédiaire");
-        assert!(!chain_vouches("u1", &only_k1, &[], &k3_rsa), "sans chaîne");
-        assert!(!chain_vouches("u1", &[], &[t1.clone(), t2.clone()], &k3_rsa), "aucune clé de signature épinglée");
-        assert!(!chain_vouches("u2", &only_k1, &[t1.clone(), t2.clone()], &k3_rsa), "autre utilisateur");
-        let forged = sign_identity_transition(&attaquant, "u1", 0, &rsa3, &pub_of(&k3)).unwrap();
-        assert!(!chain_vouches("u1", &only_k1, &[forged], &k3_rsa), "maillon non signé par l'épinglée");
-        // Épingle de signature déjà avancée à k3 (délégation rouverte), épingle RSA restée en arrière :
-        // chaîne suivie depuis k1, passant par k3.
-        assert!(chain_vouches("u1", &[pub_of(&k1), pub_of(&k2), pub_of(&k3)], &[t1.clone(), t2.clone()], &k3_rsa));
-        // Branche signée par k1 (retirée, supposée compromise) qui évite la clé courante k2 : refusée.
-        let (rsa_x, kx) = (jwk(7, 2048), EcSigningKey::generate(&mut OsRandom).unwrap());
-        let branch = sign_identity_transition(&k1, "u1", 0, &rsa_x, &pub_of(&kx)).unwrap();
-        let x_rsa = MemberKey::from_jwk_str(&rsa_x).unwrap();
-        assert!(chain_vouches("u1", &only_k1, std::slice::from_ref(&branch), &x_rsa), "sans clé plus récente : suivie");
+        let h = |keys: &[String], bound: Option<&MemberKey>| -> (Vec<String>, Option<String>) {
+            (keys.to_vec(), bound.map(|b| b.fingerprint.clone()))
+        };
+        let vouch = |(keys, bound): &(Vec<String>, Option<String>), chain: &[IdentityTransition], k: &MemberKey| {
+            chain_vouches("u1", &SignHistory { keys, bound_rsa: bound.as_deref() }, chain, k)
+        };
+        let only_k1 = h(&[pub_of(&k1)], None);
+        assert!(vouch(&only_k1, &[t1.clone(), t2.clone()], &k3_rsa), "bout de chaîne");
+        assert!(!vouch(&only_k1, &[t1.clone(), t2.clone()], &k2_rsa), "clé intermédiaire");
+        assert!(!vouch(&only_k1, &[], &k3_rsa), "sans chaîne");
+        assert!(!vouch(&h(&[], None), &[t1.clone(), t2.clone()], &k3_rsa), "aucune clé de signature épinglée");
         assert!(
-            !chain_vouches("u1", &[pub_of(&k1), pub_of(&k2)], &[branch, t2], &x_rsa),
-            "branche qui ne passe pas par la clé de signature courante"
+            !chain_vouches(
+                "u2",
+                &SignHistory { keys: &only_k1.0, bound_rsa: None },
+                &[t1.clone(), t2.clone()],
+                &k3_rsa
+            ),
+            "autre utilisateur"
         );
+        let forged = sign_identity_transition(&attaquant, "u1", 0, &rsa3, &pub_of(&k3)).unwrap();
+        assert!(!vouch(&only_k1, &[forged], &k3_rsa), "maillon non signé par l'épinglée");
+        // Épingle de signature déjà avancée à k3 (délégation rouverte), épingle RSA restée en arrière :
+        // accepté seulement si pins.rs a lié rsa3 à k3 en avançant (maillon signé par k2, retiré).
+        let all = [pub_of(&k1), pub_of(&k2), pub_of(&k3)];
+        assert!(vouch(&h(&all, Some(&k3_rsa)), &[t1.clone(), t2.clone()], &k3_rsa));
+        assert!(!vouch(&h(&all, None), &[t1.clone(), t2.clone()], &k3_rsa), "sans liaison enregistrée");
+        assert!(!vouch(&h(&all, Some(&k2_rsa)), &[t1.clone(), t2.clone()], &k3_rsa), "liaison différente");
+        // I1 (revue) : k1 retirée et compromise ; branche k1 → (rsa_x, kA) → (rsa_evil, k2 = courante).
+        let (ka, rsa_x, rsa_evil) = (EcSigningKey::generate(&mut OsRandom).unwrap(), jwk(7, 2048), jwk(8, 2048));
+        let b1 = sign_identity_transition(&k1, "u1", 0, &rsa_x, &pub_of(&ka)).unwrap();
+        let b2 = sign_identity_transition(&ka, "u1", 1, &rsa_evil, &pub_of(&k2)).unwrap();
+        let evil = MemberKey::from_jwk_str(&rsa_evil).unwrap();
+        let k1k2 = [pub_of(&k1), pub_of(&k2)];
+        assert!(!vouch(&h(&k1k2, Some(&evil)), &[b1.clone(), b2.clone()], &evil), "branche qui finit sur la courante");
+        assert!(
+            !vouch(&h(&k1k2, None), &[b1.clone(), b2, t2.clone()], &k3_rsa),
+            "branche, puis maillon de la courante"
+        );
+        // Maillon forgé par k1 (retirée) vers k2 avec une autre clé RSA : pas de liaison → refus.
+        let f12 = sign_identity_transition(&k1, "u1", 0, &rsa_evil, &pub_of(&k2)).unwrap();
+        assert!(!vouch(&h(&k1k2, Some(&k2_rsa)), std::slice::from_ref(&f12), &evil), "liaison = rsa2, pas rsa_evil");
+        // Sans clé plus récente que k1, une chaîne signée par k1 (courante) est suivie.
+        let x_rsa = MemberKey::from_jwk_str(&rsa_x).unwrap();
+        assert!(vouch(&only_k1, &[b1], &x_rsa));
         // Rotation : seulement depuis l'épingle attendue.
         let mut s = MemberPinStore::in_memory();
         s.check("o", "u1", &key(1), 1);

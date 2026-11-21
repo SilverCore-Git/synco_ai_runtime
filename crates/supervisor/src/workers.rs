@@ -326,7 +326,7 @@ const MAX_ROTATION_LOOKUPS: usize = 8;
 /// `409 member_key_changed` (refus global, aucun scellement). Un membre dont la clé est illisible
 /// ou hors bornes n'est pas épinglé : le worker l'écarte lui-même (`skippedRecipients`).
 pub(crate) async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> bool {
-    use crate::member_pins::{MemberKey, Verdict, chain_vouches};
+    use crate::member_pins::{MemberKey, SignHistory, Verdict, chain_vouches};
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else { return true };
     let listed: Vec<(String, MemberKey)> = value
         .get("members")
@@ -348,12 +348,12 @@ pub(crate) async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> bool {
         for (user, key) in listed {
             if st.member_pins.check(&org, &user, &key, now) == Verdict::Changed {
                 let from = st.member_pins.get(&org, &user).map(|p| p.fingerprint.clone()).unwrap_or_default();
-                let sign: Vec<String> = st
+                let (sign, bound): (Vec<String>, Option<String>) = st
                     .pins
                     .get(&user)
-                    .map(|p| p.previous.iter().chain([&p.sign_key]).cloned().collect())
+                    .map(|p| (p.previous.iter().chain([&p.sign_key]).cloned().collect(), p.rsa_fingerprint.clone()))
                     .unwrap_or_default();
-                changed.push((user, key, from, sign));
+                changed.push((user, key, from, sign, bound));
             }
         }
         (org, changed)
@@ -365,11 +365,14 @@ pub(crate) async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> bool {
     // Seuls les utilisateurs qui ont délégué à ce runtime ont une telle épingle (et une route
     // `sign-key` qui répond) ; les autres ne peuvent être acceptés que par l'admin (dashboard).
     let mut refused = Vec::new();
-    for (i, (user, key, from, sign)) in changed.into_iter().enumerate() {
+    for (i, (user, key, from, sign, bound)) in changed.into_iter().enumerate() {
         let vouched = !sign.is_empty()
             && i < MAX_ROTATION_LOOKUPS
             && match rt.api.sign_key(&user).await {
-                Ok(r) => chain_vouches(&user, &sign, &crate::pins::chain_from(&r.transitions), &key),
+                Ok(r) => {
+                    let history = SignHistory { keys: &sign, bound_rsa: bound.as_deref() };
+                    chain_vouches(&user, &history, &crate::pins::chain_from(&r.transitions), &key)
+                }
                 Err(_) => false,
             };
         let mut st = rt.state.lock().await;

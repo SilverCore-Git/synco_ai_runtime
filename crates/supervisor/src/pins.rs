@@ -31,6 +31,10 @@ pub struct UserPin {
     /// Clés précédentes (historique de diagnostic, jamais utilisées pour vérifier un mandat).
     #[serde(default)]
     pub previous: Vec<String>,
+    /// `SHA-256(SPKI)` de la clé RSA que la chaîne vérifiée liait à `sign_key` quand l'épingle a
+    /// avancé (L05b, Q25 ; absent à la première vue et dans les fichiers antérieurs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rsa_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -132,7 +136,10 @@ impl PinStore {
         let served = served_sign_key.and_then(|k| ec_canonical_json(k).ok()).ok_or(PinError::NoKey)?;
         let served_key = EcPublicKey::from_jwk(&served).map_err(|_| PinError::NoKey)?;
         let Some(pin) = self.file.users.get(user_id).cloned() else {
-            self.file.users.insert(user_id.to_owned(), UserPin { sign_key: served, first_seen: now, previous: vec![] });
+            self.file.users.insert(
+                user_id.to_owned(),
+                UserPin { sign_key: served, first_seen: now, previous: vec![], rsa_fingerprint: None },
+            );
             self.persist();
             return Ok(TrustedKey(served_key));
         };
@@ -143,11 +150,18 @@ impl PinStore {
         let Some(pos) = path.iter().position(|k| k.public_sign_key == served) else {
             return Err(PinError::KeyChanged);
         };
+        let rsa_fingerprint = path
+            .get(pos)
+            .and_then(|k| crate::member_pins::MemberKey::from_jwk_str(&k.public_key))
+            .map(|k| k.fingerprint);
         let mut previous = pin.previous;
         previous.push(pin.sign_key);
         previous.extend(path.iter().take(pos).map(|k| k.public_sign_key.clone()));
         // `previous` : historique pour le diagnostic seulement, jamais une clé de confiance.
-        self.file.users.insert(user_id.to_owned(), UserPin { sign_key: served, first_seen: pin.first_seen, previous });
+        self.file.users.insert(
+            user_id.to_owned(),
+            UserPin { sign_key: served, first_seen: pin.first_seen, previous, rsa_fingerprint },
+        );
         self.persist();
         Ok(TrustedKey(served_key))
     }
@@ -192,6 +206,25 @@ mod tests {
         assert_eq!(store.get("u1").unwrap().sign_key, jwk(&k3));
         // Retour à k1 (ancienne clé) : refusé, l'épingle ne recule pas.
         assert_eq!(store.check_or_pin("u1", Some(&jwk(&k1)), &[t1], 5).unwrap_err(), PinError::KeyChanged);
+    }
+
+    /// L05b : en avançant, l'épingle garde l'empreinte de la clé RSA liée à la nouvelle clé de
+    /// signature par la chaîne vérifiée (ancien fichier sans ce champ : relu, `None`).
+    #[test]
+    fn liaison_rsa_enregistree() {
+        let mut n = vec![5u8; 256];
+        n[0] |= 0x80;
+        let rsa = format!(r#"{{"kty":"RSA","n":"{}","e":"AQAB"}}"#, synco_e2ee::encoding::b64u(&n));
+        let (k1, k2) = (key(), key());
+        let mut store = PinStore::in_memory();
+        store.check_or_pin("u1", Some(&jwk(&k1)), &[], 1).unwrap();
+        assert_eq!(store.get("u1").unwrap().rsa_fingerprint, None, "première vue : aucune liaison");
+        let t = sign_identity_transition(&k1, "u1", 0, &rsa, &jwk(&k2)).unwrap();
+        store.check_or_pin("u1", Some(&jwk(&k2)), &[t], 2).unwrap();
+        let expected = crate::member_pins::MemberKey::from_jwk_str(&rsa).unwrap().fingerprint;
+        assert_eq!(store.get("u1").unwrap().rsa_fingerprint.as_deref(), Some(expected.as_str()));
+        let old: PinFile = serde_json::from_str(r#"{"v":1,"users":{"u1":{"signKey":"k","firstSeen":1}}}"#).unwrap();
+        assert_eq!(old.users["u1"].rsa_fingerprint, None);
     }
 
     #[test]

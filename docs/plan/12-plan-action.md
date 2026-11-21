@@ -3,9 +3,10 @@
 Source : conception C1 (`.claude/prompts/syncoai_refonte/conception/C1_plan_action.md`), validée par
 l'utilisateur, et ses décisions PC34 à PC43 (00 §5). Ce document fige ce dont **L01c** (mandat v2,
 fonctions pures), **L03g** (API : plans, verrou, conditions `auto`), **L03h** (API : politiques) et
-**L08d** (runtime) ont besoin pour travailler en parallèle. Les points que ni C1 ni les PC ne
-tranchent sont au §15 (questions **QP1** à **QP5**) ; le texte qui en dépend est marqué
-« provisoire ».
+**L08d** (runtime) ont besoin pour travailler en parallèle. Les questions QP1 à QP5 que ni C1 ni les PC
+ne tranchaient ont été tranchées par l'utilisateur le 2026-11-21 (**PC44 à PC48**, §15) : amendement
+du même jour (ordre libre des phases, condensat et `refs`, pause au retrait, épingle du mandat v2,
+rétention du journal).
 
 Conventions : 00 §3. Colonne « Auth » : **S** et **S+A** comme en 04 §4 ; **U** = route utilisateur
 (Keycloak, `authMiddleware`, membre de l'org, `banMiddleware`), montée sous `/api/orgs/:orgId/ai`
@@ -15,20 +16,25 @@ propriétaire de l'org ou permission `ORG_AI`. Erreurs : `{ "error": "<code>" }`
 ## 1. Principe
 
 ```
- worker ──(1) propose_actions── POST …/plans : transcript chiffré (CK) + ligne AiActionPlan (métadonnées)
-   │                                     │ awaiting_confirmation + push AI_AWAITING_CONFIRMATION
-   ▼ s'arrête                            ▼
-                        appareil de l'utilisateur (déverrouillé)
-                        (2) déchiffre, valide (§5), affiche (C1 §3) ; l'utilisateur coche et accepte
-                        (3) decision → (4) claim → (5) exécute chaque action d'appareil par les routes
-                            normales, progress par action → (6) entrées de délégation (03 §7.2)
-                        (7) dépose plan_result (chiffré CK) dans la boîte
- worker ◀──(8) conversation.wake : exécute les actions d'agent acceptées (§8.2), ferme propose_actions
+ worker ──(1) propose_actions── POST …/plans : transcript chiffré (CK) + ligne AiActionPlan (métadonnées :
+   │                                          exécutant et phase de chaque action) ; awaiting_confirmation + push
+   ▼ s'arrête
+               appareil de l'utilisateur (déverrouillé)
+               (2) déchiffre, valide (§5), affiche (C1 §3) ; l'utilisateur coche et accepte
+               (3) decision : l'API ouvre la première phase non vide (§8.1)
+ ┌─────────── phases alternées appareil / agent, dans l'ordre du graphe de dépendances (PC44) ──────────┐
+ │ phase d'appareil k : claim (un seul appareil) → actions par les routes normales → clés des salons     │
+ │                      → plan_result:k (boîte, chiffré CK) → conversation.wake                          │
+ │ phase d'agent k    : le worker exécute ses actions (verrou §8.4) → plan_agent_result:k (chiffré CK)  │
+ │                      → awaiting_confirmation + push « étape suivante » ; le worker s'arrête           │
+ └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ worker : après la dernière phase, un échec ou une expiration, ferme propose_actions avec le bilan
 ```
 
 Le plan **généralise** `awaiting_confirmation` (C1 §2.1) : même état, même notification, même délai
 `confirmationTimeoutSecs`, même `pendingToolCall`, même boîte de réception. Les outils mutants dont la
-politique effective est `ask` passent **tous** par le plan (PC38).
+politique effective est `ask` passent **tous** par le plan (PC38). Entre deux phases d'appareil, la
+conversation revient en `awaiting_confirmation` : l'app doit être ouverte pour chaque phase d'appareil.
 
 ## 2. Ce qui passe par le plan
 
@@ -75,7 +81,7 @@ plan. Un appel invalide n'écrit rien : le worker rend au modèle le résultat
 | `tool` | présent **si et seulement si** `kind = server.call` |
 | `args` | objet strict selon le `kind` (§4) ; aucun champ inconnu |
 | `after` | facultatif ; entiers distincts, chacun `< n` |
-| `argsRefs` | facultatif ; `{ "<champ de args>": "$<m>.<champ exporté>" }`, `m ∈ after`, champ exporté par le `kind` de `m` (§4), champ cible présent dans le schéma de l'action et **absent** de `args` |
+| `argsRefs` | facultatif ; `{ "<champ de args>": "$<m>.<champ exporté>" }`, `m ∈ after` (action d'appareil ou d'agent, PC44), champ exporté par le `kind` de `m` (§4), champ cible présent dans le schéma de l'action et **absent** de `args` |
 
 ### 3.3 Sérialisation et chiffrement
 
@@ -107,10 +113,10 @@ Pour `name = "propose_actions"`, et seulement pour lui, `args` est le plan chiff
 
 | `kind` | `args` (strict) | Exécutant, mode plan | Exécutant, mode autonome | Champs exportés | Clé ajoutée à la délégation |
 |---|---|---|---|---|---|
-| `thread.create` | `name` (1 à 255), `type` ∈ `text`, `voice`, `spaceId?` (id) — paramètres de l'outil `create_thread`, un salon par action | **appareil** (§8.1) | si la politique effective de `create_thread` est `ask` : **runtime** (`POST /e2ee/threads` + `rt1`, §8.2) ; si `auto` : hors plan | `id`, `spaceId` | `thread:<id>` |
+| `thread.create` | `name` (1 à 255), `type` ∈ `text`, `voice`, `spaceId?` (id) — paramètres de l'outil `create_thread`, un salon par action | **appareil** (§8.2) | si la politique effective de `create_thread` est `ask` : **runtime** (`POST /e2ee/threads` + `rt1`, §8.3) ; si `auto` : hors plan | `id`, `spaceId` | `thread:<id>` |
 | `folder.create` | `spaceId` (id), `name` (1 à 255), `parentFolderId?` (id) | appareil | appareil | `id`, `spaceId` | aucune |
 | `file.create_text` | `spaceId` (id), `name` (1 à 255, extension de `textFileFormats.ts`), `content?` (chaîne), `folderId?` (id) | appareil | appareil | `id`, `spaceId` | aucune |
-| `server.call` | `tool` : outil du manifeste de catégorie `server`, `mutating` ; `args` : schéma de l'outil (`parameters`) | **agent**, sans signature (§8.2) | agent | `id` (= `data.id` du résultat, s'il est un identifiant) | aucune |
+| `server.call` | `tool` : outil du manifeste de catégorie `server`, `mutating` ; `args` : schéma de l'outil (`parameters`) | **agent**, sans signature (§8.3) | agent | `id` (= `data.id` du résultat, s'il est un identifiant) | aucune |
 
 - `thread.create` : l'appareil reprend `createThreadHelper` / `CreateNewThread.vue` : route
   `POST /api/threads/space/:spaceId` (ou `/api/threads/org/:orgId` sans `spaceId`), `type` `voice` →
@@ -119,9 +125,11 @@ Pour `name = "propose_actions"`, et seulement pour lui, `args` est le plan chiff
   du créateur par `POST /api/threads/:threadId/key-envelope` (§12.1).
 - `folder.create` : `createFolderRequest` (`POST /api/spaces/:spaceId/folders`). `file.create_text` :
   `createTextFile` (envoi CDN chiffré, PC6, PC41). Le bac à sable du worker ne change pas.
+- **Exécutant** : fixé à la création par le worker, selon ce tableau et le mode de son mandat vérifié ;
+  l'API le stocke (§12.2) et l'appareil le recontrôle (§5, règle 8). Il détermine les phases (§8.1).
 - **Actions sensibles** (C1 §3, règle 3 : non précochées, cochées une par une) : niveau de risque fourni
   par L14. En attendant L14 : toute action `server.call` dont l'outil supprime (`delete_*`) ou envoie
-  hors de Synco (`create_email_report`) — provisoire, QP5.
+  hors de Synco (`create_email_report`) (ratifié, PC48).
 - Un nouveau `kind` demande un lot dédié et la mise à jour du §5 ; les catalogues L14 et L15 ajoutent
   des `server.call` sans changer ce document.
 
@@ -138,9 +146,13 @@ rend le plan entier invalide (code `plan_invalid`). Règles (vecteurs `action-pl
    manifeste (`GET …/tools`) ; `args` stricts (champs connus, requis présents dans `args` ou fournis par
    `argsRefs`, types et bornes).
 5. `after` et `argsRefs` conformes au §3.2 (vers des actions **antérieures** seulement : aucun cycle).
-6. **Provisoire (QP1)** : une action d'appareil ne dépend (`after`) d'aucune action d'agent.
-7. Appareil seulement : chaque `spaceId`, `parentFolderId`, `folderId` est résolu dans l'annuaire
-   local ; un identifiant inconnu bloque le plan (C1 §2.6).
+6. Aucune contrainte d'exécutant sur `after` ni sur `argsRefs` (PC44) : une action d'appareil peut
+   dépendre d'une action d'agent, et inversement ; les phases en découlent (§8.1).
+7. Appareil seulement : chaque `spaceId`, `parentFolderId`, `folderId` écrit dans `args` est résolu dans
+   l'annuaire local ; un identifiant inconnu bloque le plan (C1 §2.6). Une valeur venue d'`argsRefs`
+   est contrôlée à l'exécution (§8.2, étape 3).
+8. Appareil seulement : l'exécutant et la phase de chaque action servis par l'API (`PlanView.actions`,
+   §12.1) égalent ceux que l'appareil recalcule (§4 avec le mode de sa délégation courante, §8.1).
 
 Un plan invalide **à l'appareil** est refusé par la route de décision avec `reason: "plan_invalid"`
 (§12.1) : le worker reçoit `{"error":"plan_rejected","reason":"plan_invalid"}`. L'API ne voit pas le
@@ -153,6 +165,8 @@ clair ; elle contrôle ce qu'elle reçoit (§12.2).
   aussi la tâche 5 »). Vecteurs : `cascadeCases`.
 - Une action sensible n'est jamais précochée et le bouton principal reste grisé tant que chacune n'est
   pas cochée ou retirée ; il n'existe pas de « Tout accepter » qui les couvre (C1 §3).
+- La cascade ignore l'exécutant : décocher une action d'agent retire les actions d'appareil qui en
+  dépendent, et inversement (`cascadeCases`, plan mixte).
 - La décision envoie l'ensemble `accepted` ; les autres actions passent `skipped`.
 
 ## 7. États et expiration
@@ -160,30 +174,46 @@ clair ; elle contrôle ce qu'elle reçoit (§12.2).
 ### 7.1 Plan (`AiActionPlan.status`)
 
 ```
-proposed ──decision accept──▶ accepted ──claim──▶ executing ──▶ done    (toutes les actions terminales, aucune en échec)
-   │  └──decision reject────▶ rejected                │      └──▶ failed  (une action en échec ; la suite skipped)
-   └──expiresAt──────────────▶ expired                └──claim expiré, action en cours──▶ interrupted
+proposed ──decision accept──▶ accepted ──1re phase démarrée──▶ executing ──▶ done        (toutes les actions terminales, aucune en échec)
+   │  └──decision reject────▶ rejected                             │   ├──▶ failed      (une action en échec : toute la suite skipped)
+   └──expiresAt──────────────▶ expired ◀── expiresAt avant la phase suivante ┤   └──▶ interrupted (claim expiré ou appel d'agent coupé, action en cours)
 ```
 
+- `accepted` → `executing` dès que la première phase non vide démarre (claim de l'appareil, ou premier
+  appel d'exécution du runtime) ; `currentPhase` (§8.1) dit laquelle.
 - `rejected` aussi quand un message de l'utilisateur arrive pendant l'attente (le worker clôt
   `propose_actions` avec `superseded_by_user_message`, 08 §2), et pour un plan invalide à l'appareil.
-- `expired` : `proposed` ou `accepted` non réclamé à `expiresAt` ; la tâche de maintenance pose
-  `expired` et la conversation suit la transition existante `failed` (`confirmation_timeout`).
-- `interrupted` : le claim expire alors qu'une action est `executing` ; cette action passe
-  `unknown_outcome`, les actions `pending` passent `skipped`, **rien n'est relancé** (C1 §2.6).
-- États terminaux : `done`, `failed`, `rejected`, `expired`, `interrupted`.
+  Un message reçu **entre deux phases** (plan `executing`, conversation `awaiting_confirmation`) clôt de
+  même : plan `rejected`, actions `pending` → `skipped`, ce qui a été fait reste fait.
+- `expired` : l'expiration vaut pour **le plan entier** ; **aucune phase ne démarre après `expiresAt`**,
+  une phase commencée va à son terme (claim prolongeable, appel d'agent en cours).
+  - Plan `proposed`, ou en attente d'une phase d'appareil sans claim valide, à `expiresAt` : la tâche de
+    maintenance pose `expired`, les actions `pending` passent `skipped` et la conversation suit la
+    transition existante `failed` (`confirmation_timeout`) ; le bilan reste lisible dans la carte.
+  - Fin d'une phase (dépôt de `plan_result:k`, ou `plan_agent_result:k`) à `expiresAt` ou après, alors
+    qu'il reste une phase : `expired`, actions `pending` → `skipped` ; le worker est réveillé (ou
+    continue) et ferme `propose_actions` avec le bilan.
+- `interrupted` : le claim d'une phase d'appareil expire alors qu'une action est `executing`, ou un appel
+  du runtime est coupé après envoi ; cette action passe `unknown_outcome`, les actions `pending` de
+  toutes les phases passent `skipped`, **rien n'est relancé** (C1 §2.6).
+- États terminaux : `done`, `failed`, `rejected`, `expired`, `interrupted`. Le plan devient `done` ou
+  `failed` dès qu'il ne reste aucune action `pending` ni `executing`.
 
-### 7.2 Action (`actionStates[n-1]`)
+### 7.2 Action (`actions[n-1].state`)
 
 `pending` → `executing` → `done` | `failed` ; `pending` → `skipped` (décochée, ou non exécutée après un
-échec) ; `executing` → `unknown_outcome` (claim expiré, ou appel d'agent interrompu). **Une action
-n'entre qu'une fois en `executing`** : écriture par `updateMany` conditionné à l'état lu ; une seconde
-tentative reçoit `409 action_state_conflict` (C1 §2.6).
+échec ou une expiration) ; `executing` → `unknown_outcome` (claim expiré, ou appel d'agent interrompu).
+**Une action n'entre qu'une fois en `executing`** : écriture par `updateMany` conditionné à l'état lu ;
+une seconde tentative reçoit `409 action_state_conflict` (C1 §2.6). Elle n'y entre que si sa phase est
+`currentPhase` (sinon `409 plan_phase_mismatch`).
 
 ### 7.3 Échec, plafond
 
-- L'exécution **s'arrête** à la première action en échec ; les suivantes, dans l'ordre d'exécution
-  (§8), passent `skipped`. **Aucune annulation automatique.** Vecteurs : `failureCases`.
+- L'exécution **s'arrête** à la première action en échec (ou `unknown_outcome`), **quelle que soit sa
+  phase** : les actions restantes de la phase et toutes celles des phases suivantes passent `skipped`,
+  qu'elles en dépendent ou non. La cascade de PC37 est donc toujours couverte (une dépendante d'une
+  action en échec n'est jamais exécutée). **Aucune annulation automatique.** Vecteurs : `failureCases`,
+  `runCases`.
 - L'agent reçoit le bilan action par action et peut proposer un **nouveau** plan ; au plus **3 plans
   consécutifs par tour**, au-delà le tour échoue : `failed`, code `plan_limit` (08 §6).
 
@@ -191,42 +221,101 @@ tentative reçoit `409 action_state_conflict` (C1 §2.6).
 
 | Délai | Valeur |
 |---|---|
-| Expiration du plan | `expiresAt` = `createdAt` + `confirmationTimeoutSecs` de l'org (défaut 7 j, borné [1 h, 7 j]) |
-| Claim | 5 min ; prolongé de 5 min par chaque `progress` ou nouveau `claim` du même appareil |
+| Expiration du plan | `expiresAt` = `createdAt` + `confirmationTimeoutSecs` de l'org (défaut 7 j, borné [1 h, 7 j]), pour le plan entier, toutes phases comprises |
+| Attente d'une phase d'appareil | jusqu'à `expiresAt`, sans autre délai ; un push à l'ouverture de chaque phase d'appareil, aucune relance |
+| Claim | 5 min, pour **une** phase ; prolongé de 5 min par chaque `progress` ou nouveau `claim` du même appareil sur la même phase ; libéré au dépôt de `plan_result:k` |
 
 ## 8. Exécution
 
-### 8.1 Par l'appareil
+### 8.1 Phases (PC44 : ordre libre)
 
-Préalables (C1 §2.6) : app déverrouillée, délégation active avec `DK` en mémoire (sinon
-renouvellement, 03 §7.1), plan revalidé (§5). Puis :
+Les actions d'un plan mixte s'exécutent en **phases** qui alternent entre l'appareil et l'agent, dans
+l'ordre du graphe de dépendances. Calcul **déterministe**, fait par le worker à la création, contrôlé
+par l'API (forme, §12.2) et recalculé par l'appareil (§5, règle 8). On parcourt les actions dans l'ordre
+de `n` ; les phases impaires sont d'appareil, les paires d'agent :
 
-1. `POST …/decision` (§12.1).
-2. `POST …/claim` ; un autre appareil reçoit `409 plan_claimed` et affiche « en cours sur votre autre
-   appareil ». **Provisoire (QP1)** : l'appareil réclame et dépose `plan_result` même si aucune action
-   d'appareil n'est acceptée.
-3. Pour chaque action d'appareil acceptée, dans l'ordre de `n` : `progress { n, state: "executing" }`,
-   appel de la **route normale** de l'utilisateur avec l'en-tête `X-Synco-Plan: <planId>/<n>` (audit
-   seulement : l'API le journalise sans rien changer aux droits), puis `progress { n, state: "done" | "failed" }`.
-   Arrêt au premier échec (§7.3). En mode autonome, `thread.create` est laissé `pending` pour le
-   runtime (§4).
-4. **Clés** : après les actions et **avant** le résultat, ajout des entrées des salons créés
+```
+base(a)  = max(1, max { phase(m) : m ∈ after(a) })
+phase(a) = base(a)      si la parité de base(a) est celle de l'exécutant de a
+           base(a) + 1  sinon
+```
+
+puis, si aucune action n'est en phase 1 (plan qui commence par l'agent), toutes les phases baissent
+de 1. Conséquences :
+
+- une phase n'a qu'un exécutant, et deux phases consécutives alternent ;
+- une action passe après toutes celles dont elle dépend, et le moins tôt possible : à égalité,
+  **l'appareil commence** (l'utilisateur vient d'accepter, l'app est ouverte) ;
+- les phases se calculent sur le plan entier, **avant** la décision : décocher ne les renumérote pas ;
+  une phase dont toutes les actions sont `skipped` est **sautée** ;
+- dans une phase, ordre de `n`.
+
+`currentPhase` (ligne `AiActionPlan`) vaut `0` avant la décision, puis la phase en cours ; l'API seule
+l'avance (décision, dépôt de `plan_result:k`, route `agent-result`, fin de la dernière action).
+`phaseCount` = phase la plus haute. Vecteurs : `phaseCases`, `runCases`, `mixedPlan`.
+
+À la décision `accept`, l'API pose `currentPhase` = première phase non vide : phase d'appareil, la
+conversation reste `awaiting_confirmation` ; phase d'agent, elle passe `queued` et le runtime est
+réveillé (`conversation.wake`, `reason: "decision"`).
+
+### 8.2 Phase d'appareil
+
+Préalables (C1 §2.6) : app **ouverte** et déverrouillée, délégation active avec `DK` en mémoire (sinon
+renouvellement, 03 §7.1), plan revalidé (§5). **Sans appareil, le plan attend** : la conversation reste
+`awaiting_confirmation` jusqu'à `expiresAt` (§7.1). Pour la phase `k` :
+
+1. Première phase du plan seulement : `POST …/decision` (§12.1).
+2. `POST …/claim { deviceId, phase: k }` : une phase est réservée par **un seul appareil** ; un autre
+   reçoit `409 plan_claimed` et affiche « en cours sur votre autre appareil ». La phase d'appareil
+   suivante peut être réclamée par un autre appareil.
+3. **Références** : chaque `argsRefs` d'une action de la phase est résolu depuis les résultats de phase
+   déchiffrés (`plan_result:j`, `plan_agent_result:j`, `j < k`, §9), et la valeur doit **égaler** la
+   sortie enregistrée par l'API (`PlanView.actions[m-1].output`, §8.5). Un écart arrête le plan :
+   l'action passe `failed` sans appel, avec une alerte (« résultat incohérent »), et la suite suit §7.3.
+4. Pour chaque action acceptée de la phase, dans l'ordre de `n` : `progress { n, state: "executing" }`,
+   appel de la **route normale** de l'utilisateur avec l'en-tête `X-Synco-Plan: <planId>/<n>` (aucun
+   effet sur les droits ; il sert au journal et à l'enregistrement de la sortie, §8.5), puis
+   `progress { n, state: "done" | "failed" }`. Arrêt au premier échec (§7.3).
+5. **Clés** : après les actions et **avant** le résultat, ajout des entrées des salons créés
    (`POST …/delegations/:delegationId/entries`, 03 §7.2) ; le runtime reçoit `delegation.entries_added`.
-5. **Résultat** : élément `plan_result` (§9) ; s'il arrive avant la clé, `awaiting_key` prend le relais.
+6. **Résultat** : élément `plan_result:k` (§9) ; le claim est libéré et l'API ouvre la phase suivante non
+   vide : d'agent, la conversation passe `queued` et le runtime est réveillé ; d'appareil (la phase
+   d'agent intermédiaire étant entièrement `skipped`), la conversation reste `awaiting_confirmation` et un
+   push l'annonce ; s'il n'en reste aucune, le plan est terminé et la conversation passe `queued`. Si le
+   résultat arrive avant la clé, `awaiting_key` prend le relais.
 
 Plan `interrupted` (claim perdu) : l'appareil du propriétaire qui le trouve (à l'ouverture de la
-conversation) dépose `plan_result` à partir des états de la ligne, sans claim.
+conversation) dépose `plan_result:k` à partir des états de la ligne, sans claim.
 
-### 8.2 Par l'agent
+### 8.3 Phase d'agent
 
-**Provisoire (QP1)** : le worker exécute les actions d'agent **après** `plan_result` : les `server.call`
-acceptées, et en mode autonome les `thread.create` laissées `pending`, dans l'ordre de `n`, en
-résolvant `argsRefs` depuis `plan_result.outcomes[].output`. Chaque appel porte
-`plan: { planId, n }` (§12.2) ; l'API passe l'action `executing` puis `done` / `failed` dans la même
-requête. Un appel interrompu (transport coupé après envoi) donne `unknown_outcome`, jamais relancé
-(08 §5). Arrêt au premier échec.
+Le worker reprend sur `conversation.wake` (dépôt de `plan_result:k`, ou décision dont la première phase
+est d'agent) :
 
-### 8.3 Verrou serveur des actions `ask` (PC38)
+1. Il déchiffre les résultats de phase reçus et les recontrôle (AAD, `planId`, `phase` attendue ; sinon
+   `tool_call_unverified`, 06 §9).
+2. Il exécute les actions acceptées de la phase `currentPhase`, dans l'ordre de `n` : `server.call` par
+   `POST …/tools/:name/execute`, et en mode autonome `thread.create` (politique `ask`) par
+   `POST /e2ee/threads` avec `rt1`. Chaque appel porte `plan: { planId, n }` et, pour une action à
+   `argsRefs`, `args` **non résolus**, `argsRefs` et `refs` résolues depuis les résultats de phase
+   (§8.4). L'API passe l'action `executing` puis `done` / `failed` dans la même requête et **enregistre
+   sa sortie** (§8.5). Un appel interrompu (transport coupé après envoi) donne `unknown_outcome`, jamais
+   relancé (08 §5). Arrêt au premier échec.
+3. Fin de la phase :
+   - s'il reste une phase non vide et qu'aucune action n'a échoué : `POST …/plans/:planId/agent-result`
+     (§12.2) avec `plan_agent_result:k` (§9). Dans une transaction, l'API enregistre la valeur, avance
+     `currentPhase`, repasse la conversation `awaiting_confirmation` (même `pendingToolCall`), envoie le
+     push `AI_AWAITING_CONFIRMATION` (« Étape suivante de votre plan : à poursuivre sur votre
+     appareil », sans contenu) et `ai:session-status`. Le worker s'arrête. Si `expiresAt` est passé,
+     la route rend `status: "expired"` (§7.1) et le worker continue au point suivant ;
+   - sinon (dernière phase, échec, expiration) : il ferme `propose_actions` par un `tool_result` portant
+     l'état et la sortie de chaque action, et le tour continue (`running`).
+
+Le signal vers l'appareil n'est **pas** un élément de boîte (la boîte va de l'utilisateur vers le
+runtime) : `plan_agent_result:k` est rangé dans la ligne du plan et servi par `PlanView` ; l'appareil
+l'apprend par le push et `ai:session-status`, ou en ouvrant la conversation.
+
+### 8.4 Verrou serveur des actions `ask` (PC38, PC47)
 
 Un appel du runtime à `POST /conversations/:sessionId/tools/:name/execute` pour un outil dont la
 politique effective est `ask`, ou à `POST /e2ee/threads` quand celle de `create_thread` est `ask`, doit
@@ -235,30 +324,72 @@ porter `plan: { planId, n }`. L'API vérifie, sinon **`403 action_not_accepted`*
 1. la ligne `AiActionPlan` existe, de cette conversation et de l'utilisateur de l'autorisation ;
 2. son statut est `accepted` ou `executing`, et la décision a été écrite par la route **utilisateur**
    de décision (seule à poser `accepted`) ;
-3. l'action `n` est acceptée et `pending` (sinon `409 action_state_conflict`) ;
-4. `server.call` : `serverDigests[n]` = SHA-256 de `JCS({ tool: name, args })` des arguments **reçus**
-   (provisoire pour une action à `argsRefs` : QP2) ; `thread.create` : aucune empreinte (C1 :
-   `serverDigests` ne couvre que `server.call`), l'action doit seulement être acceptée.
+3. l'action `n` est acceptée, `pending` (sinon `409 action_state_conflict`), d'exécutant `agent` et de
+   phase `currentPhase` (sinon `409 plan_phase_mismatch`) ;
+4. `server.call` (PC47) :
+   - `serverDigests[n]` = SHA-256 (`hex`) de `JCS({ tool: name, args, argsRefs })` calculé sur l'appel
+     **reçu** : `args` non résolus et `argsRefs` tels que dans le plan ; `argsRefs` est **omis** de
+     l'objet s'il est absent (le condensat d'une action sans référence est celui de C1) ;
+   - `refs` a exactement les clés d'`argsRefs` ; pour chaque champ `f` avec `argsRefs[f] = "$m.x"`,
+     l'action `m` est `done` et `refs[f]` = `actionOutputs[m].x`, la sortie **enregistrée par l'API**
+     (§8.5), qu'`m` soit une action d'agent ou d'appareil ;
+   - les arguments exécutés sont `args` ∪ `refs`, validés par le schéma de l'outil comme aujourd'hui ;
+5. `thread.create` : aucune empreinte (C1 : `serverDigests` ne couvre que `server.call`), l'action doit
+   seulement être acceptée.
 
-Un outil `auto` n'exige rien (un `plan` fourni est alors contrôlé de la même façon) ; `deny` reste
-refusé avant tout (`tool_denied_by_policy`).
+Un `refs` mal formé (valeur non chaîne, clé dans `args`) est `400 invalid_body`. Un outil `auto`
+n'exige rien (un `plan` fourni est alors contrôlé de la même façon) ; `deny` reste refusé avant tout
+(`tool_denied_by_policy`). Vecteurs : `serverDigests`, `executeCases`.
 
-## 9. Éléments de boîte de réception
+### 8.5 Sorties connues de l'API (PC47 : références vers une action d'appareil)
 
-Ajoutés à 05 §6.2 (les éléments existants restent valides, C1 §7) :
+L'API ne lit **rien de chiffré** : elle connaît la sortie de chaque action parce qu'elle a **créé
+l'objet elle-même** et l'enregistre à ce moment-là dans `actionOutputs[n]` (champs exportés du §4,
+identifiants seulement) :
 
-| `t` | Déposé par | `id` | Charge | Transition (08 §2) |
+- **action d'agent** : à l'exécution (§8.4), depuis sa propre réponse (`data.id` d'un `server.call`
+  quand c'est un identifiant ; `id` et `spaceId` du salon créé par `POST /e2ee/threads`) ;
+- **action d'appareil** : la route normale qui crée l'objet (salon : `POST /api/threads/space/:spaceId`
+  ou `/api/threads/org/:orgId` ; dossier : `POST /api/spaces/:spaceId/folders` ; fichier texte : la
+  route qui enregistre le fichier envoyé au CDN, `POST /api/cdn/transfers/uploads` et sa finalisation),
+  quand elle reçoit `X-Synco-Plan: <planId>/<n>` et que l'action `n` est `executing`, d'exécutant
+  `device`, dans la phase courante d'un plan de cet utilisateur sous claim valide, enregistre
+  `{ id, spaceId }` de l'objet qu'elle vient de créer. **Une seule fois** (`updateMany` conditionné à une
+  sortie vide) ; une seconde création sous le même en-tête aboutit normalement (l'en-tête ne change
+  pas les droits) mais n'est pas enregistrée et elle est journalisée.
+- `progress { state: "done" }` d'une action d'appareil exige une sortie enregistrée, sinon
+  `409 action_output_missing`.
+
+Double contrôle : le worker résout `refs` depuis `plan_result:k`, authentifié par `CK`, et l'API les
+compare à ce qu'elle a enregistré ; l'appareil fait de même pour les sorties d'agent (§8.2, étape 3).
+Une API qui fausserait une sortie ne fait qu'arrêter le plan, sans pouvoir détourner une référence.
+**Fuite résiduelle, assumée** : l'API apprend quel objet créé correspond à quelle action de quel plan
+(métadonnée sans contenu ; elle voyait déjà la création et son auteur). C'est la solution retenue comme
+la plus sûre : sans cet enregistrement, l'API ne pourrait vérifier une référence vers l'appareil qu'en
+croyant un identifiant fourni par le runtime, ou en lisant `plan_result`.
+
+## 9. Résultats de phase et éléments de boîte de réception
+
+Ajoutés à 05 §6.2 (les éléments existants restent valides, C1 §7). Clair de chaque résultat de phase
+= `JCS({ v: 1, planId, phase: k, outcomes: [{ n, state, output? }] })`, `outcomes` = les actions de la
+phase `k` (y compris `skipped`), `output` = champs exportés (§4), identifiants seulement.
+
+| `t` / valeur | Déposé par | `id` | Charge | Transition (08 §2) |
 |---|---|---|---|---|
-| `plan_decision` | **l'API seule**, par la route de décision (`source = "api"`) ; refusé sur `POST …/inbox` et du runtime (`400 invalid_body`) | `decision:<planId>` | `{ planId, decision: "accept" \| "reject", accepted: [n…], reason? }` (métadonnées, en clair) | `reject` : `awaiting_confirmation` → `queued` ; `accept` : aucune (on attend `plan_result`) |
-| `plan_result` | l'appareil, par `POST …/sessions/:sessionId/inbox` ou par WebSocket (le runtime le rend durable) | `plan:<planId>` | `{ planId, value: "gcm1:…" }` ; clair = `JCS({ v: 1, planId, outcomes: [{ n, state, output? }] })`, AAD `sessionId:planId:plan_result` | `awaiting_confirmation` → `queued` |
+| `plan_decision` (boîte) | **l'API seule**, par la route de décision (`source = "api"`) ; refusé sur `POST …/inbox` et du runtime (`400 invalid_body`) | `decision:<planId>` | `{ planId, decision: "accept" \| "reject", accepted: [n…], reason? }` (métadonnées, en clair) | `reject` : `awaiting_confirmation` → `queued` ; `accept` : `queued` si la première phase non vide est d'agent, sinon aucune |
+| `plan_result` (boîte), un par phase d'appareil | l'appareil, par `POST …/sessions/:sessionId/inbox` ou par WebSocket (le runtime le rend durable) | `plan:<planId>:<k>` | `{ planId, phase: k, value: "gcm1:…" }`, AAD `sessionId:planId:plan_result:<k>` | `awaiting_confirmation` → `queued`, sauf si la phase suivante non vide est d'appareil (inchangé) |
+| `plan_agent_result` (**pas** un élément de boîte), un par phase d'agent suivie d'une autre phase | le worker, par `POST …/plans/:planId/agent-result` (§12.2) ; rangé dans `AiActionPlan.agentResults`, servi par `PlanView` | — | `{ phase: k, value: "gcm1:…" }`, AAD `sessionId:planId:plan_agent_result:<k>` | `running` → `awaiting_confirmation` |
 
-- `output` = champs exportés de l'action (§4), identifiants seulement ; `state` ∈ états du §7.2
-  (`pending` pour une action d'agent pas encore exécutée).
-- Dépôt de `plan_result` : la ligne existe pour cette conversation, statut ∈ `executing`, `done`,
-  `failed`, `interrupted` (sinon `409 plan_not_executing`). Doublon : `200`, rien n'est rejoué.
-- Réveil : `conversation.wake` `reason: "decision"` pour les deux.
-- Le worker rejette un `plan_result` qui ne correspond pas au `pendingToolCall` déchiffré (autre
-  `planId`, AAD fausse) : `tool_call_unverified` (06 §9).
+- `state` ∈ états du §7.2. Le numéro de phase est dans l'AAD et dans le clair : un résultat ne se rejoue
+  ni sur une autre phase, ni sur un autre plan, ni comme résultat de l'autre exécutant (vecteurs
+  `encryptionCases`).
+- Dépôt de `plan_result:k` : la ligne existe pour cette conversation ; statut ∈ `executing`, `failed`,
+  `interrupted`, `expired` (sinon `409 plan_not_executing`) ; `k` = `currentPhase`, phase d'appareil, et
+  toutes ses actions acceptées sont terminales (sinon `409 plan_phase_mismatch`). Doublon : `200`, rien
+  n'est rejoué.
+- Réveil : `conversation.wake` `reason: "decision"` pour `plan_decision` et `plan_result`.
+- Le worker rejette un résultat de phase qui ne correspond pas au `pendingToolCall` déchiffré (autre
+  `planId`, autre phase, AAD fausse) : `tool_call_unverified` (06 §9).
 - Un `confirm` visant `propose_actions` est consommé et ignoré (`stale_decision`).
 
 ## 10. Mode autonome
@@ -288,12 +419,16 @@ Un client à jour vérifie le mandat servi par `GET …/delegations/:delegationI
   comme `plan` (aucune signature `rt1`) et le signale au dashboard ; c'est la seule protection que l'API
   ne peut pas contourner (C1 §4.5).
 - Lecture des mandats : 03 §4.1 (v1 → `plan`).
+- **Épingle du propriétaire (PC46)** : pour un mandat v2 vérifié, `ownerRsaSpkiHex` **est** l'épingle de
+  la clé RSA du propriétaire et prime sur l'épingle TOFU de `member-rsa-pins.json` (06 §4.3) ; une clé
+  servie différente donne `409 member_key_changed` et l'alerte du dashboard, comme L05b. Mandat v1 :
+  épinglage TOFU actuel.
 
 ### 10.4 Conditions `auto` côté API
 
 | Route | Condition ajoutée | Refus |
 |---|---|---|
-| `POST /e2ee/threads` (créateur `rt1:`) | délégation de l'autorisation `mode = auto` ; `isFeatureAllowed(autonomous_mode)` ; verrou du §8.3 si `create_thread` est `ask` | `403 autonomy_required`, `403 feature_not_allowed`, `403 action_not_accepted` |
+| `POST /e2ee/threads` (créateur `rt1:`) | délégation de l'autorisation `mode = auto` ; `isFeatureAllowed(autonomous_mode)` ; verrou du §8.4 si `create_thread` est `ask` | `403 autonomy_required`, `403 feature_not_allowed`, `403 action_not_accepted` |
 | `POST /e2ee/threads/:threadId/key-envelope` | délégation de l'autorisation `mode = auto` ; politique | `403 autonomy_required`, `403 feature_not_allowed` |
 | `POST /e2ee/threads/:threadId/key-envelope/repose` | délégation `delegationId` du corps `mode = auto` ; politique | idem |
 | `GET /e2ee/threads/envelope-resets` (L03f) | ne liste que les délégants dont la délégation active vers ce runtime est `auto` et autorisée | (filtre) |
@@ -354,9 +489,15 @@ de la liste, `DELETE` de l'opt-in), dans **la même transaction** que l'écritur
 2. ses délégations actives `mode = auto` passent `revoked`, raison **`autonomy_withdrawn`**, entrées
    supprimées ; le runtime reçoit `delegation.revoked` (`reason: "autonomy_withdrawn"`) ;
 3. ses conversations en régime runtime **restent sur le runtime, en pause**, puis reprennent **en mode
-   plan** au prochain dépôt d'une délégation par son app (PC40 ; mécanique provisoire : QP3) ;
+   plan** au prochain dépôt d'une délégation par son app (PC40). Mécanique (PC45) : les autorisations de
+   session ne sont **pas** révoquées (exemptées de `sweepOrphanAuthorizations` tant que la délégation
+   révoquée a pour raison `autonomy_withdrawn`) ; les conversations `queued` ou `running` passent
+   `awaiting_key` avec `awaitingKey = "delegation:<runtimeId>"`, les autres états sont inchangés ; au
+   dépôt suivant, les autorisations suivent la nouvelle délégation (règle existante) et ces
+   conversations repassent `queued` ; au-delà de `keyTimeoutSecs`, `failed` `key_timeout` ;
 4. ce qui a été fait reste fait ; les plans `proposed` sont **sans effet** (leur exécutant serait
-   désormais l'appareil) ;
+   désormais l'appareil), et une action d'agent `thread.create` restante d'un plan en cours échoue
+   (`autonomy_required`, arrêt du §7.3) ;
 5. notification `AI_AUTONOMY_WITHDRAWN` : « Votre organisation a désactivé le mode autonome » (pas pour
    un `DELETE` fait par l'utilisateur lui-même) ;
 6. ligne `AiFeaturePolicyEvent`.
@@ -378,6 +519,8 @@ migre vers la carte `runtime_mode` (L11).
 Chaque changement de mode, ajout ou retrait de membre, activation ou désactivation et révocation écrit
 une ligne `AiFeaturePolicyEvent` (07 §10) ; un administrateur qui s'ajoute lui-même à la liste y figure
 comme les autres. Lecture : `GET /ai/feature-policies/:feature/events` (U-admin).
+**Rétention (PC48, RGPD)** : 1 an, puis purge bornée côté API (07 §9), comme `AiThreadEnvelopeEvent`
+(PC29).
 
 ## 12. Routes
 
@@ -387,17 +530,20 @@ comme les autres. Lecture : `GET /ai/feature-policies/:feature/events` (U-admin)
 |---|---|---|---|---|
 | `GET /plans/:planId` | U-prop | — | `200 PlanView` | `404 not_found` |
 | `POST /plans/:planId/decision` | U-prop | `{ "decision": "accept", "accepted": [1,3,4,5] }` ou `{ "decision": "reject", "reason"?: "plan_invalid" }` | `200 PlanView` ; même décision rejouée : `200` | `400 invalid_body` (`accepted` vide, hors `1..actionCount`, doublon), `404 not_found`, `409 plan_not_pending` (déjà décidé autrement, expiré), `409 not_runtime` |
-| `POST /plans/:planId/claim` | U-prop | `{ "deviceId": "<id>" }` | `200 { claimExpiresAt }` (prise ou prolongation) | `404`, `409 plan_claimed` (autre appareil, claim valide), `409 plan_not_claimable` (statut ≠ `accepted`, `executing`) |
-| `POST /plans/:planId/progress` | U-prop | `{ "deviceId", "n", "state": "executing" \| "done" \| "failed" }` | `200 PlanView` (claim prolongé) | `400 invalid_body` (action d'agent, `n` hors plage), `404`, `409 plan_claim_lost`, `409 action_state_conflict` |
-| `POST /inbox` (existante) | U-prop | `{ "t": "plan_result", "id": "plan:<planId>", "planId", "value": "gcm1:…" }` | `201` / `200` doublon (05 §6.2) | existants + `409 plan_not_executing`, `404 not_found` |
+| `POST /plans/:planId/claim` | U-prop | `{ "deviceId": "<id>", "phase": <k> }` | `200 { phase, claimExpiresAt }` (prise ou prolongation) | `404`, `409 plan_claimed` (autre appareil, claim valide sur cette phase), `409 plan_phase_mismatch` (`k` ≠ `currentPhase`, ou phase d'agent), `409 plan_not_claimable` (statut ∉ `accepted`, `executing`, ou `expiresAt` passé pour une phase pas encore réclamée) |
+| `POST /plans/:planId/progress` | U-prop | `{ "deviceId", "n", "state": "executing" \| "done" \| "failed" }` | `200 PlanView` (claim prolongé) | `400 invalid_body` (action d'agent, `n` hors plage), `404`, `409 plan_claim_lost`, `409 plan_phase_mismatch` (action hors de la phase réclamée), `409 action_state_conflict`, `409 action_output_missing` (`done` sans sortie enregistrée, §8.5) |
+| `POST /inbox` (existante) | U-prop | `{ "t": "plan_result", "id": "plan:<planId>:<k>", "planId", "phase": <k>, "value": "gcm1:…" }` | `201` / `200` doublon (05 §6.2) | existants + `409 plan_not_executing`, `409 plan_phase_mismatch`, `404 not_found` |
 
-`PlanView` = `{ planId, sessionId, toolCallId, status, actionCount, createdAt, expiresAt, decidedAt,
-claim: { deviceId, expiresAt } | null, actionStates: ["pending", …] }` (dates ISO 8601) ; **aucun
-contenu** : le clair se lit dans `pendingToolCall` (§3.4). `deviceId` : identifiant 00 §3.2 tiré par
-l'appareil, opaque pour l'API. Effets de la décision, dans une transaction : `updateMany` conditionné
-à `status = proposed`, `decidedAt`, états `skipped`, dépôt de `decision:<planId>` ; `reject` passe la
-conversation `queued` et réveille le runtime. `failed` en `progress` passe les actions `pending`
-restantes en `skipped` et le plan en `failed`. Débit : compteur des routes utilisateur du mode runtime
+`PlanView` = `{ planId, sessionId, toolCallId, status, actionCount, phaseCount, currentPhase, createdAt,
+expiresAt, decidedAt, claim: { deviceId, phase, expiresAt } | null, actions: [{ n, executor, phase,
+state, output }], agentResults: [{ phase, value }] }` (dates ISO 8601 ; `executor` ∈ `device`, `agent` ;
+`output` = sortie enregistrée, §8.5, ou `null`) ; **aucun contenu en clair** : le plan se lit dans
+`pendingToolCall` (§3.4), les `agentResults` sont chiffrés (§9). `deviceId` : identifiant 00 §3.2 tiré
+par l'appareil, opaque pour l'API. Effets de la décision, dans une transaction : `updateMany`
+conditionné à `status = proposed`, `decidedAt`, états `skipped`, `currentPhase` (§8.1), dépôt de
+`decision:<planId>` ; `reject`, ou `accept` dont la première phase est d'agent, passe la conversation
+`queued` et réveille le runtime. `failed` en `progress` passe les actions `pending` de toutes les phases
+en `skipped` et le plan en `failed`. Débit : compteur des routes utilisateur du mode runtime
 (120 / min, 09 §4.1).
 
 **Autres routes utilisateur**
@@ -408,15 +554,17 @@ restantes en `skipped` et le plan en `failed`. Débit : compteur des routes util
 | `GET …/delegations/current`, `DelegationView` | U | ajoute `mandateVersion`, `mode` |
 | `GET …/delegations/:delegationId/mandate` | U | ajoute `version`, `mode` (`plan` pour v1), `ownerRsaSpkiHex` (`null` pour v1) |
 | `POST /api/threads/:threadId/key-envelope` | U (créateur) | **nouvelle** (C1 §2.6) : `{ "ctx": "thread:<threadId>", "version": 1, "commitment", "signature" }` (`b64` canoniques) ; seulement si l'appelant est le `creatorId` d'une `ThreadKey` du salon et que l'enveloppe est vide ; `200 { threadId, updated }`, même enveloppe : `updated: 0` ; `403 forbidden`, `404 not_found`, `409 envelope_exists`. Sert aussi aux humains (`OrgLayout.vue:349`) |
+| Routes de création (salon, dossier, fichier texte) | U | en-tête facultatif `X-Synco-Plan: <planId>/<n>` : journal, et enregistrement de la sortie de l'action (§8.5) ; aucun refus nouveau, aucun droit changé |
 
 ### 12.2 Canal du runtime (`/api/runtime/v1`, ajouts à 04 §4)
 
 | Méthode et chemin | Auth | Corps | Succès | Refus |
 |---|---|---|---|---|
-| `POST /conversations/:sessionId/plans` | S+A, bail | `{ leaseEpoch, baseRev, messages, title?, pendingToolCall, consumedInbox, events?, plan: { planId, toolCallId, actionCount, createdAt, expiresAt, serverDigests: [{ n, sha256Hex }] } }` | `201 { rev, planId }` : transcript écrit **et** ligne créée dans une transaction, statut `awaiting_confirmation` | `400 invalid_body` (forme ; `pendingToolCall.name ≠ propose_actions` ; `planId` ou `toolCallId` ≠ ceux de `pendingToolCall` ; `actionCount` hors 1..20 ; `n` de `serverDigests` hors plage ou en double ; `expiresAt` hors `]maintenant, maintenant + confirmationTimeoutSecs + 300]`), `409 plan_exists`, `409 rev_conflict`, `409 lease_conflict` |
+| `POST /conversations/:sessionId/plans` | S+A, bail | `{ leaseEpoch, baseRev, messages, title?, pendingToolCall, consumedInbox, events?, plan: { planId, toolCallId, actionCount, createdAt, expiresAt, actions: [{ n, executor, phase }], serverDigests: [{ n, sha256Hex }] } }` | `201 { rev, planId }` : transcript écrit **et** ligne créée dans une transaction, statut `awaiting_confirmation` | `400 invalid_body` (forme ; `pendingToolCall.name ≠ propose_actions` ; `planId` ou `toolCallId` ≠ ceux de `pendingToolCall` ; `actionCount` hors 1..20 ; `actions` qui ne couvre pas exactement `1..actionCount` ; phases qui ne vont pas de 1 à `phaseCount` sans trou, phase à deux exécutants ou deux phases consécutives du même exécutant ; `n` de `serverDigests` hors plage, en double ou d'exécutant `device` ; `expiresAt` hors `]maintenant, maintenant + confirmationTimeoutSecs + 300]`), `409 plan_exists`, `409 rev_conflict`, `409 lease_conflict` |
 | `GET /conversations/:sessionId/plans/:planId` | S+A | — | `200 PlanView` | `404 not_found`, `403 out_of_scope` |
-| `POST /conversations/:sessionId/tools/:name/execute` | S+A | `{ leaseEpoch, args?, plan?: { planId, n } }` | inchangé ; avec `plan`, l'état de l'action suit (§8.2) | + `403 action_not_accepted`, `409 action_state_conflict` |
-| `POST /e2ee/threads` | S+A | + `plan?: { planId, n }` | inchangé | + `403 autonomy_required`, `403 feature_not_allowed`, `403 action_not_accepted`, `409 action_state_conflict` |
+| `POST /conversations/:sessionId/plans/:planId/agent-result` | S+A, bail | `{ leaseEpoch, baseRev, phase, value: "gcm1:…" }` | `200 { rev, status, currentPhase }` : valeur rangée, phase suivante ouverte, conversation `awaiting_confirmation`, push (§8.3) ; si `expiresAt` est passé : `200 { rev, status: "expired", currentPhase }`, actions `pending` → `skipped`, conversation inchangée (`running`) | `400 invalid_body`, `404 not_found`, `409 plan_phase_mismatch` (`phase` ≠ `currentPhase`, phase d'appareil, action de la phase non terminale, aucune phase suivante non vide), `409 plan_not_executing` (plan terminé, dont `failed`), `409 rev_conflict`, `409 lease_conflict` |
+| `POST /conversations/:sessionId/tools/:name/execute` | S+A | `{ leaseEpoch, args?, argsRefs?, refs?, plan?: { planId, n } }` | inchangé ; avec `plan`, l'état de l'action suit et sa sortie est enregistrée (§8.3, §8.5) | + `403 action_not_accepted`, `409 action_state_conflict`, `409 plan_phase_mismatch` |
+| `POST /e2ee/threads` | S+A | + `plan?: { planId, n }` | inchangé ; sortie enregistrée (§8.5) | + `403 autonomy_required`, `403 feature_not_allowed`, `403 action_not_accepted`, `409 action_state_conflict`, `409 plan_phase_mismatch` |
 | `GET /delegations` | S | — | ajoute `mandateVersion`, `mode`, `ownerRsaSpkiHex` | — |
 | Routes `rt1` et L03f | | | conditions du §10.4 | |
 
@@ -444,7 +592,9 @@ noms comme le sélecteur cherchable existant ; aucune rangée par membre côté 
 
 Modèles en 07 §10 : `AiActionPlan`, `AiFeaturePolicy`, `AiFeaturePolicyMember`, `AiFeatureOptIn`,
 `AiFeaturePolicyEvent` ; champs ajoutés à `AiRuntimeDelegation` (07 §3) ; `kind` de boîte (07 §5) ;
-`AI_AUTONOMY_WITHDRAWN` (07 §7). **Aucun contenu en clair** : ni nom, ni argument, ni résumé.
+`AI_AUTONOMY_WITHDRAWN` (07 §7). `AiActionPlan` porte aussi l'exécutant et la phase de chaque action,
+`currentPhase`, les sorties enregistrées (identifiants, §8.5) et les résultats de phase d'agent
+(chiffrés). **Aucun contenu en clair** : ni nom, ni argument, ni résumé.
 
 ## 14. Codes d'erreur
 
@@ -455,54 +605,41 @@ Modèles en 07 §10 : `AiActionPlan`, `AiFeaturePolicy`, `AiFeaturePolicyMember`
 | `plan_limit` | `lastErrorCode` (`failed`) | Plus de 3 plans consécutifs dans un tour |
 | `plan_exists` | API 409 | `planId` déjà utilisé |
 | `plan_not_pending` | API 409 | Décision sur un plan déjà décidé autrement ou expiré |
-| `plan_claimed` / `plan_not_claimable` / `plan_claim_lost` | API 409 | Claim d'un autre appareil / statut ne permettant pas le claim / claim expiré ou repris |
-| `plan_not_executing` | API 409 | `plan_result` sur un plan non exécuté |
+| `plan_claimed` / `plan_not_claimable` / `plan_claim_lost` | API 409 | Phase réclamée par un autre appareil / statut ou expiration ne permettant pas le claim / claim expiré ou repris |
+| `plan_not_executing` | API 409 | Résultat de phase sur un plan non exécuté ou déjà terminé |
+| `plan_phase_mismatch` | API 409 | Phase autre que `currentPhase`, mauvais exécutant, ou phase pas encore terminée (§8, §9) |
 | `action_state_conflict` | API 409 | Transition d'action invalide (dont seconde exécution) |
-| `action_not_accepted` | API 403 | Verrou du §8.3 |
+| `action_output_missing` | API 409 | `done` d'une action d'appareil sans sortie enregistrée par la route de création (§8.5) |
+| `action_not_accepted` | API 403 | Verrou du §8.4 (action non acceptée, condensat ou `refs` différents) |
 | `autonomy_required` | API 403, superviseur | Délégation ou mandat vérifié non `auto` |
 | `feature_not_allowed` | API 403 | Politique d'org (ou opt-in absent) |
 | `feature_reserved` | API 409 | Fonctionnalité réservée (§11.1) |
 | `autonomy_withdrawn` | `revokedReason`, `delegation.revoked.reason` | Retrait du mode autonome (§11.4) |
 
-## 15. Questions ouvertes (non tranchées par C1 ni par les PC)
+## 15. Questions tranchées (PC44 à PC48, 2026-11-21)
 
-**QP1 — Ordre d'exécution d'un plan mixte (appareil + agent).** C1 donne `server.call` à l'agent et
-`thread.create` à l'appareil, et son exemple fait dépendre une tâche d'un salon, sans dire qui commence
-ni comment l'agent apprend les résultats de l'appareil. **Recommandation** (texte marqué
-« provisoire ») : phase appareil d'abord, toujours close par `plan_result` ; phase agent ensuite ; une
-action d'appareil ne peut dépendre d'une action d'agent (sinon `plan_invalid`, l'agent fait deux plans).
+L00f avait laissé cinq questions que ni C1 ni les PC ne tranchaient. L'utilisateur les a tranchées
+après la livraison ; le texte qui en dépendait (« provisoire ») est réécrit.
 
-**QP2 — `serverDigests` et `argsRefs`.** Le condensat de `{tool, args}` (C1) ne couvre pas les champs
-remplis par `argsRefs` ; l'API verrait des arguments résolus différents. **Recommandation** : condensat
-de `JCS({ tool, args, argsRefs })` (sans `argsRefs` s'il est absent, ce qui garde le vecteur actuel) ;
-l'appel d'exécution porte `args` non résolu + `refs` résolues ; l'API vérifie le condensat, puis que
-chaque valeur de `refs` égale la sortie enregistrée de l'action visée (`progress` porterait alors
-`output`, identifiants seulement).
+| Question | Décision | Où |
+|---|---|---|
+| **QP1** — Ordre d'exécution d'un plan mixte (appareil + agent) | **PC44 : ordre libre**, contraire de la recommandation « appareil d'abord ». Phases alternées selon le graphe de dépendances ; une action d'appareil peut dépendre d'une action d'agent ; chaque phase d'appareil se clôt par un `plan_result:k` partiel ; l'agent reprend après chaque phase et signale la suivante (`plan_agent_result:k`, push) ; l'app doit être ouverte pour chaque phase d'appareil, le plan attend sinon, `expiresAt` vaut pour le plan entier ; un échec arrête toute la suite ; une phase = un seul appareil | §1, §5, §7, §8.1 à §8.3, §9, §12 |
+| **QP2** — `serverDigests` et `argsRefs` | **PC47 : recommandation adoptée.** Condensat de `JCS({tool, args, argsRefs})`, `argsRefs` omis s'il est absent ; l'appel porte `args` non résolus et `refs` résolues ; l'API vérifie le condensat puis chaque `ref` contre la sortie enregistrée de l'action visée. Pour une action d'appareil, l'API connaît la sortie parce qu'elle a créé l'objet (en-tête `X-Synco-Plan`), sans rien lire de chiffré ; fuite résiduelle assumée : le lien objet ↔ action de plan | §8.4, §8.5 |
+| **QP3** — Mécanique de la pause au retrait (PC40) | **PC45 : recommandation adoptée** | §11.4, 08 §2.2 |
+| **QP4** — Clé RSA servie du propriétaire et `ownerRsaSpkiHex` | **PC46 : recommandation adoptée**, l'empreinte du mandat v2 prime | §10.3, 03 §4.1 |
+| **QP5** — Détails fixés par analogie | **PC48 : ratifiés tels quels**, sauf `AiFeaturePolicyEvent` : **conservé 1 an, purge bornée** (RGPD), et non plus sans purge | §3.3, §9, §11, §14, 07 §10 |
 
-**QP3 — Mécanique de la pause au retrait (PC40).** **Recommandation** : autorisations de session non
-révoquées (exemptées de `sweepOrphanAuthorizations` tant que la délégation révoquée a pour raison
-`autonomy_withdrawn`) ; conversations `queued` ou `running` → `awaiting_key` avec
-`awaitingKey = "delegation:<runtimeId>"` ; les autres états inchangés ; au dépôt suivant, les
-autorisations suivent la nouvelle délégation (règle existante) et ces conversations repassent `queued` ;
-`keyTimeoutSecs` s'applique (`key_timeout`).
-
-**QP4 — Écart entre la clé RSA servie du propriétaire et `ownerRsaSpkiHex` du mandat v2 (PC27 b,
-« prioritaire »).** **Recommandation** : le superviseur prend l'empreinte du mandat v2 vérifié comme
-épingle du propriétaire (elle prime sur l'épingle TOFU) ; un écart donne `409 member_key_changed` et une
-alerte, comme L05b ; mandat v1 : épinglage TOFU actuel.
-
-**QP5 — Détails fixés par L00f par analogie, à ratifier.** JCS restreint aux entiers ; AAD
-`sessionId:planId:plan_result` ; condensats en `hex` ; `plan_decision` en clair déposé par l'API ;
-`expiresAt` contrôlé à ±300 s ; sens d'« activé » par fonctionnalité (§11.1) ; `DELETE` de l'opt-in
-qui révoque ; actions sensibles avant L14 (§4) ; verrou appliqué aussi à `POST /e2ee/threads` ;
-`AiFeaturePolicyEvent` sans purge en v1 ; noms des codes du §14. **Recommandation** : ratifier tels quels.
+**Reste ouvert (non bloquant, à signaler aux lots)** : `thread.create` exécuté par le runtime en mode
+autonome n'a pas de condensat (C1) ; une référence qu'il résout (`spaceId` venu d'une phase d'appareil)
+n'est donc pas recontrôlée par l'API, seulement par le worker. L'étendre demanderait d'ajouter
+`thread.create` aux `serverDigests` (décision à prendre si le besoin apparaît).
 
 ## 16. Répartition par lot
 
 | Lot | Prend dans ce document |
 |---|---|
-| L01c | 03 §4.1 (octets, lecture v1/v2), §3.3 (JCS, AAD), fonctions pures TS et Rust, vecteurs `mandate-v2.json` et `action-plan.json` rejoués des deux côtés |
-| L03g | §7, §8.3, §9, §10.4, §12.1, §12.2, 07 §3, §5, §10 (`AiActionPlan`) ; vecteurs : condensats, `validationCases` pour la forme vue par l'API |
-| L03h | §11, §12.3, 07 §10 (politiques), 03 §8.1 (`autonomy_withdrawn`) |
-| L08d | §2, §3, §5, §7.3, §8.2, §10.3 ; `propose_actions`, reprise sur `plan_result`, `created_key` / `repose` conditionnés |
-| L10 à L13 | §4 à §8.1, §10.2, §11.3, écrans de C1 §3 et §5.5 |
+| L01c | 03 §4.1 (octets, lecture v1/v2), §3.3 (JCS, AAD), §8.1 (calcul des phases), §9 (AAD des résultats de phase), fonctions pures TS et Rust, vecteurs `mandate-v2.json` et `action-plan.json` rejoués des deux côtés |
+| L03g | §7, §8.1 (contrôle de forme des phases), §8.4, §8.5, §9, §10.4, §12.1, §12.2, 07 §3, §5, §10 (`AiActionPlan`) ; vecteurs : condensats, `executeCases`, `runCases`, `validationCases` pour la forme vue par l'API |
+| L03h | §11, §12.3, 07 §10 (politiques, purge du journal), 03 §8.1 (`autonomy_withdrawn`) |
+| L08d | §2, §3, §5, §7.3, §8.1, §8.3, §10.3 ; `propose_actions`, reprise après chaque phase, `agent-result`, `refs`, `created_key` / `repose` conditionnés, épingle du mandat v2 |
+| L10 à L13 | §4 à §8.2, §10.2, §11.3, écrans de C1 §3 et §5.5 (étape suivante d'un plan) |

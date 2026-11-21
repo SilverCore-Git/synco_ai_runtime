@@ -100,8 +100,8 @@ maintenance reborne [1 h, 7 j] toute valeur lue, y compris une ancienne valeur e
 | `POST /metrics` | 1 / min |
 | Trames du pipe | charge de 1 Mio (JSON), 64 Kio (clés) ; la longueur en tête compte le genre en plus (06 §1) |
 | Synchro P11 (client) | regroupement 5 s ; backoff 30 s → 30 min ; 5 tentatives par session de l'app |
-| Plan d'action (L00f, 12) | 20 actions ; clair canonique ≤ 64 Kio (65 536 octets) ; 3 plans consécutifs par tour (`plan_limit`) ; expiration = `confirmationTimeoutSecs` de l'org (7 j par défaut, [1 h, 7 j]) ; claim 5 min, prolongé par `progress` ; `expiresAt` contrôlé par l'API à `maintenant + délai + 300 s` au plus |
-| Politiques d'org (L00f, 12 §11) | ajouts et retraits de membres : 1 à 100 par requête ; pages de 1 à 100 ; liste ≤ 1 000 membres (PC30) |
+| Plan d'action (L00f, 12) | 20 actions ; clair canonique ≤ 64 Kio (65 536 octets) ; 3 plans consécutifs par tour (`plan_limit`) ; expiration = `confirmationTimeoutSecs` de l'org (7 j par défaut, [1 h, 7 j]) ; claim 5 min **par phase**, prolongé par `progress` ; phases : au plus 20 (une action par phase au pire), expiration commune au plan entier (PC44) ; `expiresAt` contrôlé par l'API à `maintenant + délai + 300 s` au plus |
+| Politiques d'org (L00f, 12 §11) | ajouts et retraits de membres : 1 à 100 par requête ; pages de 1 à 100 ; liste ≤ 1 000 membres (PC30) ; `AiFeaturePolicyEvent` conservé 1 an, purge bornée à 1 000 lignes par passe (PC48) |
 
 ### 4.1 Valeurs réelles après la vague B (révisé après la vague B, 2026-11-19 ; complété après L05, 2026-11-20)
 

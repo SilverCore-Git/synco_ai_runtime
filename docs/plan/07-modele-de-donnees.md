@@ -209,6 +209,17 @@ Nouveau modèle `AiThreadEnvelopeEvent` (journal sans contenu des réinitialisat
 (PC29, 2026-11-21)**, avec une purge bornée côté API (lot L03e, en cours : pas encore dans le code relu). Source :
 `synco_api/prisma/schema.prisma`, `SYNCOAI_REFONTE_FEATURE.md` §14.8.
 
+**Ajouts de L00f (2026-11-21 ; mandat v2, 03 §4.1)** à `AiRuntimeDelegation`, appliqués par `prisma db push` :
+
+```prisma
+  mandateVersion   Int      @default(1)      // 1 | 2 ; une ligne existante vaut 1
+  mode             String   @default("plan") // 'plan' | 'auto' ; recopié du dépôt, signé dans le mandat v2
+  ownerRsaSpkiHex  String?                   // hex(SHA-256(SPKI)) de la clé RSA du propriétaire ; null en v1
+```
+
+`revokedReason` gagne `autonomy_withdrawn` (03 §8.1). `mode` en clair sert au second verrou et aux
+conditions `auto` de l'API (12 §10.4) ; le runtime ne s'y fie jamais (il vérifie le mandat).
+
 ## 4. Extension de `AiChatSession` et bail
 
 ```prisma
@@ -365,6 +376,12 @@ de maintenance, **par lots** (au plus 5 lots de 1 000 par passe, les plus ancien
 révocation a échoué) restent **documentées sans code**. Source :
 `synco_api/src/services/aiRuntime/conversationLease.ts:186-228`, `SYNCOAI_REFONTE_FEATURE.md` §13.6.
 
+**Ajouts de L00f (2026-11-21 ; 12 §9, §10.5)** : `AiChatInboxItem.kind` gagne `plan_decision` (déposé par
+l'API seule, `source = "api"`, `payload` en clair `{ planId, decision, accepted, reason? }`) et
+`plan_result` (`payload` = `{ planId, value }`, `value` en `gcm1:`). `AiChatSessionEvent.type` gagne
+`plan_status` (`code` = nouveau statut du plan, écrit par l'API) et `plan_action` (`actor = "runtime"`,
+`code` = `<planId>.<n>`, action `server.call` ou `thread.create` exécutée par le runtime).
+
 ## 6. Politique runtime de l'org
 
 Dans `Organization.activeModules.aiConfig` (JSON lisible par les membres, édité avec `ORG_AI`,
@@ -405,6 +422,10 @@ conversation. Aucun contenu. **Révisé après L03d (2026-11-21, Q19 / PC21)** :
 **entrée** dans l'état annoncé et plafond de 6 / min par conversation (04 §4.2, « Notifications ») ;
 l'évènement socket `notification:push` est émis, `data` portant aussi `type`.
 
+**Ajout de L00f (2026-11-21 ; 12 §11.4)** : `AI_AUTONOMY_WITHDRAWN` (« Votre organisation a désactivé le
+mode autonome »), envoyé par l'API au retrait, `data` = `{ orgId }`. Le plan réutilise
+`AI_AWAITING_CONFIRMATION` ; le corps peut citer le nombre d'actions (`actionCount`, pas de contenu).
+
 ## 8. Relations à ajouter sur les modèles existants
 
 - `Organization` : `aiRuntimes AiRuntime[]`.
@@ -439,3 +460,98 @@ Passes réelles (révisé après la vague B, 2026-11-19 ; `runAiRuntimeMaintenan
    `limits.keyTimeoutSecs` → `failed` `key_timeout` (comparaison stricte sur `statusChangedAt`), journal
    et push `AI_FAILED` ; défaut 7 jours, abaissable par l'org (§6 ; révisé après L03c, Q14 a = A) ;
 6. `purgeConsumedInbox` : éléments consommés depuis plus de 7 jours supprimés.
+
+Ajouts de L00f (2026-11-21 ; 12 §7, §11) à cette passe, après `failTimedOutWaits` :
+
+7. `expireActionPlans` : plans `proposed` ou `accepted` sans claim dont `expiresAt ≤ maintenant` →
+   `expired` (la conversation suit `failTimedOutWaits`) ;
+8. `interruptActionPlans` : plans `executing` dont `claimExpiresAt ≤ maintenant` et qui ont une action
+   `executing` exécutée par l'appareil → action `unknown_outcome`, actions `pending` → `skipped`, plan
+   `interrupted` ; un claim expiré sans action en cours est seulement libéré (`claimDeviceId = null`).
+
+## 10. Plans d'action et politiques d'org (ajouté par L00f, 2026-11-21 ; 12)
+
+Aucun contenu en clair : ni nom, ni argument, ni résumé.
+
+```prisma
+model AiActionPlan {
+  id             String   @id            // planId : UUID v4 tiré par le worker
+  sessionId      String
+  session        AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId         String                  // propriétaire de la conversation
+  orgId          String
+  toolCallId     String                  // appel propose_actions
+  status         String                  // 'proposed' | 'accepted' | 'executing' | 'done' | 'failed' | 'rejected' | 'expired' | 'interrupted'
+  actionCount    Int                     // 1 à 20
+  actionStates   Json                    // ["pending" | "skipped" | "executing" | "done" | "failed" | "unknown_outcome", …], indexé par n - 1
+  serverDigests  Json                    // { "<n>": "<hex SHA-256>" } pour les seules actions server.call
+  createdAt      DateTime                // createdAt du plan (secondes Unix → DateTime)
+  expiresAt      DateTime
+  decidedAt      DateTime?
+  claimDeviceId  String?
+  claimExpiresAt DateTime?
+  updatedAt      DateTime @updatedAt
+
+  @@index([sessionId, createdAt])
+  @@index([status, expiresAt])
+  @@index([status, claimExpiresAt])
+  @@map("ai_action_plans")
+}
+
+model AiFeaturePolicy {                  // une ligne par (org, fonctionnalité) ; absente = défaut (12 §11.1)
+  orgId     String
+  feature   String                       // liste fermée (12 §11.1)
+  mode      String                       // 'all' | 'none' | 'list'
+  updatedAt DateTime @updatedAt
+  updatedBy String
+  @@id([orgId, feature])
+  @@map("ai_feature_policies")
+}
+
+model AiFeaturePolicyMember {            // membres autorisés quand mode = 'list'
+  orgId   String
+  feature String
+  userId  String
+  addedAt DateTime @default(now())
+  @@id([orgId, feature, userId])
+  @@index([orgId, userId])
+  @@map("ai_feature_policy_members")
+}
+
+model AiFeatureOptIn {                   // activation par l'utilisateur lui-même (v1 : autonomous_mode)
+  orgId          String
+  userId         String
+  feature        String
+  enabledAt      DateTime
+  warningVersion Int
+  @@id([orgId, userId, feature])
+  @@index([orgId, feature])
+  @@map("ai_feature_opt_ins")
+}
+
+model AiFeaturePolicyEvent {             // journal (PC39) ; pas de purge en v1 (12 §15, QP5)
+  id        String   @id @default(cuid())
+  orgId     String
+  feature   String
+  type      String                       // 'mode_changed' | 'member_added' | 'member_removed' | 'opt_in' | 'opt_out' | 'revoked'
+  actorId   String                       // administrateur ou utilisateur
+  userId    String?                      // personne concernée
+  fromMode  String?
+  toMode    String?
+  createdAt DateTime @default(now())
+  @@index([orgId, feature, createdAt])
+  @@map("ai_feature_policy_events")
+}
+```
+
+- `AiActionPlan` : créée par `POST /api/runtime/v1/conversations/:sessionId/plans`, dans la transaction
+  du transcript ; supprimée avec la conversation. Chaque transition d'action ou de plan est un
+  `updateMany` conditionné à l'état lu (une action n'entre qu'une fois en `executing`).
+- `serverDigests` : fuite faible assumée (C1 §2.3) : le condensat d'une action refusée reste devinable si
+  ses arguments ont peu d'entropie.
+- Aucun `@relation` vers `Organization` ni `User` pour les politiques (même choix que les clés composées
+  ci-dessus) : L03h supprime les lignes d'un membre à son départ (`revokeOrgMembership`) et celles d'une
+  org avec elle.
+- `aiConfig.runtime.members` / `memberIds` : lus comme politique `runtime_mode` tant qu'aucune ligne
+  n'existe, plus écrits ensuite (12 §11.5).
+

@@ -1261,3 +1261,31 @@ Décisions de l'utilisateur prises après la livraison de L00f. Documentation et
   (`rejected`, ce qui est fait reste fait) ; un plan expiré en attente d'appareil donne `confirmation_timeout`.
 - **Reste ouvert** (12 §15) : `thread.create` du runtime en mode autonome n'a pas de condensat (C1), ses références ne
   sont donc pas recontrôlées par l'API.
+
+## 2026-11-21 — L00f, second amendement : graphe, parallélisme, échec limité, arrêt du plan (PC54 à PC58)
+
+Documentation et vecteurs seulement ; aucun code dans `crates/`, aucune dépendance. À la suite de `9867ebc`.
+
+- **PC54** : un échec (ou `unknown_outcome`) n'ignore que les dépendantes transitives (`after`, qui couvre `argsRefs`) ;
+  le reste continue, sur les deux exécutants. Statut final calculé : `failed`, sinon `interrupted`, sinon `done`.
+- **PC55** : après l'acceptation, un message ne change pas l'état de la conversation et il est traité au tour qui suit
+  la clôture de `propose_actions`, pas à la phase d'agent suivante (le `tool_result` doit précéder le nouveau message).
+  Arrêt : `POST …/plans/:planId/stop`, statut `stopped`, élément `plan_decision` `stop`. Expiration d'un plan accepté :
+  `queued` et clôture avec le bilan ; `failTimedOutWaits` ne s'en charge plus.
+- **PC56** : `AiActionPlanAction.output` (lien objet ← action) effacé dans la transaction de clôture, passe de
+  rattrapage `purgeClosedPlanLinks` ; doublon journalisé sans identifiant d'objet ; catalogue RGPD en 07 §11 (aucun
+  catalogue général n'existait).
+- **PC57** : risque accepté, 12 §10.6 et §15.
+- **PC58** : `after` = `needs` (nom gardé), `groups` / `group`, `category.create` et `categoryId` pour le cas de
+  l'utilisateur ; niveaux ; actions prêtes en parallèle (concurrence 4, maximum 8, des deux côtés), plus petite `n`
+  d'abord ; `progress` rejouable ; `429` : 3 nouveaux essais, concurrence divisée par 2 ; une ligne
+  `AiActionPlanAction` par action (transitions concurrentes sans perte) ; consigne de l'outil `propose_actions` (12 §3.1) ;
+  présentation en graphe pour L12 (12 §17). **Ajustement signalé de PC44** : les phases précalculées alternées
+  sérialisaient des branches indépendantes ; elles deviennent dynamiques (une séance par exécutant, numérotée par
+  exécutant, qui peut chevaucher celle de l'autre). L'API reçoit `executor` et `after` (graphe sans contenu).
+- **Vecteurs** : `categoryPlan` (3 catégories puis 9 salons : niveaux, vagues, ordre valide avec concurrence 4, échec de
+  la catégorie 2 → ses 3 salons seuls ignorés), `levelCases`, `runCases` simulés, `failureCases` selon PC54, résultats de
+  phase renumérotés par exécutant, 7 cas de validation. Code jetable supprimé ; revérifiés en Rust (66, dont
+  `session::decrypt_field`) et en TS (104, dont `decryptAiField` de `synco_app`).
+- **À valider par l'utilisateur** : le nouveau `kind` `category.create` (non listé jusqu'ici, nécessaire au cas
+  demandé) ; les valeurs de concurrence et de nouveaux essais.

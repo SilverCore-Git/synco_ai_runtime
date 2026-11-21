@@ -571,8 +571,9 @@ réalisée dans le code à ce jour sauf mention) :
 - **(d) Réinitialisation E2EE sans transition signée** (`/e2ee/v4/reset`, v3 : aucune preuve possible) :
   **bloque la création de salons jusqu'à l'acceptation par l'admin du runtime** (v1). C'est le
   comportement déjà réalisé par L05b (06 §4.3).
-- **(e) Refus global en v1** (déjà réalisé, 06 §4.3), avec un **raffinement `scope=owner` plus tard**
-  (limiter le refus aux salons dont le propriétaire est le seul destinataire) : non fait, non spécifié.
+- **(e) Refus global en v1** (déjà réalisé, 06 §4.3), avec un **raffinement `scope=owner` plus tard** :
+  non fait, non spécifié (sens exact **ouvert** ; L05b, question 4, évoquait de restreindre le refus aux
+  destinataires réels de l'appel, que le superviseur ne connaît pas).
 - **(c) Route « chaîne de transitions »** (une route S+A du canal servant la chaîne d'identité de **tout**
   membre de l'org, pour accepter automatiquement la rotation d'un membre qui n'a jamais délégué) :
   **reportée** (non décidée pour la v1).

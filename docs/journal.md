@@ -1191,3 +1191,37 @@ comportement de la file sur un vrai redémarrage de service systemd.
 - **Relecture API** : plafond sur les items entrés dans la file (pas les refusés), borne de 1 000 pages ; page vide suivie.
 - **Limite connue** : une trame à délégation inventée reçue en dernier remplace la vraie dans la file ; la relecture API à la
   reconnexion la redonne.
+
+## 2026-11-21 — L00f : spec figée du plan d'action, du mandat v2, du mode autonome et des politiques d'org
+
+Source : conception C1 (validée par l'utilisateur) et PC34 à PC43. Documentation et vecteurs seulement ; aucun code dans
+`crates/`, aucune dépendance. Code lu pour ancrer routes et modèles : `synco_api` (`aiRuntimeDelegations.ts`,
+`runtimeInternal/e2ee.ts`, `threadEnvelopeReset.ts`, `conversationTools.ts`, `runtimePolicy.ts`, `toolRegistry.ts`,
+`validators/index.ts`, `schema.prisma`), `synco_app` (`runtimeDelegation.ts`, `crypto.ts`, `OrgAI.vue`, `fileActions.ts`),
+`crates/worker/src/tools/mod.rs`.
+
+- **Nouveau document** `docs/plan/12-plan-action.md` : format du plan (JCS, `gcm1:` sous `CK`, AAD `sessionId:planId:plan`,
+  stockage dans `pendingToolCall`), types d'action v1 (`thread.create`, `folder.create`, `file.create_text`, `server.call`)
+  avec `args` stricts et exécutant par mode, validation (`plan_invalid`), cascade (PC37), états et délais, exécution par
+  l'appareil puis par l'agent, verrou `action_not_accepted` (PC38), éléments `plan_decision` / `plan_result`, conditions
+  `auto`, politiques v1 (PC39, PC40, PC42), routes utilisateur, du canal et des politiques, codes, répartition par lot.
+- **Mis à jour** : 00 (décisions PC34 à PC43, glossaire), 03 (§4.1 mandat v2 et lecture du v1, mandat servi, raison
+  `autonomy_withdrawn`), 04 (routes des plans, verrou, conditions `auto`, route `envelope-resets` de L03f désormais
+  documentée), 07 (champs du mandat v2, `AiActionPlan`, `AiFeaturePolicy*`, `AiFeatureOptIn`, `AiFeaturePolicyEvent`,
+  passes de maintenance), 08 (transitions du plan, pause au retrait, `plan_limit`), 09 (limites), `vectors/README.md` (§4).
+- **Vecteurs** `docs/plan/vectors/mandate-v2.json` (21 cas de mandat, 6 cas `rt1Policy`) et `action-plan.json` (10 cas de
+  chiffrement, 29 de validation, 6 de cascade, 2 d'échec, 1 condensat). Code jetable hors du dépôt (`~/.cache`, supprimé) :
+  signatures (RFC 6979) et chiffrés produits par la crate `synco-e2ee` ; octets signés et JSON canonique écrits en TS.
+  **Revérifiés des deux côtés** : TS (WebCrypto, `verifyMandateOfflineFromWrapHash`, `decryptAiField` de `synco_app`,
+  validateur de référence pour validation, cascade et échec) et Rust (relecture du fichier final : 23 et 13 vérifications,
+  `verify_mandate_offline_from_wrap_hash`, `EcPublicKey::verify`, `decrypt_field`, `serde_json` = JCS). Clés de test
+  générées pour l'occasion ; hook `check-secrets` passé.
+- **Lecture de C1** : ses propositions marquées « on propose » (fusion du mode dans le mandat v2, route d'enveloppe du
+  créateur, `autonomy.allowed`) sont prises comme validées avec C1, comme l'indique le lot.
+- **Questions ouvertes** (12 §15) : QP1 ordre d'exécution d'un plan mixte appareil / agent ; QP2 condensat `serverDigests`
+  et `argsRefs` ; QP3 mécanique de la pause au retrait (PC40) ; QP4 écart entre la clé RSA servie du propriétaire et
+  `ownerRsaSpkiHex` ; QP5 détails fixés par analogie (JCS entiers, AAD de `plan_result`, sens d'« activé » par
+  fonctionnalité, actions sensibles avant L14, journal sans purge…). Le texte qui en dépend est marqué « provisoire ».
+- **Non vérifié** : aucun code n'implémente encore ces formats ; les cas de validation, de cascade et d'échec ne sont
+  contrôlés que par un validateur jetable. Lots débloqués après validation par l'utilisateur : L01c, L03g, L03h (en
+  parallèle), puis L08d.

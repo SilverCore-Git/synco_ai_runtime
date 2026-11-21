@@ -990,3 +990,79 @@ runtime ne peut rien comparer) ; le plafond de 2 000 épingles par org convient-
 
 **Vérifié à la fin** : hôte, `sandbox-host.sh` vert (11 tests) puis `aller_retour_avec_bac_a_sable ... ok` ; test croisé
 Rust → TS : OK ; `synco_app` et `synco_api` non modifiés.
+
+## 2026-11-21 — L00e : report dans docs/plan de L03d, L05b, L07c, PC27 et des décisions de la porte C
+
+**Branche** : `syncoai/L00e-report-docs-plan` (depuis `feature/syncoai-refonte` à `f6c6a6e`). Documentation seule :
+`docs/plan/**` et ce journal ; aucun code, test, `Cargo.*` ni README touché. Sources : `SYNCOAI_REFONTE_FEATURE.md`
+§14 (surtout §14.9), `docs/journal.md`, `suivi.md` (PC1 à PC27). Le code du dépôt a été relu pour chaque point ;
+l'état du runtime (non adopté) est écrit à côté de chaque ajout de l'API.
+
+### Reporté (une ligne par point)
+
+| Source | Point | Reporté dans |
+|---|---|---|
+| §14.9 | `GET /authorizations?state=active` (§14.1), `displayName` de `GET /delegations` | 04 §4.1 |
+| §14.9 | `POST …/push` : état courant, une par entrée, 6 / min, `{ sent }` ; `notification:push` | 04 §4.2, 07 §7 |
+| §14.9 | « push 1 / 30 s » remplacé ; limiteur de la synchro des clés (§14.5) | 09 §4 (tableau court et §4.1), 04 §8 (`rt_rate_limited`) |
+| §14.9 | `categoryId` facultatif + `no_default_category` ; `GET /e2ee/members/keys?spaceId=` | 04 §4.3 |
+| §14.9 | route S `POST …/key-envelope/repose` ; la route S+A refuse les `ThreadKey` réinitialisées | 04 §4.3 |
+| §14.9 | 03 §10.1 : « aucune voie de reprise » retiré, §14.8 décrite (reset, repose, ce que le runtime doit faire, choix) | 03 §10.1 |
+| §14.9 | trame `thread.envelope_reset` (`delegationId` = délégation active à signer) | 04 §6 |
+| §14.9 | codes `no_default_category`, `envelope_not_set`, `repose_unavailable` | 04 §8, 03 §14 |
+| §14.9 | `provider_not_configured` | 08 §6, 10 §4 |
+| §14.9 | `ThreadKey.envelopeResetAt`, `envelopeResetBy`, `envelopeDelegationId` ; modèle `AiThreadEnvelopeEvent` | 07 §3.1 (nouvelle sous-section) |
+| §14.9 | rétention 90 j des `AiChatSessionEvent` (§14.7) | 07 §5, 04 §4.2 |
+| §14.9 | délais `awaiting_*` dans [1 h, 7 j] (§14.6) | 07 §6, 09 §3 |
+| §14.9 | `displayName` dans le dashboard (PC17) | 11 §5 et §7 |
+| §14.9 | 00 §6 : Q18, Q19, Q20, Q21, Q23, Q30 tranchées par L03d ; `user.revoked` non émis à l'expiration (PC24) | 00 §6 |
+| L05, correction 9 | « besoin API » : route des autorisations actives, désormais livrée | 03 §9 |
+| L07c, PC12 | D6 révisée, Q22 tranchée (la ligne D6 de 00 et 09 / 10 étaient déjà à jour) | 00 §5 (D6), 00 §6 (Q22) |
+| L07c, PC9, PC10, PC11 | Q26, Q27, Q28 tranchées ; flux coupé = `BadStream` pour tous, table d'effort Mistral, Gemini désactivé jusqu'à un test réel | 06 §9, 00 §6 |
+| L07, écart 9 | `answer` / `upload` acceptés si l'état lu est `queued` (non encore dans la spec) | 06 §9 |
+| L05b, PC8 | Q25 réalisée : déjà reportée par L05b (04 §4.3, 06 §4.3, 03 §10.1, 11 §5) ; non refaite | — (vérifié) |
+| PC27 | (a) empreinte RFC 7638 par l'app, (b) mandat v2 (SPKI du propriétaire, runtime lit v1 et v2), (d) blocage après reset sans transition, (e) refus global v1 + `scope=owner` plus tard, (c) reporté ; bornes de `member-rsa-pins.json` et purge d'`AiThreadEnvelopeEvent` **ouvertes** | 03 §10.1, 06 §4.3, 00 §6 (Q25) |
+
+### Déjà reportés avant ce lot (non refaits)
+
+Écarts de L05 (1 à 10 et corrections 1 à 11), L06, L07 (sauf l'écart 9 ci-dessus), L07b et L08 : repris par L00d et
+les lots précédents. Vérifié par recherche de marqueurs dans `docs/plan` (`snapshot_request`, `relay_busy`,
+`relay_too_large`, `status = 0`, `idle_timeout`, `authorizations.json`, `created_key_unknown_thread`,
+`tool_call_unverified`, `TooLarge`, `skippedRecipients`, `maxTokensPerTurn`, `exp < iat`) ; chaque marqueur est présent.
+Les 11 corrections de L05 et les 6 de L07 n'ont **pas** été relues une à une dans ce lot : seule cette vérification
+par marqueurs a été faite.
+
+### Volontairement non reporté, avec la raison
+
+- **Items de §14.9** : aucun non reporté.
+- **PC1 à PC4, PC6, PC20, PC25** : hors périmètre du lot L00e (PC1 à PC4 : packaging et CI, L09 / L09b ; PC6 : lot
+  L07d « à définir » ; PC20 : correctif de l'app, L11 ; PC25 : lot API + app à créer).
+- **PC7 (Q24), PC13 à PC15 (Q29)** : décisions de la porte C sur la recherche lexicale et le dashboard. Le lot demande
+  au moins D6, Q22, Q26 à Q28 et PC27 ; ces points n'ont pas été reportés. **Q24 et Q29 restent écrites « non tranchées »
+  en 00 §6 et 11 §7, alors que `suivi.md` les donne tranchées : écart signalé, non corrigé ici.**
+- **L05b, questions 1 à 4** (liaison RSA au mandat, route de chaîne, reset sans transition, refus global) : répondues par
+  PC27 ; reportées sous cette forme, sans fixer le format du mandat v2 ni le sens exact de `scope=owner`.
+- **L05b, question « 2 000 épingles par org »** : **ouverte** (PC27 : bornes non tranchées, Synco doit tenir au moins
+  1 000 membres par org).
+
+### Doutes signalés, non tranchés
+
+1. **Adoption par le runtime** : le code intégré n'appelle pas `GET /authorizations`, ne lit pas `displayName`, ne traite
+   pas `thread.envelope_reset` (`ApiEvent::Unknown`), n'appelle pas `repose` et n'écrit pas `provider_not_configured`
+   (`workers.rs:130` écrit `provider_error`) ; le worker n'utilise ni `categoryId` par défaut ni `?spaceId=`. Les documents
+   le disent explicitement ; aucun lot d'adoption n'est planifié (**ouvert**).
+2. **`repose` est S seule** alors que le relais du worker signe toujours avec `x-synco-auth` (`crates/worker/src/api.rs`) :
+   la voie (superviseur ou worker) n'est pas tranchée (04 §4.3).
+3. **`GET /e2ee/members/keys?spaceId=`** : le garde d'épinglage compare le chemin coupé avant `?` ; il s'appliquerait donc
+   aussi à cette variante ; non testé.
+4. **Vérification client d'une clé `rt1` reposée** : 03 §10.1 déduit de §14.8 et du schéma (`envelopeDelegationId`) que le
+   `delegationId` signé est `envelopeDelegationId` quand il est non nul ; le code de l'app n'a pas été relu (L10 à confirmer).
+5. **Q27 et Q28** : deux questions de l'orchestrateur (alias `mistral-*-latest`, lecture de PC11) restent ouvertes (`suivi.md`).
+6. **Limite d'ajout d'entrées** : 09 §4 (table courte) garde « 1 requête / 5 s » ; 09 §4.1 donne la valeur réelle 3 / 15 s
+   (Q16 c) : incohérence préexistante, non modifiée.
+
+### Vérifié
+
+`cargo fmt --all --check` et `git diff --cached --name-only` limité à `docs/` avant chaque commit ; `check-secrets` du hook
+actif à chaque commit. Relecture du code (`crates/`) pour chaque état « côté runtime ». Aucune compilation ni aucun test :
+documentation seule.

@@ -928,6 +928,35 @@ async fn create_thread_cles_courtes_et_trop_de_destinataires() {
     assert_eq!(msgs.iter().find(|m| m["role"] == "tool").unwrap()["toolResult"]["error"], "too_many_recipients");
 }
 
+/// Q25 : annuaire refusé par le superviseur (`409 member_key_changed`, clé d'un membre changée sans
+/// preuve) : aucun salon créé, rien de scellé, erreur explicite au modèle.
+#[tokio::test]
+async fn create_thread_refuse_si_une_cle_de_membre_a_change() {
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.with(|st| st.members = json!({ "error": "member_key_changed" }));
+    api.deposit_message(M1, "Crée Projets");
+    llm.push(Script::ok(sse_tool(
+        "call_t",
+        "create_thread",
+        &json!({ "threads": [{ "name": "Projets", "type": "text" }, { "name": "Équipe", "spaceId": SPACE }] }),
+        (10, 3),
+    )));
+    llm.push(Script::ok(sse_text(&["Refusé."], (10, 3))));
+    let mut ini = init(1);
+    ini.tool_policy = policy(&[("create_thread", ToolPolicy::Auto)]);
+    let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Idle);
+    api.with(|st| {
+        assert!(st.threads_created.is_empty(), "aucun salon créé");
+        assert!(st.envelopes.is_empty() && st.entries.is_empty(), "rien de scellé ni posé");
+    });
+    let msgs = api.clear_messages();
+    let result = &msgs.iter().find(|m| m["role"] == "tool").unwrap()["toolResult"];
+    assert_eq!(result["error"], "member_key_changed");
+    assert!(result.get("threads").is_none());
+}
+
 /// M5 : arguments tronqués (`finish_reason: length`) : outil jamais exécuté, erreur au modèle.
 #[tokio::test]
 async fn arguments_tronques_jamais_executes() {

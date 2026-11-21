@@ -53,7 +53,9 @@ pub async fn start(
         .await
         .map_err(|e| Error::Io(format!("écoute {} : {}", config.listen.public, e.kind())))?;
     let public_addr = listener.local_addr().map_err(|e| Error::Io(format!("adresse d'écoute : {}", e.kind())))?;
-    let runtime = Runtime::new(Arc::new(config), keys, api, launcher, provider_secrets, State::new(pins, auths));
+    let mut state = State::new(pins, auths);
+    state.member_pins = crate::member_pins::MemberPinStore::open(&config.state_dir)?;
+    let runtime = Runtime::new(Arc::new(config), keys, api, launcher, provider_secrets, state);
     {
         let rt = Arc::clone(&runtime);
         tokio::spawn(async move {

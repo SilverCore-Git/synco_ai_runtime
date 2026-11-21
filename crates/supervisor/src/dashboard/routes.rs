@@ -33,7 +33,7 @@ pub const PUBLIC: [(&str, &str); 4] =
     [("GET", "/login"), ("GET", "/assets/login.js"), ("GET", "/assets/style.css"), ("POST", "/api/login")];
 
 /// Toutes les routes déclarées (méthode, chemin ; `{id}` = paramètre), pour le test d'énumération.
-pub const ROUTES: [(&str, &str); 11] = [
+pub const ROUTES: [(&str, &str); 12] = [
     ("GET", "/"),
     ("GET", "/login"),
     ("GET", "/assets/login.js"),
@@ -45,6 +45,7 @@ pub const ROUTES: [(&str, &str); 11] = [
     ("GET", "/api/overview"),
     ("GET", "/api/sessions"),
     ("GET", "/api/totals"),
+    ("POST", "/api/member-keys/accept"),
 ];
 /// Route paramétrée supplémentaire : `GET /api/sessions/{id}`.
 pub const DETAIL_ROUTE: &str = "/api/sessions/";
@@ -77,12 +78,37 @@ pub struct OverviewData {
     pub queued: u64,
     /// Alertes récentes : (horodatage, code).
     pub alerts: Vec<(u64, String)>,
+    /// Clés RSA de membres refusées (changées sans preuve, Q25), en attente d'une décision.
+    pub member_key_changes: Vec<MemberKeyChange>,
+}
+
+/// Clé RSA d'un membre refusée (Q25) : empreintes seulement, jamais la clé.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MemberKeyChange {
+    /// Membre.
+    pub user_id: String,
+    /// Empreinte RFC 7638 de la clé épinglée (format de l'app).
+    pub pinned: String,
+    /// Empreinte RFC 7638 de la clé refusée (format de l'app), à comparer hors bande.
+    pub presented: String,
+    /// `SHA-256(SPKI)` de la clé refusée : identifie la clé à accepter.
+    pub fingerprint: String,
+    /// Dernière présentation (s).
+    pub seen: u64,
 }
 
 /// Source de la vue d'ensemble (le superviseur en fonctionnement ; un double dans les tests).
 pub trait OverviewSource: Send + Sync + 'static {
     /// État courant.
     fn overview(&self) -> BoxFuture<'_, OverviewData>;
+
+    /// Acceptation par l'admin du runtime de la clé RSA **en attente** d'un membre, identifiée par
+    /// son empreinte SPKI (Q25). Vrai si acceptée.
+    fn accept_member_key(&self, user_id: String, fingerprint: String) -> BoxFuture<'_, bool> {
+        let _ = (user_id, fingerprint);
+        Box::pin(async { false })
+    }
 }
 
 /// État partagé des routes.
@@ -374,6 +400,32 @@ async fn totals(
     Json(query::totals(&state.history, q.by, q.from, q.to, now_secs())).into_response()
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct AcceptMemberKey {
+    user_id: String,
+    fingerprint: String,
+}
+
+/// `POST /api/member-keys/accept` (session, origine et CSRF exigés par le garde) : remplace
+/// l'épingle RSA du membre par la clé en attente **dont l'empreinte est celle affichée**.
+async fn accept_member_key(
+    State(state): State<Shared>,
+    body: Result<Json<AcceptMemberKey>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Ok(Json(body)) = body else { return json_error(StatusCode::BAD_REQUEST, "bad_request") };
+    let hex64 = body.fingerprint.len() == 64
+        && body.fingerprint.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    if !is_identifier(&body.user_id) || !hex64 {
+        return json_error(StatusCode::BAD_REQUEST, "bad_request");
+    }
+    if state.source.accept_member_key(body.user_id, body.fingerprint).await {
+        Json(serde_json::json!({ "ok": true })).into_response()
+    } else {
+        json_error(StatusCode::CONFLICT, "no_pending_key")
+    }
+}
+
 async fn fallback() -> Response {
     json_error(StatusCode::NOT_FOUND, "not_found")
 }
@@ -393,6 +445,7 @@ pub fn router(state: Shared) -> Router {
         .route("/api/sessions", get(sessions))
         .route("/api/sessions/{id}", get(session_detail))
         .route("/api/totals", get(totals))
+        .route("/api/member-keys/accept", post(accept_member_key))
         .fallback(fallback)
         .layer(DefaultBodyLimit::max(MAX_BODY))
         .layer(middleware::from_fn_with_state(Arc::clone(&state), guard))

@@ -16,7 +16,7 @@ use std::sync::atomic::Ordering;
 
 use crate::launcher::BoxFuture;
 use crate::runtime::Runtime;
-use routes::{DashboardState, OverviewData, OverviewSource};
+use routes::{DashboardState, MemberKeyChange, OverviewData, OverviewSource};
 
 /// Alertes montrées à la vue d'ensemble.
 const ALERTS_SHOWN: usize = 20;
@@ -46,7 +46,39 @@ impl OverviewSource for Runtime {
                     .rev()
                     .map(|(t, code)| (*t, (*code).to_owned()))
                     .collect(),
+                member_key_changes: st
+                    .org_id
+                    .as_deref()
+                    .map(|org| {
+                        st.member_pins
+                            .pending(org)
+                            .into_iter()
+                            .filter_map(|(user, pin)| {
+                                let p = pin.pending.as_ref()?;
+                                Some(MemberKeyChange {
+                                    user_id: user.to_owned(),
+                                    pinned: pin.thumbprint.clone(),
+                                    presented: p.thumbprint.clone(),
+                                    fingerprint: p.fingerprint.clone(),
+                                    seen: p.seen,
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             }
+        })
+    }
+
+    fn accept_member_key(&self, user_id: String, fingerprint: String) -> BoxFuture<'_, bool> {
+        Box::pin(async move {
+            let (accepted, snapshot) = {
+                let mut st = self.state.lock().await;
+                let Some(org) = st.org_id.clone() else { return false };
+                let accepted = st.member_pins.accept_pending(&org, &user_id, &fingerprint);
+                (accepted, st.member_pins.snapshot())
+            };
+            self.save_member_pins(snapshot).await && accepted
         })
     }
 }

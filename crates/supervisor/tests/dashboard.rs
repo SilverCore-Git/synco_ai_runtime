@@ -41,7 +41,12 @@ impl OverviewSource for Fake {
             }
         })
     }
+    fn accept_member_key(&self, user_id: String, fingerprint: String) -> BoxFuture<'_, bool> {
+        Box::pin(async move { user_id == ACCEPT_USER && fingerprint == "ab".repeat(32) })
+    }
 }
+
+const ACCEPT_USER: &str = "cm3usermembre000000000001";
 
 struct Env {
     _dir: tempfile::TempDir,
@@ -465,4 +470,40 @@ async fn x_forwarded_for_ignore_par_defaut_et_lu_derriere_un_mandataire() {
     for i in 0..max_failures + 3 {
         assert_eq!(attempt(&proxied, i).await, 401, "adresses distinctes : aucune limite par adresse atteinte");
     }
+}
+
+/// Q25 : acceptation d'une clé RSA de membre en attente, réservée à une session avec origine et
+/// jeton CSRF ; corps strict ; clé inconnue → 409.
+#[tokio::test]
+async fn acceptation_d_une_cle_de_membre() {
+    let e = env().await;
+    let (token, csrf) = e.login().await;
+    let accept = |body: Value, csrf: Option<String>| {
+        let mut r = e
+            .client
+            .post(e.url("/api/member-keys/accept"))
+            .header("cookie", token.clone())
+            .header("origin", e.origin())
+            .header("content-type", "application/json")
+            .body(body.to_string());
+        if let Some(c) = csrf {
+            r = r.header("x-csrf-token", c);
+        }
+        async move { r.send().await.unwrap().status().as_u16() }
+    };
+    let good = json!({ "userId": ACCEPT_USER, "fingerprint": "ab".repeat(32) });
+    assert_eq!(accept(good.clone(), None).await, 403, "sans jeton CSRF");
+    let r = e.client.post(e.url("/api/member-keys/accept")).body(good.to_string()).send().await.unwrap();
+    assert_eq!(r.status().as_u16(), 401, "sans session");
+    for bad in [
+        json!({ "userId": ACCEPT_USER, "fingerprint": "AB".repeat(32) }),
+        json!({ "userId": ACCEPT_USER, "fingerprint": "ab" }),
+        json!({ "userId": "a|b", "fingerprint": "ab".repeat(32) }),
+        json!({ "userId": ACCEPT_USER, "fingerprint": "ab".repeat(32), "extra": 1 }),
+    ] {
+        assert_eq!(accept(bad, Some(csrf.clone())).await, 400);
+    }
+    let unknown = json!({ "userId": ACCEPT_USER, "fingerprint": "cd".repeat(32) });
+    assert_eq!(accept(unknown, Some(csrf.clone())).await, 409, "aucune clé en attente avec cette empreinte");
+    assert_eq!(accept(good, Some(csrf)).await, 200);
 }

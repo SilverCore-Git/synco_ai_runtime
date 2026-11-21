@@ -195,6 +195,69 @@ seul le worker détient. Une trame de plus de 1 Mio est remplacée par `ready { 
 (05 §2). Source : `crates/supervisor/src/client_ws.rs:ready_plan`, `register` ; `workers.rs:341-364` ;
 `docs/journal.md` (L05, écart 2, correction 10). Décision de l'orchestrateur : acceptés.
 
+### 4.3 Annuaire des clés des membres : épinglage TOFU par le superviseur (L05b, 2026-11-21, Q25)
+
+Le worker n'a pas de disque ; le superviseur, qui relaie `GET /api/runtime/v1/e2ee/members/keys`
+(04 §4.3), tient l'épinglage. **Aucun message de pipe nouveau** : le contrôle porte sur la réponse
+relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pins.rs`,
+`workers.rs:member_keys_gate`.
+
+- **Identité épinglée** : `SHA-256` de la `SubjectPublicKeyInfo` DER (`rsaEncryption`), recalculée
+  depuis `n` et `e` (zéros de tête sans effet ; vecteur WebCrypto `exportKey('spki')` en test). Est
+  aussi gardée l'empreinte RFC 7638 (`SHA-256` du JWK canonique minimal), la même que
+  `computeKeyFingerprint` de l'app sur une clé légitime, pour l'affichage.
+- **Stockage** : `<state_dir>/member-rsa-pins.json`, données publiques (empreintes, jamais la clé),
+  `{ "v": 1, "orgs": { org: { userId: { fingerprint, thumbprint, firstSeen, previous[], pending? } } } }`,
+  écriture atomique (`fsync` + `rename`) **une fois par étape de contrôle, hors du verrou d'état**
+  (`spawn_blocking`, photos ordonnées : une plus ancienne n'écrase jamais une plus récente) ; la
+  réponse n'est rendue au worker qu'après l'écriture (échec : refus fermé `member_pins_unavailable`
+  et alerte `member_pins_not_saved`, l'état complet est réécrit à la prochaine occasion). Absent :
+  vide ; illisible ou de version inconnue (`v` ≠ 1, revue M5) : le superviseur ne démarre pas (pas de
+  remise à zéro silencieuse). **Bornes** (revue I3) : 2 000 épingles par org (au-delà, refus
+  fermé `member_pins_limit` et alerte), 16 empreintes précédentes par membre, 100 clés en attente
+  par org (au-delà, le refus reste fermé sans être mémorisé). Mesure : 2 000 premières vues dans une
+  réponse en 0,12 s, verrou d'état tenu au plus 16 ms (`integration.rs::cles_rsa_charge_et_plafond`).
+- **Règle**, pour chaque membre de la réponse dont la clé est lisible et dans les bornes (sinon le
+  worker l'écarte, `skippedRecipients`) : première vue du couple (org, utilisateur) → épinglée ;
+  même empreinte → acceptée ; empreinte différente → **rotation** acceptée seulement selon une
+  règle stricte (corrigée après revue, I1) : la chaîne de transitions d'identité
+  (`GET /users/:userId/sign-key`, au plus 8 vérifications par réponse), suivie depuis la plus
+  ancienne clé de signature épinglée (`user-pins.json`), doit **reproduire exactement**
+  l'historique épinglé (mêmes clés de signature, dans l'ordre : une branche signée par une clé
+  retirée est refusée même si elle rejoint ensuite la clé courante), aboutir exactement à la clé RSA
+  présentée, et cette clé doit être garantie par une clé **non retirée** : maillon signé par la
+  clé de signature courante ou une successeure, ou bien chaîne qui s'arrête sur la clé courante
+  avec la clé RSA que `pins.rs` a liée à cette clé quand elle a été acceptée
+  (`UserPin.rsaFingerprint`) ; sinon **refus**. **Aucun retour arrière** (revue I2) : une clé
+  déjà épinglée par le passé (`previous`, 16 dernières) ou égale à l'épinglée n'est jamais acceptée
+  par rotation, et la clé épinglée, si la chaîne la contient, la précède.
+- **Refus global** : la réponse entière est remplacée par `409 {"error":"member_key_changed"}`
+  (ou `member_pins_limit`, `member_pins_unavailable` ; corps illisible : `502 member_keys_unreadable`,
+  revue M3 ; variante non canonique du chemin : `relay_refused` sans appel à l'API, revue M1) ;
+  `create_thread` rend `member_key_changed` (§9) sans créer ni sceller quoi que ce soit, y compris
+  pour un salon d'espace (choix le plus sûr : un salon créé sans un membre serait surprenant, et un
+  annuaire où une clé a été substituée n'est plus digne de confiance). La clé refusée est mise en
+  attente (`pending`) ; alerte `member_rsa_key_changed` (vue d'ensemble du dashboard, journal sans
+  clé, empreinte ni identifiant).
+- **Acceptation manuelle** : la vue d'ensemble liste les clés refusées (empreintes épinglée et
+  proposée au format de l'app) ; l'admin du runtime accepte **la clé affichée**
+  (`POST /api/member-keys/accept { userId, fingerprint }`, session + origine + CSRF ; une autre
+  empreinte → `409 no_pending_key`). **Vérification réellement possible aujourd'hui** (revue I4) :
+  l'app ne montre pas au membre l'empreinte de sa propre clé (les réglages affichent `n` brut, servi
+  par l'API ; l'empreinte vue par un autre membre dans un DM vient aussi de l'API) : aucune
+  comparaison d'empreinte hors bande n'est possible. L'admin peut seulement demander au membre, par
+  un autre canal que Synco, s'il a réinitialisé ou renouvelé son chiffrement et quand (à rapprocher
+  de la date de l'alerte), et n'accepter que sur confirmation. Afficher l'empreinte de sa propre clé
+  dans l'app est une question posée à l'utilisateur. Pas de commande en ligne : le fichier est tenu
+  en mémoire par le superviseur en marche.
+- **Limites** : la première vue vient de l'API (TOFU). En particulier (revue I5, inhérent au
+  TOFU, non bloquant) : à la première vue, une API malveillante peut **injecter un destinataire**
+  inconnu (un faux membre avec une clé qu'elle détient) ou servir sa propre clé pour un membre que
+  le runtime n'a encore jamais vu ; elle est alors épinglée et reçoit la clé des salons créés à
+  l'accueil. L'épinglage ne protège que les membres déjà vus ; un membre qui n'a jamais délégué au runtime
+  n'a pas de clé de signature épinglée et `sign-key` ne le sert pas (04 §4.1) : sa rotation légitime
+  n'est acceptée que par l'admin. La clé RSA du propriétaire n'est pas liée à son mandat (00 §6, Q25).
+
 ## 5. Métriques (sans contenu, P9)
 
 ```json
@@ -249,6 +312,7 @@ Résultats d'outil `{"error": code}` donnés au modèle (le code n'est pas un `l
 | `too_many_recipients` | `create_thread` : plus de **300** destinataires de clé RSA (corps du canal ≤ 256 Kio, 04 §4.3) ; aucun salon créé pour cet élément (champ `max`) |
 | `too_many_threads` | `create_thread` : plus de 10 salons par appel |
 | `no_recipient_key` | `create_thread` : aucune clé de membre exploitable |
+| `member_key_changed` | `create_thread` : le superviseur a refusé l'annuaire des membres, une clé RSA a changé sans preuve (§4.3, Q25) ; aucun salon créé, rien de scellé (champ `note`) |
 | `unknown_outcome` | Issue inconnue d'un outil mutant (08 §5) |
 
 Avertissements de `create_thread` (champ `warning` du résultat, le salon existe) : `key_envelope_unavailable`,

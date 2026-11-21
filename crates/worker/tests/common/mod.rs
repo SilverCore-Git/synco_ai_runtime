@@ -204,6 +204,10 @@ impl FakeApi {
                 st.tickets += 1;
                 (200, json!({ "ticket": format!("sgt1.test{}", st.tickets), "expiresAt": "2030-01-01T00:00:00.000Z", "url": "https://gw.example.com" }))
             }),
+            // `members` = {"error": …} : le superviseur a remplacé l'annuaire (Q25, 409).
+            ("GET", ["e2ee", "members", "keys"]) if self.with(|st| st.members.get("error").is_some()) => {
+                self.with(|st| (409, st.members.clone()))
+            }
             ("GET", ["e2ee", "members", "keys"]) => self.with(|st| (200, json!({ "members": st.members }))),
             ("GET", ["e2ee", "search-index", "workspace", ws]) => self.with(|st| match st.search_index.get(*ws) {
                 Some(v) => (200, v.clone()),

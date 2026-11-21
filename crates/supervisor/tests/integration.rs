@@ -63,6 +63,8 @@ struct Env {
     api: MockApi,
     running: synco_ai_runtime::app::Running,
     keys_secret: Zeroizing<Vec<u8>>,
+    /// Clé de signature d'identité de `USER` (transitions d'identité).
+    user_key: EcSigningKey,
 }
 
 /// Délégation : mandat signé par `signer`, enveloppe vers `kex`, entrées `conv` et `thread`.
@@ -218,7 +220,7 @@ base_url = "{llm_base_url}"
     .unwrap();
     let keys = seal::load(&state_dir, &backend()).unwrap().unwrap();
     let running = synco_ai_runtime::app::start(config, keys, launcher, BTreeMap::new()).await.unwrap();
-    Env { _dir: dir, state_dir, api, running, keys_secret }
+    Env { _dir: dir, state_dir, api, running, keys_secret, user_key }
 }
 
 async fn wait_until(what: &str, mut f: impl FnMut() -> bool) {
@@ -1419,4 +1421,285 @@ async fn dashboard_ignore_listen_trust_proxy_hops() {
     }
     assert_eq!(codes, [401, 401, 401, 401, 401, 429, 429, 429], "X-Forwarded-For ignoré : une seule adresse");
     synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+}
+
+// ---------------------------------------------------------------------------
+// Q25 : épinglage TOFU des clés RSA des membres, appliqué par le vrai superviseur au relais de
+// `GET /e2ee/members/keys`
+// ---------------------------------------------------------------------------
+
+const OTHER: &str = "cm3membreautre00000000001";
+
+/// JWK RSA synthétique de 2048 bits (l'épinglage ne demande pas une vraie clé).
+fn rsa_jwk(seed: u8) -> String {
+    let mut n = vec![seed; 256];
+    n[0] |= 0x80;
+    json!({ "kty": "RSA", "n": synco_e2ee::encoding::b64u(&n), "e": "AQAB" }).to_string()
+}
+
+fn spki(seed: u8) -> String {
+    synco_ai_runtime::member_pins::MemberKey::from_jwk_str(&rsa_jwk(seed)).unwrap().fingerprint
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cles_rsa_des_membres_epinglees_par_le_superviseur() {
+    use synco_ai_runtime::dashboard::routes::OverviewSource as _;
+    // Le worker scripté fait un `GET /e2ee/members/keys` à chaque ordre reçu et rend la réponse.
+    let (go_tx, go_rx) = tokio::sync::mpsc::channel::<String>(1);
+    let (res_tx, res_rx) = tokio::sync::mpsc::channel::<(u16, Value)>(1);
+    let go_rx = Arc::new(tokio::sync::Mutex::new(Some(go_rx)));
+    let script: ScriptFn = Arc::new(move |_, io| {
+        let (go_rx, res_tx) = (Arc::clone(&go_rx), res_tx.clone());
+        Box::pin(async move {
+            let Some(mut go) = go_rx.lock().await.take() else { return };
+            let (mut rd, mut wr) = tokio::io::split(io);
+            handshake(&mut rd, &mut wr).await;
+            let mut n = 0;
+            while let Some(path) = go.recv().await {
+                n += 1;
+                let id = format!("m{n}");
+                for p in SignedRequest::split(&id, HttpMethod::Get, &path, b"", true) {
+                    wire::write_json(&mut wr, &WorkerMsg::SignedRequest(p)).await.unwrap();
+                }
+                let (status, error, body) = response(&mut rd, &id).await;
+                let body = serde_json::from_slice(&body).unwrap_or_else(|_| json!({ "relay": error }));
+                res_tx.send((status, body)).await.unwrap();
+            }
+            let _ = wire::write_json(&mut wr, &WorkerMsg::Done(wire::DoneMsg { reason: wire::DoneReason::Idle })).await;
+        })
+    });
+    let env = setup_with(Arc::new(ScriptedEach { script, n: Default::default() })).await;
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    authorize(&env).await;
+    let rt = Arc::clone(&env.running.runtime);
+    let members = |user: u8, other: u8| {
+        json!([
+            { "userId": USER, "publicKey": rsa_jwk(user), "publicSignKey": null },
+            { "userId": OTHER, "publicKey": rsa_jwk(other), "publicSignKey": null },
+        ])
+    };
+    let res_rx = Arc::new(tokio::sync::Mutex::new(res_rx));
+    let ask_path = |m: Value, path: &str| {
+        env.api.with(|st| st.members = m);
+        let (go, res, path) = (go_tx.clone(), Arc::clone(&res_rx), path.to_owned());
+        async move {
+            go.send(path).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(10), res.lock().await.recv()).await.unwrap().unwrap()
+        }
+    };
+    let ask = |m: Value| ask_path(m, "/api/runtime/v1/e2ee/members/keys");
+    env.api.push(json!({ "type": "conversation.wake", "sessionId": SESSION, "authId": AUTH, "reason": "inbox" }));
+
+    // 1. Première vue : épinglées, réponse transmise telle quelle.
+    let (status, body) = ask(members(1, 2)).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["members"].as_array().unwrap().len(), 2);
+    // 2. Même clé : acceptée.
+    assert_eq!(ask(members(1, 2)).await.0, 200);
+    // Revue M1 : variante du chemin (contournerait le contrôle) refusée au relais, sans appel à l'API.
+    let directory_calls =
+        || env.api.with(|st| st.seen.iter().filter(|r| r.path.to_ascii_lowercase().contains("members")).count());
+    let before = directory_calls();
+    let (status, body) = ask_path(members(1, 3), "/api/runtime/v1/e2ee/Members/keys/").await;
+    assert_eq!((status, body), (0, json!({ "relay": "relay_refused" })));
+    assert_eq!(directory_calls(), before, "rien n'est parti vers l'API");
+    // 3. Clé substituée (membre sans délégation, donc sans chaîne vérifiable) : refus global.
+    let (status, body) = ask(members(1, 3)).await;
+    assert_eq!((status, body), (409, json!({ "error": "member_key_changed" })), "aucune clé transmise au worker");
+    {
+        let st = rt.state.lock().await;
+        assert!(st.alerts.iter().any(|(_, c)| *c == "member_rsa_key_changed"), "alerte au dashboard");
+        assert_eq!(st.member_pins.get(ORG, OTHER).unwrap().fingerprint, spki(2), "épingle inchangée");
+    }
+    let o = rt.overview().await;
+    assert_eq!(o.member_key_changes.len(), 1);
+    assert_eq!(
+        (o.member_key_changes[0].user_id.as_str(), o.member_key_changes[0].fingerprint.clone()),
+        (OTHER, spki(3))
+    );
+    assert_eq!(ask(members(1, 3)).await.0, 409, "toujours refusée");
+    // 4. Rotation légitime de USER : transition signée par sa clé de signature épinglée.
+    let k2 = EcSigningKey::generate(&mut OsRandom).unwrap();
+    let t = synco_e2ee::identity::sign_identity_transition(
+        &env.user_key,
+        USER,
+        0,
+        &rsa_jwk(4),
+        &k2.public_key().unwrap().to_canonical(),
+    )
+    .unwrap();
+    env.api.with(|st| {
+        st.transitions.insert(
+            USER.into(),
+            vec![json!({ "seq": t.seq, "oldPublicSignKey": t.old_public_sign_key, "newPublicKey": t.new_public_key,
+                "newPublicSignKey": t.new_public_sign_key, "signature": t.signature })],
+        );
+    });
+    assert_eq!(ask(members(4, 2)).await.0, 200, "rotation prouvée acceptée");
+    assert_eq!(rt.state.lock().await.member_pins.get(ORG, USER).unwrap().fingerprint, spki(4));
+    // 5. Clé substituée pour USER malgré la chaîne (qui aboutit à une autre clé) : refus.
+    assert_eq!(ask(members(5, 2)).await.0, 409);
+    // 6. Acceptation manuelle par l'admin de la clé affichée (et d'elle seule).
+    assert!(!rt.accept_member_key(OTHER.into(), spki(9)).await, "autre empreinte");
+    assert!(rt.accept_member_key(OTHER.into(), spki(3)).await);
+    assert_eq!(ask(members(4, 3)).await.0, 200, "clé acceptée par l'admin");
+    assert_eq!(rt.overview().await.member_key_changes.len(), 1, "reste USER (clé 5)");
+    drop(go_tx);
+    env.api.with(|st| assert_eq!(st.threads_created, 0));
+    synco_ai_runtime::app::shutdown(&rt).await;
+    // 7. Persistance : relu depuis le répertoire d'état (comme au redémarrage).
+    let reopened = synco_ai_runtime::member_pins::MemberPinStore::open(&env.state_dir).unwrap();
+    assert_eq!(reopened.get(ORG, USER).unwrap().fingerprint, spki(4));
+    assert_eq!(reopened.get(ORG, OTHER).unwrap().fingerprint, spki(3));
+    assert_eq!(reopened.pending(ORG).len(), 1);
+}
+
+/// Revue I3 : 2 000 premières vues dans une réponse = une seule écriture, hors du verrou d'état
+/// (mesure : durée du contrôle, attente maximale du verrou pendant ce temps) ; au-delà du plafond
+/// d'épingles par org, refus fermé.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cles_rsa_charge_et_plafond() {
+    use synco_ai_runtime::member_pins::MAX_PINS_PER_ORG;
+    use synco_ai_runtime::workers::member_keys_gate;
+    let env = setup().await;
+    wait_until("appairé", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    let rt = Arc::clone(&env.running.runtime);
+    // Revue M3 : corps illisible → échec fermé.
+    for bad in [&b"pas du json"[..], br#"{"members":{}}"#, br#"{"autre":[]}"#] {
+        assert_eq!(member_keys_gate(&rt, bad).await, Err("member_keys_unreadable"));
+    }
+    // Revue M5 : première vue qui ne peut pas être enregistrée → refus fermé et alerte.
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let first =
+            json!({ "members": [{ "userId": "cm3charge0000000000000000", "publicKey": rsa_jwk(1) }] }).to_string();
+        std::fs::set_permissions(&env.state_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let result = member_keys_gate(&rt, first.as_bytes()).await;
+        std::fs::set_permissions(&env.state_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(result, Err("member_pins_unavailable"));
+        assert!(rt.state.lock().await.alerts.iter().any(|(_, c)| *c == "member_pins_not_saved"));
+    }
+    let members: Vec<Value> = (0..MAX_PINS_PER_ORG)
+        .map(|i| json!({ "userId": format!("cm3charge{i:016}"), "publicKey": rsa_jwk(u8::try_from(i % 200).unwrap() + 1) }))
+        .collect();
+    let body = json!({ "members": members }).to_string();
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let probe = {
+        let (rt, stop) = (Arc::clone(&rt), Arc::clone(&stop));
+        tokio::spawn(async move {
+            let mut worst = Duration::ZERO;
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                let t = std::time::Instant::now();
+                drop(rt.state.lock().await);
+                worst = worst.max(t.elapsed());
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            worst
+        })
+    };
+    let t = std::time::Instant::now();
+    assert_eq!(member_keys_gate(&rt, body.as_bytes()).await, Ok(()));
+    let elapsed = t.elapsed();
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let worst = probe.await.unwrap();
+    eprintln!("mesure I3 : {MAX_PINS_PER_ORG} premières vues en {elapsed:?}, attente maximale du verrou {worst:?}");
+    assert!(elapsed < Duration::from_secs(10), "{elapsed:?}");
+    let text = std::fs::read_to_string(env.state_dir.join(synco_ai_runtime::member_pins::MEMBER_PINS_FILE)).unwrap();
+    assert_eq!(text.matches("\"fingerprint\"").count(), MAX_PINS_PER_ORG, "toutes écrites");
+    // Même réponse : rien à écrire, acceptée.
+    assert_eq!(member_keys_gate(&rt, body.as_bytes()).await, Ok(()));
+    // Un membre de plus : plafond, refus fermé, alerte.
+    let more = json!({ "members": [{ "userId": "cm3chargeenplus0000000001", "publicKey": rsa_jwk(1) }] }).to_string();
+    assert_eq!(member_keys_gate(&rt, more.as_bytes()).await, Err("member_pins_limit"));
+    assert!(rt.state.lock().await.alerts.iter().any(|(_, c)| *c == "member_pins_limit"));
+    // Revue M5 : échec d'écriture → refus fermé et alerte visible au dashboard.
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::set_permissions(&env.state_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let changed =
+        json!({ "members": [{ "userId": "cm3charge0000000000000000", "publicKey": rsa_jwk(250) }] }).to_string();
+    let result = member_keys_gate(&rt, changed.as_bytes()).await;
+    std::fs::set_permissions(&env.state_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(result, Err("member_key_changed"), "refus maintenu même si sa mémorisation échoue");
+    assert!(rt.state.lock().await.alerts.iter().any(|(_, c)| *c == "member_pins_not_saved"));
+    synco_ai_runtime::app::shutdown(&rt).await;
+}
+
+/// Revue L05b : vérifications de rotation bornées par réponse, org revérifiée après l'appel
+/// `sign-key`, deux réponses concurrentes pour un même membre jamais vu.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cles_rsa_bornes_org_et_concurrence() {
+    use synco_ai_runtime::workers::{MAX_ROTATION_LOOKUPS, member_keys_gate};
+    let env = setup().await;
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    let rt = Arc::clone(&env.running.runtime);
+    let org = rt.state.lock().await.org_id.clone().unwrap();
+    let body = |m: &[(&str, u8)]| {
+        json!({ "members": m.iter().map(|(u, k)| json!({ "userId": u, "publicKey": rsa_jwk(*k) })).collect::<Vec<_>>() })
+            .to_string()
+    };
+
+    // 1. Au plus MAX_ROTATION_LOOKUPS appels `sign-key` par réponse.
+    let users: Vec<String> = (0..MAX_ROTATION_LOOKUPS + 3).map(|i| format!("cm3rotation{i:014}")).collect();
+    for u in &users {
+        let k = EcSigningKey::generate(&mut OsRandom).unwrap().public_key().unwrap().to_canonical();
+        rt.state.lock().await.pins.check_or_pin(u, Some(&k), &[], now()).unwrap();
+        env.api.with(|st| st.sign_keys.insert(u.clone(), k.clone()));
+    }
+    let first: Vec<(&str, u8)> = users.iter().map(|u| (u.as_str(), 1)).collect();
+    assert_eq!(member_keys_gate(&rt, body(&first).as_bytes()).await, Ok(()));
+    let changed: Vec<(&str, u8)> = users.iter().map(|u| (u.as_str(), 2)).collect();
+    let lookups = || env.api.with(|st| st.seen.iter().filter(|r| r.path.contains("cm3rotation")).count());
+    let before = lookups();
+    assert_eq!(member_keys_gate(&rt, body(&changed).as_bytes()).await, Err("member_key_changed"));
+    assert_eq!(lookups() - before, MAX_ROTATION_LOOKUPS, "vérifications de rotation bornées");
+
+    // 2. Rotation valide de USER, mais désappairage pendant l'appel `sign-key` : rien d'installé.
+    assert_eq!(member_keys_gate(&rt, body(&[(USER, 1)]).as_bytes()).await, Ok(()));
+    let k2 = EcSigningKey::generate(&mut OsRandom).unwrap();
+    let t = synco_e2ee::identity::sign_identity_transition(
+        &env.user_key,
+        USER,
+        0,
+        &rsa_jwk(4),
+        &k2.public_key().unwrap().to_canonical(),
+    )
+    .unwrap();
+    env.api.with(|st| {
+        st.slow_sign_key_ms = 400;
+        st.transitions.insert(
+            USER.into(),
+            vec![json!({ "seq": t.seq, "oldPublicSignKey": t.old_public_sign_key, "newPublicKey": t.new_public_key,
+                "newPublicSignKey": t.new_public_sign_key, "signature": t.signature })],
+        );
+    });
+    let gate = {
+        let (rt, b) = (Arc::clone(&rt), body(&[(USER, 4)]));
+        tokio::spawn(async move { member_keys_gate(&rt, b.as_bytes()).await })
+    };
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    rt.state.lock().await.org_id = None;
+    let result = gate.await.unwrap();
+    rt.state.lock().await.org_id = Some(org.clone());
+    assert_eq!(result, Err("member_pins_unavailable"));
+    assert_eq!(
+        rt.state.lock().await.member_pins.get(&org, USER).unwrap().fingerprint,
+        spki(1),
+        "org revérifiée après l'appel réseau : rotation non installée"
+    );
+    // Même rotation, org stable : acceptée.
+    env.api.with(|st| st.slow_sign_key_ms = 0);
+    assert_eq!(member_keys_gate(&rt, body(&[(USER, 4)]).as_bytes()).await, Ok(()));
+    assert_eq!(rt.state.lock().await.member_pins.get(&org, USER).unwrap().fingerprint, spki(4));
+
+    // 3. Deux réponses concurrentes pour un membre jamais vu, avec deux clés différentes : une seule
+    //    est épinglée, l'autre refusée.
+    let (a, b) = (body(&[("cm3concurrent0000000000001", 5)]), body(&[("cm3concurrent0000000000001", 6)]));
+    let (ra, rb) = tokio::join!(member_keys_gate(&rt, a.as_bytes()), member_keys_gate(&rt, b.as_bytes()));
+    let pinned = rt.state.lock().await.member_pins.get(&org, "cm3concurrent0000000000001").unwrap().fingerprint.clone();
+    match (ra, rb) {
+        (Ok(()), Err("member_key_changed")) => assert_eq!(pinned, spki(5)),
+        (Err("member_key_changed"), Ok(())) => assert_eq!(pinned, spki(6)),
+        other => panic!("une seule clé doit gagner : {other:?}"),
+    }
+    synco_ai_runtime::app::shutdown(&rt).await;
 }

@@ -3,6 +3,7 @@
 (function () {
   var main = document.getElementById("main");
   var csrf = "";
+  var confirming = false;
   var timer = null;
   var sessionsState = { sort: "started", desc: true, offset: 0, limit: 25, state: "", user: "", provider: "", period: "0", errorsOnly: false };
   var totalsState = { by: "user", period: "0" };
@@ -41,6 +42,7 @@
   }
   function when(t) { return t ? new Date(t * 1000).toLocaleString("fr-FR") : "—"; }
   function stateLabel(s) { return STATES[s] || s; }
+  function group4(h) { return (String(h || "").match(/.{1,4}/g) || []).join(" "); }
 
   function api(path, opts) {
     return fetch(path, Object.assign({ credentials: "same-origin" }, opts || {})).then(function (res) {
@@ -101,6 +103,42 @@
     kids.push(el("div", { class: "grid" }, [
       card("Aujourd'hui (UTC)", eur(o.costs.day)), card("7 derniers jours", eur(o.costs.week)), card("30 derniers jours", eur(o.costs.month))
     ]));
+    if (o.memberKeyChanges && o.memberKeyChanges.length) {
+      kids.push(el("h2", { text: "Clés de membres refusées" }));
+      kids.push(el("p", { class: "error", text: "La clé de chiffrement de ces membres a changé sans preuve signée : le runtime refuse de créer des salons tant que la clé n'est pas acceptée. Le serveur Synco a peut-être substitué cette clé." }));
+      kids.push(el("p", { class: "muted", text: "Synco n'affiche pas encore au membre l'empreinte de sa propre clé : aucune comparaison d'empreinte n'est possible aujourd'hui. Contactez le membre par un autre canal que Synco et demandez-lui s'il a réinitialisé ou renouvelé son chiffrement, et quand (comparez avec la date « Vue le »). N'acceptez que s'il le confirme ; sinon laissez la clé refusée. Les empreintes ci-dessous servent à reconnaître une même clé d'une alerte à l'autre." }));
+      var mrows = o.memberKeyChanges.map(function (c) {
+        var cell = el("td", {});
+        var ask = el("button", { class: "btn", type: "button", text: "Accepter cette clé…" });
+        ask.addEventListener("click", function () {
+          var yes = el("button", { class: "btn", type: "button", text: "Confirmer : empreinte vérifiée avec le membre" });
+          var no = el("button", { class: "btn", type: "button", text: "Annuler" });
+          no.addEventListener("click", function () { confirming = false; cell.replaceChildren(ask); });
+          yes.addEventListener("click", function () {
+            yes.disabled = true;
+            confirming = false;
+            api("/api/member-keys/accept", {
+              method: "POST",
+              headers: { "content-type": "application/json", "x-csrf-token": csrf },
+              body: JSON.stringify({ userId: c.userId, fingerprint: c.fingerprint })
+            }).then(load).catch(function (e) { if (e.message !== "401") fail(e); });
+          });
+          // Pas de rafraîchissement automatique pendant la confirmation.
+          confirming = true;
+          cell.replaceChildren(yes, no);
+        });
+        cell.appendChild(ask);
+        return el("tr", {}, [
+          el("td", { class: "mono", text: c.userId }),
+          el("td", { class: "mono", text: group4(c.pinned) }),
+          el("td", { class: "mono", text: group4(c.presented) }),
+          el("td", { text: when(c.seen) }),
+          cell
+        ]);
+      });
+      var mhead = el("tr", {}, ["Membre", "Empreinte épinglée", "Empreinte proposée", "Vue le", ""].map(function (h) { return el("th", { text: h }); }));
+      kids.push(el("div", { class: "tablewrap" }, [el("table", {}, [el("thead", {}, [mhead]), el("tbody", {}, mrows)])]));
+    }
     kids.push(el("h2", { text: "Alertes récentes" }));
     if (!o.alerts.length) {
       kids.push(el("p", { class: "muted", text: "Aucune alerte." }));
@@ -278,7 +316,7 @@
       document.getElementById("updated").textContent = "Mis à jour à " + new Date().toLocaleTimeString("fr-FR");
     }).catch(function (e) { if (e.message !== "401") fail(e); });
   }
-  window.addEventListener("hashchange", function () { filterNode = null; load(); });
+  window.addEventListener("hashchange", function () { filterNode = null; confirming = false; load(); });
   document.getElementById("logout").addEventListener("click", function () {
     fetch("/api/logout", { method: "POST", credentials: "same-origin", headers: { "x-csrf-token": csrf } }).then(function () {
       window.location.href = "/login";
@@ -286,7 +324,7 @@
   });
   api("/api/session").then(function (s) { csrf = s.csrf || ""; return load(); });
   timer = window.setInterval(function () {
-    if (!document.hidden && !(document.activeElement && /^(INPUT|SELECT)$/.test(document.activeElement.tagName))) load();
+    if (!document.hidden && !confirming && !(document.activeElement && /^(INPUT|SELECT)$/.test(document.activeElement.tagName))) load();
   }, 5000);
   void timer;
 })();

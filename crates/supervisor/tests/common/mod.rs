@@ -71,6 +71,12 @@ pub struct MockState {
     pub entries: BTreeMap<String, Vec<Value>>,
     pub delegation_status: BTreeMap<String, String>,
     pub sign_keys: BTreeMap<String, String>,
+    /// Chaîne de transitions servie avec `sign-key`, par utilisateur.
+    pub transitions: BTreeMap<String, Vec<Value>>,
+    /// `GET /e2ee/members/keys` : `members`.
+    pub members: Value,
+    /// Délai de `GET /users/:userId/sign-key` (ms).
+    pub slow_sign_key_ms: u64,
     pub pending: Vec<Value>,
     pub conversations: BTreeMap<String, Conversation>,
     pub stream_hellos: u32,
@@ -236,6 +242,10 @@ async fn channel(
         };
         tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
     }
+    if uri.path().ends_with("/sign-key") {
+        let delay = state.lock().unwrap().slow_sign_key_ms;
+        tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+    }
     // Route lente (tests de concurrence du relais).
     if uri.path().ends_with("/tools") {
         tokio::time::sleep(std::time::Duration::from_millis(400)).await;
@@ -284,8 +294,12 @@ async fn channel(
             st.delegation_status.insert((*id).to_owned(), s);
             StatusCode::NO_CONTENT.into_response()
         }
+        ("GET", ["e2ee", "members", "keys"]) => axum::Json(json!({ "members": st.members })).into_response(),
         ("GET", ["users", id, "sign-key"]) => match st.sign_keys.get(*id) {
-            Some(k) => axum::Json(json!({ "publicSignKey": k, "transitions": [] })).into_response(),
+            Some(k) => {
+                let chain = st.transitions.get(*id).cloned().unwrap_or_default();
+                axum::Json(json!({ "publicSignKey": k, "transitions": chain })).into_response()
+            }
             None => error(404, "not_found"),
         },
         ("GET", ["conversations"]) => axum::Json(Value::Array(st.pending.clone())).into_response(),

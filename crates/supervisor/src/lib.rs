@@ -25,6 +25,7 @@ pub mod error;
 pub mod hardening;
 pub mod keys;
 pub mod launcher;
+pub mod member_pins;
 pub mod pins;
 pub mod ratelimit;
 pub mod runtime;

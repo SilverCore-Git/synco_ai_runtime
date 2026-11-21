@@ -313,6 +313,139 @@ async fn note_created_thread(rt: &Arc<Runtime>, session: &str, epoch: u64, body:
     }
 }
 
+/// Annuaire des clés publiques des membres (04 §4.3), relu par `create_thread` avant de sceller.
+pub const MEMBER_KEYS_PATH: &str = "/api/runtime/v1/e2ee/members/keys";
+/// Code rendu au worker à la place de l'annuaire quand une clé a changé sans preuve (Q25).
+pub const MEMBER_KEY_CHANGED: &str = "member_key_changed";
+/// Vérifications de rotation (appels `sign-key`) au plus par réponse de l'annuaire.
+pub const MAX_ROTATION_LOOKUPS: usize = 8;
+
+/// Variante non canonique du chemin de l'annuaire (casse, `/` final, `//`, segment `.`) : Express
+/// (ni strict, ni sensible à la casse) et la normalisation des URL l'enverraient au même annuaire,
+/// sans passer par [`member_keys_gate`]. Refusée au relais (défense en profondeur, revue M1 ;
+/// l'encodage `%` est déjà refusé par [`worker_path_allowed`]).
+#[must_use]
+pub fn member_keys_variant(path: &str) -> bool {
+    let raw = path.split('?').next().unwrap_or_default();
+    if raw == MEMBER_KEYS_PATH {
+        return false;
+    }
+    let segments: Vec<String> =
+        raw.split('/').filter(|s| !s.is_empty() && *s != ".").map(str::to_ascii_lowercase).collect();
+    format!("/{}", segments.join("/")) == MEMBER_KEYS_PATH
+}
+
+/// Annuaire illisible (JSON invalide, `members` absent ou pas une liste) : refus fermé (502).
+pub const MEMBER_KEYS_UNREADABLE: &str = "member_keys_unreadable";
+/// Plafond d'épingles RSA atteint pour l'org : refus fermé.
+pub const MEMBER_PINS_LIMIT: &str = "member_pins_limit";
+/// Épingles RSA non enregistrées (ou runtime désappairé) : refus fermé.
+pub const MEMBER_PINS_UNAVAILABLE: &str = "member_pins_unavailable";
+
+/// Épinglage TOFU des clés RSA des membres (Q25, `member_pins`), appliqué par le superviseur à la
+/// réponse 2xx de [`MEMBER_KEYS_PATH`] **avant** que le worker la voie. `Err(code)` : la réponse
+/// entière est remplacée par une erreur (refus global, aucun scellement) — [`MEMBER_KEYS_UNREADABLE`]
+/// (502), [`MEMBER_KEY_CHANGED`]
+/// (une clé a changé sans chaîne d'identité valide), [`MEMBER_PINS_LIMIT`],
+/// [`MEMBER_PINS_UNAVAILABLE`]. Un membre dont la clé est illisible ou hors bornes n'est pas
+/// épinglé : le worker l'écarte lui-même (`skippedRecipients`).
+///
+/// Le verrou d'état n'est tenu que pour les comparaisons ; l'état est écrit **une fois** par étape,
+/// hors du verrou (`Runtime::save_member_pins`), et l'écriture doit réussir avant que la réponse
+/// soit rendue (sinon refus fermé).
+pub async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> Result<(), &'static str> {
+    use crate::member_pins::{MemberKey, SignHistory, Verdict, chain_vouches};
+    // Revue M3 : un corps illisible n'est jamais transmis tel quel (échec fermé).
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else { return Err(MEMBER_KEYS_UNREADABLE) };
+    let Some(members) = value.get("members").and_then(serde_json::Value::as_array) else {
+        return Err(MEMBER_KEYS_UNREADABLE);
+    };
+    let listed: Vec<(String, MemberKey)> = members
+        .iter()
+        .filter_map(|m| {
+            let id = m.get("userId")?.as_str().filter(|id| runtime_protocol::ids::is_identifier(id))?;
+            Some((id.to_owned(), MemberKey::from_jwk(m.get("publicKey")?)?))
+        })
+        .collect();
+    let now = now_secs();
+    // (utilisateur, clé présentée, empreinte épinglée, clés de signature épinglées, liaison RSA)
+    let (org, changed, full, snapshot) = {
+        let mut st = rt.state.lock().await;
+        let Some(org) = st.org_id.clone() else { return Err(MEMBER_PINS_UNAVAILABLE) };
+        let mut changed = Vec::new();
+        let mut full = false;
+        for (user, key) in listed {
+            match st.member_pins.check(&org, &user, &key, now) {
+                Verdict::Pinned | Verdict::Trusted => {}
+                Verdict::Full => full = true,
+                Verdict::Changed => {
+                    let from = st.member_pins.get(&org, &user).map(|p| p.fingerprint.clone()).unwrap_or_default();
+                    let (sign, bound): (Vec<String>, Option<String>) = st
+                        .pins
+                        .get(&user)
+                        .map(|p| (p.previous.iter().chain([&p.sign_key]).cloned().collect(), p.rsa_fingerprint.clone()))
+                        .unwrap_or_default();
+                    changed.push((user, key, from, sign, bound));
+                }
+            }
+        }
+        if full {
+            st.alert(now, "member_pins_limit");
+        }
+        (org, changed, full, st.member_pins.snapshot())
+    };
+    if !rt.save_member_pins(snapshot).await {
+        return Err(MEMBER_PINS_UNAVAILABLE);
+    }
+    if full {
+        return Err(MEMBER_PINS_LIMIT);
+    }
+    if changed.is_empty() {
+        return Ok(());
+    }
+    // Rotation légitime : chaîne de transitions partant de la clé de signature épinglée (03 §4).
+    // Seuls les utilisateurs qui ont délégué à ce runtime ont une telle épingle (et une route
+    // `sign-key` qui répond) ; les autres ne peuvent être acceptés que par l'admin (dashboard).
+    let mut refused = Vec::new();
+    for (i, (user, key, from, sign, bound)) in changed.into_iter().enumerate() {
+        let vouched = !sign.is_empty()
+            && i < MAX_ROTATION_LOOKUPS
+            && match rt.api.sign_key(&user).await {
+                Ok(r) => {
+                    let history = SignHistory { keys: &sign, bound_rsa: bound.as_deref() };
+                    chain_vouches(&user, &history, &crate::pins::chain_from(&r.transitions), &from, &key)
+                }
+                Err(_) => false,
+            };
+        let mut st = rt.state.lock().await;
+        // Désappairé ou réappairé pendant l'appel réseau : rien n'est installé.
+        if st.org_id.as_deref() != Some(org.as_str()) {
+            return Err(MEMBER_PINS_UNAVAILABLE);
+        }
+        if !(vouched && st.member_pins.rotate(&org, &user, &from, &key)) {
+            refused.push((user, key, from));
+        }
+    }
+    let snapshot = {
+        let mut st = rt.state.lock().await;
+        if st.org_id.as_deref() != Some(org.as_str()) {
+            return Err(MEMBER_PINS_UNAVAILABLE);
+        }
+        for (user, key, from) in &refused {
+            st.member_pins.refuse(&org, user, from, key, now);
+        }
+        if !refused.is_empty() {
+            st.alert(now, "member_rsa_key_changed");
+        }
+        st.member_pins.snapshot()
+    };
+    let saved = rt.save_member_pins(snapshot).await;
+    if !refused.is_empty() {
+        return Err(MEMBER_KEY_CHANGED);
+    }
+    if saved { Ok(()) } else { Err(MEMBER_PINS_UNAVAILABLE) }
+}
+
 fn created_key_error(reference: &str, code: &str) -> pipe::CreatedKeyMsg {
     pipe::CreatedKeyMsg { reference: reference.to_owned(), envelope: None, error: Some(code.to_owned()) }
 }
@@ -578,6 +711,10 @@ async fn relay(
     if req.id.is_empty() || req.id.len() > 64 {
         return Err("worker_bad_request_id");
     }
+    if member_keys_variant(&req.path) {
+        reply(tx, SignedResponse::failure(&req.id, "relay_refused"));
+        return Ok(());
+    }
     let (req, body, permit, epoch) = {
         let mut st = rt.state.lock().await;
         let owner_delegation = st.vault.get(user_id).map(|d| d.delegation_id().to_owned());
@@ -659,6 +796,21 @@ async fn relay(
                 {
                     note_created_thread(&rt, &session, epoch, &r.body).await;
                 }
+                // Q25 : annuaire des clés des membres vérifié contre les épingles AVANT le worker.
+                let member_keys = req.method == pipe::HttpMethod::Get
+                    && req.path.split('?').next() == Some(MEMBER_KEYS_PATH)
+                    && (200..300).contains(&r.status);
+                if member_keys && let Err(code) = member_keys_gate(&rt, &r.body).await {
+                    let headers = [("content-type".to_owned(), "application/json".to_owned())].into_iter().collect();
+                    let body = serde_json::json!({ "error": code }).to_string();
+                    let status = if code == MEMBER_KEYS_UNREADABLE { 502 } else { 409 };
+                    for p in SignedResponse::split(&req.id, status, &headers, body.as_bytes()) {
+                        if tx.send(ToWorker::Json(SupervisorMsg::SignedRequestResponse(p))).await.is_err() {
+                            break;
+                        }
+                    }
+                    return;
+                }
                 let headers =
                     r.content_type.map(|c| [("content-type".to_owned(), c)].into_iter().collect()).unwrap_or_default();
                 SignedResponse::split(&req.id, r.status, &headers, &r.body)
@@ -715,6 +867,21 @@ mod tests {
             "https://ailleurs.example.com/api/runtime/v1/e2ee/threads",
         ] {
             assert!(!worker_path_allowed(bad, s, Some("d1")), "{bad}");
+        }
+        // Revue M1 : variantes de l'annuaire des clés (contrôle d'épinglage contourné sinon).
+        assert!(!member_keys_variant(MEMBER_KEYS_PATH));
+        assert!(!member_keys_variant("/api/runtime/v1/e2ee/members/keys?x=1"));
+        assert!(!member_keys_variant("/api/runtime/v1/e2ee/threads"));
+        for v in [
+            "/api/runtime/v1/e2ee/members/keys/",
+            "/api/runtime/v1/e2ee/Members/Keys",
+            "/API/runtime/v1/e2ee/members/keys",
+            "/api/runtime/v1/e2ee//members/keys",
+            "/api/runtime/v1/e2ee/./members/keys",
+            "/api/runtime/v1/e2ee/members/keys/.",
+            "/api/runtime/v1/e2ee/members/keys/?x=1",
+        ] {
+            assert!(member_keys_variant(v), "{v}");
         }
         assert!(!worker_path_allowed("/api/runtime/v1/delegations/d1/entries", s, None));
     }

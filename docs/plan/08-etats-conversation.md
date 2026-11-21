@@ -53,8 +53,9 @@ Le régime `client` n'utilise pas ces états (la boucle tourne dans le navigateu
 | `awaiting_confirmation` | `confirm` | `queued` | utilisateur | API, au dépôt |
 | `running` | outil `propose_actions` (plan d'action, L00f) : `POST …/plans` | `awaiting_confirmation` (`pendingToolCall` = `propose_actions`) | worker | runtime |
 | `awaiting_confirmation` (plan) | `plan_decision` `reject` (route de décision) | `queued` ; `propose_actions` clos par `{"error":"plan_rejected"}` | utilisateur | API, à la décision |
-| `awaiting_confirmation` (plan) | `plan_decision` `accept` | inchangé (l'appareil exécute) | utilisateur | API |
-| `awaiting_confirmation` (plan) | `plan_result` | `queued` ; le worker exécute les actions d'agent puis clôt `propose_actions` avec le bilan | appareil | API, au dépôt |
+| `awaiting_confirmation` (plan) | `plan_decision` `accept` | inchangé si la première phase non vide est d'appareil (l'appareil exécute) ; `queued` si elle est d'agent (PC44) | utilisateur | API |
+| `awaiting_confirmation` (plan) | `plan_result:<k>` (fin d'une phase d'appareil) | `queued` si la phase suivante non vide est d'agent, ou s'il n'en reste aucune ; inchangé si c'est encore une phase d'appareil (PC44 ; 12 §8.2) | appareil | API, au dépôt |
+| `running` (plan) | `POST …/plans/:planId/agent-result` (fin d'une phase d'agent suivie d'une phase d'appareil) | `awaiting_confirmation` (même `pendingToolCall`), push `AI_AWAITING_CONFIRMATION` ; `expiresAt` passé : inchangé, le worker clôt `propose_actions` avec le bilan (PC44 ; 12 §8.3) | worker | API |
 | `awaiting_user` | `answer` ou `upload` | `queued` | utilisateur | API, au dépôt |
 | `awaiting_confirmation`, `awaiting_user` | `message` | `queued` ; l'outil en attente est clos par le worker avec le résultat `{"error":"superseded_by_user_message"}` | utilisateur | API puis runtime |
 | `awaiting_key` | entrée ajoutée pour `awaitingKey` (03 §11) | `queued` | client (P11) | API, à l'ajout de l'entrée |
@@ -127,13 +128,22 @@ Règles communes :
   plan lui-même (`proposed` … `done`) vit dans `AiActionPlan` (12 §7) et s'affiche dans la carte (L12).
 - Un `message` pendant l'attente : `queued`, `propose_actions` clos par
   `{"error":"superseded_by_user_message"}`, plan `rejected`.
-- Reprise du worker (12 §8.2) : il lit `plan_result`, exécute les actions d'agent acceptées, puis ferme
-  `propose_actions` par un `tool_result` portant les états et les sorties ; le tour continue (`running`).
+- **Phases (PC44, 12 §8.1)** : un plan mixte alterne phases d'appareil et phases d'agent. La conversation
+  est `awaiting_confirmation` pendant chaque phase d'appareil (l'app doit être ouverte ; sans appareil,
+  elle attend jusqu'à `expiresAt`) et `queued` / `running` pendant chaque phase d'agent.
+- Reprise du worker (12 §8.3) : il lit le `plan_result:<k>` reçu, exécute les actions d'agent acceptées
+  de la phase courante, puis soit rend la main à l'appareil (`agent-result`, `awaiting_confirmation`),
+  soit, après la dernière phase, un échec ou une expiration, ferme `propose_actions` par un
+  `tool_result` portant les états et les sorties ; le tour continue (`running`).
+- Expiration (12 §7.1) : elle vaut pour le plan entier ; un plan qui attend une phase d'appareil à
+  `expiresAt` donne `failed` `confirmation_timeout`, comme une confirmation simple.
+- Un `message` entre deux phases : `queued`, `propose_actions` clos par
+  `{"error":"superseded_by_user_message"}`, plan `rejected`, actions `pending` → `skipped`.
 - Une action exécutée par l'agent suit §5 : `executing` jamais relancé, `unknown_outcome`.
 - Au plus 3 plans consécutifs par tour, sinon `failed` `plan_limit`.
 - **Retrait du mode autonome** (PC40, 12 §11.4) : les conversations restent en régime `runtime`, en
-  pause, et reprennent en mode plan au prochain dépôt de délégation ; mécanique provisoire (QP3) :
-  `queued` / `running` → `awaiting_key`, `awaitingKey = "delegation:<runtimeId>"`, sortie vers `queued`
+  pause, et reprennent en mode plan au prochain dépôt de délégation ; mécanique (PC45) : autorisations
+  de session conservées, `queued` / `running` → `awaiting_key`, `awaitingKey = "delegation:<runtimeId>"`, sortie vers `queued`
   au dépôt, `key_timeout` au-delà de `keyTimeoutSecs`. C'est la seule révocation qui ne fait pas sortir
   du régime `runtime` (ligne « tout état `runtime` » ci-dessus).
 

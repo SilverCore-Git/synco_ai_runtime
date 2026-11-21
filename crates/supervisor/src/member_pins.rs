@@ -335,6 +335,11 @@ impl MemberPinStore {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => PinFile { v: 1, orgs: BTreeMap::new() },
             Err(e) => return Err(Error::Io(format!("{MEMBER_PINS_FILE} : {}", e.kind()))),
         };
+        // Revue M5 : version inconnue (fichier d'un runtime plus récent) : refus de démarrer plutôt
+        // qu'une relecture partielle suivie d'une réécriture qui perdrait des données.
+        if file.v != 1 {
+            return Err(Error::Io(format!("{MEMBER_PINS_FILE} : version {} inconnue", file.v)));
+        }
         Ok(Self::with(Some(path), file))
     }
 
@@ -354,6 +359,11 @@ impl MemberPinStore {
         self.dirty = false;
         self.generation = self.generation.saturating_add(1);
         Ok(Some(PinSnapshot { path, bytes, generation: self.generation, written: Arc::clone(&self.written) }))
+    }
+
+    /// Après un échec d'écriture : la prochaine photo réécrira tout l'état.
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
     }
 
     /// Écrit tout de suite (tests, outils) : à ne pas appeler sous le verrou d'état.
@@ -675,5 +685,10 @@ mod tests {
         // Fichier illisible : erreur, jamais une remise à zéro silencieuse.
         std::fs::write(dir.path().join(MEMBER_PINS_FILE), b"{").unwrap();
         assert!(MemberPinStore::open(dir.path()).is_err());
+        // Version inconnue : refus (revue M5).
+        std::fs::write(dir.path().join(MEMBER_PINS_FILE), br#"{"v":2,"orgs":{}}"#).unwrap();
+        assert!(MemberPinStore::open(dir.path()).is_err());
+        std::fs::write(dir.path().join(MEMBER_PINS_FILE), br#"{"v":1,"orgs":{}}"#).unwrap();
+        assert!(MemberPinStore::open(dir.path()).is_ok());
     }
 }

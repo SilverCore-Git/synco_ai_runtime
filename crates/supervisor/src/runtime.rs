@@ -176,7 +176,9 @@ impl Runtime {
             Err(_) => false,
         };
         if !saved {
-            self.state.lock().await.alert(now_secs(), "member_pins_not_saved");
+            let mut st = self.state.lock().await;
+            st.member_pins.mark_dirty();
+            st.alert(now_secs(), "member_pins_not_saved");
         }
         saved
     }

@@ -211,8 +211,9 @@ relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pi
   écriture atomique (`fsync` + `rename`) **une fois par étape de contrôle, hors du verrou d'état**
   (`spawn_blocking`, photos ordonnées : une plus ancienne n'écrase jamais une plus récente) ; la
   réponse n'est rendue au worker qu'après l'écriture (échec : refus fermé `member_pins_unavailable`
-  et alerte `member_pins_not_saved`). Absent : vide ; illisible : le superviseur ne démarre pas (pas
-  de remise à zéro silencieuse). **Bornes** (revue I3) : 2 000 épingles par org (au-delà, refus
+  et alerte `member_pins_not_saved`, l'état complet est réécrit à la prochaine occasion). Absent :
+  vide ; illisible ou de version inconnue (`v` ≠ 1, revue M5) : le superviseur ne démarre pas (pas de
+  remise à zéro silencieuse). **Bornes** (revue I3) : 2 000 épingles par org (au-delà, refus
   fermé `member_pins_limit` et alerte), 16 empreintes précédentes par membre, 100 clés en attente
   par org (au-delà, le refus reste fermé sans être mémorisé). Mesure : 2 000 premières vues dans une
   réponse en 0,12 s, verrou d'état tenu au plus 16 ms (`integration.rs::cles_rsa_charge_et_plafond`).

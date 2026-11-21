@@ -1564,6 +1564,17 @@ async fn cles_rsa_charge_et_plafond() {
     for bad in [&b"pas du json"[..], br#"{"members":{}}"#, br#"{"autre":[]}"#] {
         assert_eq!(member_keys_gate(&rt, bad).await, Err("member_keys_unreadable"));
     }
+    // Revue M5 : première vue qui ne peut pas être enregistrée → refus fermé et alerte.
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let first =
+            json!({ "members": [{ "userId": "cm3charge0000000000000000", "publicKey": rsa_jwk(1) }] }).to_string();
+        std::fs::set_permissions(&env.state_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let result = member_keys_gate(&rt, first.as_bytes()).await;
+        std::fs::set_permissions(&env.state_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(result, Err("member_pins_unavailable"));
+        assert!(rt.state.lock().await.alerts.iter().any(|(_, c)| *c == "member_pins_not_saved"));
+    }
     let members: Vec<Value> = (0..MAX_PINS_PER_ORG)
         .map(|i| json!({ "userId": format!("cm3charge{i:016}"), "publicKey": rsa_jwk(u8::try_from(i % 200).unwrap() + 1) }))
         .collect();
@@ -1597,5 +1608,14 @@ async fn cles_rsa_charge_et_plafond() {
     let more = json!({ "members": [{ "userId": "cm3chargeenplus0000000001", "publicKey": rsa_jwk(1) }] }).to_string();
     assert_eq!(member_keys_gate(&rt, more.as_bytes()).await, Err("member_pins_limit"));
     assert!(rt.state.lock().await.alerts.iter().any(|(_, c)| *c == "member_pins_limit"));
+    // Revue M5 : échec d'écriture → refus fermé et alerte visible au dashboard.
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::set_permissions(&env.state_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let changed =
+        json!({ "members": [{ "userId": "cm3charge0000000000000000", "publicKey": rsa_jwk(250) }] }).to_string();
+    let result = member_keys_gate(&rt, changed.as_bytes()).await;
+    std::fs::set_permissions(&env.state_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(result, Err("member_key_changed"), "refus maintenu même si sa mémorisation échoue");
+    assert!(rt.state.lock().await.alerts.iter().any(|(_, c)| *c == "member_pins_not_saved"));
     synco_ai_runtime::app::shutdown(&rt).await;
 }

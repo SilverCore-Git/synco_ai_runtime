@@ -192,6 +192,7 @@ constate et l'écrit.
 | Code | État atteint | Sens |
 |---|---|---|
 | `provider_error` | `failed` | Le fournisseur LLM a échoué après 3 tentatives (backoff 1 s, 4 s, 16 s) |
+| `provider_not_configured` | `failed` | **Ajouté par L03d (2026-11-21, Q30 / PC16)** à `CONVERSATION_ERROR_CODES` (`lastErrorCode`, `error` de `transcript` et de `status`) : fournisseur non activé pour l'org, sans clé, ou passerelle refusée. `provider_error` reste l'échec d'un fournisseur configuré. **Le runtime n'écrit pas encore ce code** : il écrit `provider_error` dans ces cas (`crates/supervisor/src/workers.rs:130`) ; adoption **ouverte** |
 | `provider_auth` | `failed` | Clé ou ticket du fournisseur refusé |
 | `budget_exceeded` | `failed` | `maxTokensPerConversation` atteint, ou quota de tokens du mandataire (`proxy_token_budget`, 10 §4) — révisé après L07 |
 | `step_limit` | `idle` | `maxStepsPerTurn` ou `maxTokensPerTurn` atteint, ou quota d'appels du mandataire (`proxy_call_budget`, 10 §4) : le tour s'arrête, l'utilisateur peut relancer (« continue ») — révisé après L07 |

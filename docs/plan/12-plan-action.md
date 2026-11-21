@@ -75,6 +75,9 @@ plan. Un appel invalide n'écrit rien : le worker rend au modèle le résultat
 > action utilise l'identifiant créé par une autre, mets cette autre dans `after` et l'identifiant dans
 > `argsRefs` (`"$<n>.id"`). Regroupe les actions liées avec `groups` (par exemple une catégorie et ses
 > salons) pour que l'utilisateur lise le plan facilement ; les groupes ne changent pas l'exécution.
+> Un plan compte **au plus 100 actions** (et 2 000 dépendances au total) : au-delà, découpe le travail en
+> plusieurs plans successifs, chacun cohérent et utile seul (par exemple une catégorie complète par
+> plan), et propose le suivant une fois le précédent exécuté. Tu as droit à 3 plans consécutifs par tour.
 
 ### 3.2 Clair (interne, chiffré sous `CK`)
 
@@ -95,13 +98,13 @@ plan. Un appel invalide n'écrit rien : le worker rend au modèle le résultat
 | `planId`, `sessionId`, `toolCallId` | identifiants 00 §3.2 ; `sessionId` = la conversation ; `toolCallId` = l'appel `propose_actions` |
 | `createdAt`, `expiresAt` | secondes Unix ; `createdAt < expiresAt ≤ createdAt + confirmationTimeoutSecs` de l'org (09 §3, borné [1 h, 7 j]) |
 | `summary` | chaîne ; affichée **à part**, en citation, jamais comme intitulé d'action (C1 §3) |
-| `actions` | 1 à 20 objets ; `n` = position (1, 2, 3… sans trou) |
+| `actions` | 1 à **100** objets (PC61) ; `n` = position (1, 2, 3… sans trou) |
 | `kind` | liste fermée du §4 |
 | `tool` | présent **si et seulement si** `kind = server.call` |
 | `args` | objet strict selon le `kind` (§4) ; aucun champ inconnu |
-| `groups` | facultatif (PC58) ; 1 à 20 objets `{ id, label }`, `id` = `[a-z0-9_-]{1,32}` distincts, `label` chaîne de 1 à 100 ; présentation seulement |
+| `groups` | facultatif (PC58) ; 1 à 50 objets `{ id, label }`, `id` = `[a-z0-9_-]{1,32}` distincts, `label` chaîne de 1 à 100 ; présentation seulement |
 | `group` | facultatif ; `id` d'un élément de `groups` |
-| `after` | facultatif ; entiers distincts, chacun `< n` ; équivalent de `needs` (§8.1) : toutes les actions requises, et seulement elles |
+| `after` | facultatif ; entiers distincts, chacun `< n` ; **2 000** entrées au plus pour tout le plan (PC61) ; équivalent de `needs` (§8.1) : toutes les actions requises, et seulement elles |
 | `argsRefs` | facultatif ; `{ "<champ de args>": "$<m>.<champ exporté>" }`, `m ∈ after` (action d'appareil ou d'agent, PC44), champ exporté par le `kind` de `m` (§4), champ cible présent dans le schéma de l'action et **absent** de `args` |
 
 ### 3.3 Sérialisation et chiffrement
@@ -110,7 +113,7 @@ plan. Un appel invalide n'écrit rien : le worker rend au modèle le résultat
   nombre décimal) : clés triées par unités UTF-16, aucune espace, chaînes échappées comme
   `JSON.stringify`. C'est aussi la forme compacte de `serde_json::to_string` (clés triées) pour ces
   valeurs : le vecteur le vérifie. Sert au clair du plan, au clair de `plan_result` et aux condensats.
-- **Taille** : `utf8(JCS(plan)) ≤ 65 536` octets.
+- **Taille** : `utf8(JCS(plan)) ≤ 262 144` octets (256 Kio, PC61 ; 64 Kio avant le passage à 100 actions).
 - **Chiffrement** : format `gcm1:` de 03 §6.3 sous la `CK` de la conversation, avec
   `aad = utf8(sessionId ":" planId ":plan")` (`messageId` = `planId`, `fieldName` = `plan`).
 - **Liaison** : aucune signature en plus (C1 §2.3) : seuls les appareils du propriétaire et le runtime
@@ -165,7 +168,9 @@ rend le plan entier invalide (code `plan_invalid`). Règles (vecteurs `action-pl
 
 1. Champs du §3.2 (`groups` et `group` compris), rien d'autre ; chaque `group` existe dans `groups` ; `v = 1` ; identifiants conformes ; `sessionId` = la conversation.
 2. `createdAt < expiresAt`, écart ≤ délai de l'org (et ≤ 604 800).
-3. 1 à 20 actions, `n` consécutifs depuis 1 ; clair canonique ≤ 64 Kio.
+3. 1 à 100 actions, `n` consécutifs depuis 1 ; clair canonique ≤ 256 Kio ; au plus 2 000 entrées
+   d'`after` en tout (PC61). Le worker rend alors au modèle `{"error":"plan_invalid","detail":
+   "plan_too_large"}`, pour qu'il découpe (§3.1).
 4. `kind` dans la liste ; `tool` présent seulement pour `server.call`, outil `server` et `mutating` du
    manifeste (`GET …/tools`) ; `args` stricts (champs connus, requis présents dans `args` ou fournis par
    `argsRefs`, types et bornes).
@@ -655,13 +660,20 @@ transitives de l'action (PC54) ; le statut du plan est recalculé (§7.1). Débi
 
 | Méthode et chemin | Auth | Corps | Succès | Refus |
 |---|---|---|---|---|
-| `POST /conversations/:sessionId/plans` | S+A, bail | `{ leaseEpoch, baseRev, messages, title?, pendingToolCall, consumedInbox, events?, plan: { planId, toolCallId, actionCount, createdAt, expiresAt, actions: [{ n, executor, after }], serverDigests: [{ n, sha256Hex }] } }` | `201 { rev, planId }` : transcript écrit **et** ligne créée dans une transaction, statut `awaiting_confirmation` | `400 invalid_body` (forme ; `pendingToolCall.name ≠ propose_actions` ; `planId` ou `toolCallId` ≠ ceux de `pendingToolCall` ; `actionCount` hors 1..20 ; `actions` qui ne couvre pas exactement `1..actionCount` ; `after` non conforme (entiers distincts `< n`) ; `n` de `serverDigests` hors plage, en double ou d'exécutant `device` ; `expiresAt` hors `]maintenant, maintenant + confirmationTimeoutSecs + 300]`), `409 plan_exists`, `409 rev_conflict`, `409 lease_conflict` |
+| `POST /conversations/:sessionId/plans` | S+A, bail | `{ leaseEpoch, baseRev, messages, title?, pendingToolCall, consumedInbox, events?, plan: { planId, toolCallId, actionCount, createdAt, expiresAt, actions: [{ n, executor, after }], serverDigests: [{ n, sha256Hex }] } }` | `201 { rev, planId }` : transcript écrit **et** ligne créée dans une transaction, statut `awaiting_confirmation` | `400 invalid_body` (forme ; `pendingToolCall.name ≠ propose_actions` ; `planId` ou `toolCallId` ≠ ceux de `pendingToolCall` ; `actionCount` hors 1..100 ; plus de 2 000 entrées d'`after` en tout ; `actions` qui ne couvre pas exactement `1..actionCount` ; `after` non conforme (entiers distincts `< n`) ; `n` de `serverDigests` hors plage, en double ou d'exécutant `device` ; `expiresAt` hors `]maintenant, maintenant + confirmationTimeoutSecs + 300]`), `409 plan_exists`, `409 rev_conflict`, `409 lease_conflict` |
 | `GET /conversations/:sessionId/plans/:planId` | S+A | — | `200 PlanView` | `404 not_found`, `403 out_of_scope` |
 | `POST /conversations/:sessionId/plans/:planId/agent-result` | S+A, bail | `{ leaseEpoch, baseRev, phase, value: "gcm1:…" }` | `200 { rev, status }` : valeur rangée, conversation `awaiting_confirmation`, push si des actions d'appareil sont prêtes (§8.3) | `400 invalid_body`, `404 not_found`, `409 plan_phase_mismatch` (`phase` ≠ phases d'agent closes + 1, action d'agent prête ou `executing`), `409 plan_not_executing` (plan terminé : le worker ferme `propose_actions`), `409 rev_conflict`, `409 lease_conflict` |
 | `POST /conversations/:sessionId/tools/:name/execute` | S+A | `{ leaseEpoch, args?, argsRefs?, refs?, plan?: { planId, n } }` | inchangé ; avec `plan`, l'état de l'action suit et sa sortie est enregistrée (§8.3, §8.5) | + `403 action_not_accepted`, `409 action_state_conflict`, `409 plan_phase_mismatch`, `409 plan_not_executing` |
 | `POST /e2ee/threads` | S+A | + `plan?: { planId, n }` | inchangé ; sortie enregistrée (§8.5) | + `403 autonomy_required`, `403 feature_not_allowed`, `403 action_not_accepted`, `409 action_state_conflict`, `409 plan_phase_mismatch` |
 | `GET /delegations` | S | — | ajoute `mandateVersion`, `mode`, `ownerRsaSpkiHex` | — |
 | Routes `rt1` et L03f | | | conditions du §10.4 | |
+
+**Budget de validation de l'API (PC61)** : corps de `POST …/plans` ≤ **1 Mio** (le plan chiffré en
+`pendingToolCall` peut atteindre ~350 Kio en base64 ; les autres routes du canal restent à 256 Kio) ;
+au plus 100 actions, 100 condensats et 2 000 entrées d'`after` ; contrôles en temps linéaire
+(`n` consécutifs, `after` trié et `< n`, aucun parcours de graphe au-delà d'un passage dans l'ordre de
+`n`) ; insertion des 100 lignes `AiActionPlanAction` par un seul `createMany`. Le calcul « prête » à
+chaque transition ne lit que les lignes du plan (index `[planId, state]`).
 
 Flux (04 §6) : `delegation.revoked.reason` peut valoir `autonomy_withdrawn` ; `conversation.wake.reason`
 `decision` couvre `plan_decision` (dont l'arrêt) et `plan_result`.
@@ -697,6 +709,7 @@ phases, le claim et les résultats de phase d'agent (chiffrés). **Aucun contenu
 |---|---|---|
 | `plan_invalid` | worker (résultat d'outil), appareil (`reason`), API `400` (forme) | Plan hors des règles du §5 |
 | `plan_rejected` | résultat de `propose_actions` | Refus de l'utilisateur ou plan invalide à l'appareil (`reason`) |
+| `plan_too_large` | `detail` de `plan_invalid` (worker → modèle) | Plus de 100 actions, plus de 2 000 dépendances ou clair > 256 Kio : découper (PC61) |
 | `plan_limit` | `lastErrorCode` (`failed`) | Plus de 3 plans consécutifs dans un tour |
 | `plan_exists` | API 409 | `planId` déjà utilisé |
 | `plan_not_pending` | API 409 | Décision sur un plan déjà décidé autrement ou expiré |
@@ -734,6 +747,15 @@ après la livraison ; le texte qui en dépendait (« provisoire ») est réécri
 | **PC57** — Mode autonome | Absence de recontrôle API des `refs` du `thread.create` autonome acceptée | §8.4, §10.6 |
 | **PC58** — Graphe et parallélisme | `after` = `needs` ; `groups` de présentation ; actions prêtes exécutées en parallèle (concurrence 4, maximum 8, des deux côtés) ; `429` : 3 nouveaux essais ; consigne au modèle ; présentation en graphe pour L12 ; `category.create` et `categoryId` pour le cas « catégories puis salons ». **Ajustement de PC44** : phases dynamiques (une séance d'exécution par exécutant, qui peuvent se chevaucher) au lieu de phases précalculées strictement alternées, qui sérialisaient des branches indépendantes | §3, §4, §8.1 à §8.3, §8.7, §17 |
 
+### Dernier ajustement (PC59 à PC62, 2026-11-21)
+
+| Décision | Contenu | Où |
+|---|---|---|
+| **PC59** | `category.create` et `categoryId` sur `thread.create` validés | §4 |
+| **PC60** | Concurrence 4 par défaut, 8 au plus ; 3 nouveaux essais sur `429` : validés | §8.7 |
+| **PC61** | Plan de **100 actions** au plus (était 20), 2 000 dépendances, clair ≤ 256 Kio, corps de `POST …/plans` ≤ 1 Mio ; au-delà l'agent découpe (`plan_too_large`) ; groupes repliés au-delà de 30 actions | §3, §5, §12.2, §14, §17 |
+| **PC62** | Un plan accepté qui expire relance la conversation pour un bilan : validé | §7.1 |
+
 **Risques acceptés** : (1) références du `thread.create` autonome non recontrôlées par l'API (PC57,
 §10.6) ; (2) pendant un plan, l'API sait quel objet créé correspond à quelle action (métadonnée sans
 contenu, effacée à la clôture, PC47, PC56) ; (3) condensat d'une action refusée devinable si ses
@@ -769,6 +791,12 @@ manière des jobs de GitHub Actions :
 - **Suivi** : bouton « Arrêter le plan » (confirmation par la fenêtre de l'app, jamais `confirm()`),
   bandeau « en cours sur votre autre appareil » si un autre appareil tient le claim, bandeau « Votre
   message sera traité à la fin du plan » (§8.6), compteur « 7 / 12 faites ».
+- **Grands plans (PC61)** : au-delà de **30 actions**, chaque groupe est **replié par défaut** en une
+  seule carte (libellé, nombre d'actions, compteurs par état, lien vers les groupes dont il dépend), qui
+  se déplie au clic ; les actions sans groupe sont rassemblées par niveau en un bloc repliable
+  « N actions ». Une action **sensible** n'est jamais cachée : son groupe s'affiche déplié à la
+  validation tant qu'elle n'est pas cochée ou retirée (C1 §3). Le rendu ne dessine que les cartes visibles
+  (liste virtualisée au-delà de 100 cartes affichées).
 - **Mobile et écrans étroits** : repli en **liste** ordonnée par niveau puis par `n`, avec des en-têtes
   de niveau (« Étape 1 : en parallèle », …) et de groupe, la ligne « Dépend de » sur chaque élément, et
   les mêmes états. Aucune rangée de boutons par action (C1 §5.5) : le détail s'ouvre au toucher.

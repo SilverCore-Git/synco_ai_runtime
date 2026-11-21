@@ -407,9 +407,10 @@ Ce que le runtime a déjà vu reste vu (risque assumé, `03_securite.md §2`).
   `idle`. Le fichier est purgé sur `user.revoked`, `delegation.revoked` et expiration, et **réconcilié à
   chaque ouverture du flux** par `GET /conversations/:sessionId` (S+A, qui refuse une autorisation
   révoquée, expirée ou d'une délégation inactive) ; une erreur réseau garde l'entrée. Décision de
-  l'orchestrateur : persistance acceptée avec cette réconciliation. **Besoin API non tranché** : une
-  route « autorisations actives de l'org pour ce runtime » éviterait un appel par conversation
-  (00 §6 Q18). Clés remises au worker seulement si la délégation n'est pas expirée ; délégation
+  l'orchestrateur : persistance acceptée avec cette réconciliation. **Route livrée par L03d (2026-11-21,
+  Q18 / PC18)** : `GET /api/runtime/v1/authorizations?state=active` (04 §4.1) évite l'appel par
+  conversation ; **le runtime ne l'utilise pas encore** et réconcilie toujours par conversation (lot
+  d'adoption **ouvert**). Clés remises au worker seulement si la délégation n'est pas expirée ; délégation
   révoquée ou d'un appairage précédent jamais réinstallée (génération d'appairage vérifiée sous le
   verrou). Sources : `docs/journal.md`, entrée L05, écart 5 et corrections 3, 8, 9 ;
   `crates/supervisor/src/runtime.rs` (`reconcile_authorizations`), `state.rs:196`.
@@ -427,7 +428,7 @@ Ce que le runtime a déjà vu reste vu (risque assumé, `03_securite.md §2`).
   délégation absente, d'un autre runtime ou inactive → `404 not_found`) ; `POST …/status` →
   `204`, `404 not_found`.
 
-## 10. Clés créées par le runtime (signature FC4) (révisé après L03c, 2026-11-20)
+## 10. Clés créées par le runtime (signature FC4) (révisé après L03c, 2026-11-20 ; après L03d, 2026-11-21)
 
 Un outil exécuté par le worker peut créer une clé (`create_thread` : nouvelle `ThreadKey` scellée en
 RSA-OAEP pour chaque membre, comme `createThreadHelper`, `OrgAI.vue:495-528`). Les clients vérifient
@@ -481,7 +482,7 @@ Mandat servi (`GET …/delegations/:delegationId/mandate`, tout membre ; `getMan
 `delegationService.ts:543-566`) : exactement la forme de l'étape 1 ci-dessus, `certificate` étant
 celui du runtime de la délégation (`null` si la ligne n'existe plus) ; `404 not_found`.
 
-### 10.1 Pose a posteriori de l'enveloppe `rt1` (Q11 = B ; révisé après L03c, 2026-11-20)
+### 10.1 Pose a posteriori de l'enveloppe `rt1` (Q11 = B ; révisé après L03c, 2026-11-20 ; après L03d, 2026-11-21)
 
 L'enveloppe `rt1` signe `ctx = thread:<threadId>` et l'id du salon est tiré par l'API **à la
 création** (`POST /e2ee/threads`, 04 §4.3) : le runtime ne peut pas le signer d'avance. Décision du
@@ -502,10 +503,45 @@ dans `synco_api/tests/vectors/synco-e2ee/` et rejoués.
 
 **Limite inhérente à l'option B** : l'API n'a pas la clé du salon, elle **ne peut pas vérifier**
 `commitment`. Un runtime bogué ou compromis peut poser une enveloppe correctement signée mais avec un
-engagement faux : les clients à jour refusent alors la clé de ce salon et, la pose étant définitive
-(`409 envelope_exists` pour toute enveloppe différente), il n'y a **aucune voie de reprise** en v1
-(sauf intervention en base). Un runtime compromis peut de toute façon nuire aux salons qu'il crée ; le
+engagement faux : les clients à jour refusent alors la clé de ce salon et la pose est définitive pour
+toute enveloppe différente (`409 envelope_exists`). **Voie de reprise ajoutée par L03d (2026-11-21, Q21,
+PC23, PC26)** : voir « Réparation d'une enveloppe fausse » ci-dessous (« aucune voie de reprise », écrit
+après L03c, n'est plus vrai). Un runtime compromis peut de toute façon nuire aux salons qu'il crée ; le
 risque est d'abord celui d'un bogue, à couvrir par les vecteurs de L01 et les tests de L07.
+
+**Réparation d'une enveloppe fausse : réinitialisation par un humain, puis nouvelle pose par le runtime
+créateur** (L03d ; `SYNCOAI_REFONTE_FEATURE.md` §14.8 ; formes et codes en 04 §4.3, « Compléments de L03d » ;
+solution C de la proposition de l'orchestrateur, option B « remplacement automatique » écartée) :
+
+1. **Réinitialisation** par l'utilisateur : `POST /api/orgs/:orgId/ai/runtime/threads/:threadId/key-envelope/reset`.
+   Autorisés : administrateur de l'org (propriétaire ou `ORG_AI`) ou délégant créateur ; dans les deux cas
+   **avec l'accès actuel au salon** (PC26). Elle remet `commitment`, `signature`, `envelopeDelegationId` à
+   null, pose `envelopeResetAt` / `envelopeResetBy`, écrit un évènement `AiThreadEnvelopeEvent` et prévient
+   les clients (socket `thread:key-envelope-reset`) et le runtime créateur (trame `thread.envelope_reset`,
+   04 §6). Refus préalable `409 repose_unavailable` si le runtime créateur est désappairé ou si le délégant
+   n'a plus de délégation active vers lui.
+2. **Nouvelle pose** par le runtime : `POST /api/runtime/v1/e2ee/threads/:threadId/key-envelope/repose`
+   (**S seule**, 04 §4.3), signée par `csk` sur les octets de §10 avec le `delegationId` **actif** de la trame.
+   `creatorId` ne change jamais ; la délégation signataire est notée dans `ThreadKey.envelopeDelegationId`
+   (null = enveloppe posée par la délégation de `creatorId`, ou aucune). **Conséquence pour la vérification
+   d'un client (§10, étapes 1 et 3)** : le `delegationId` des octets signés est donc `envelopeDelegationId`
+   quand il est non nul, `creatorId` sans le préfixe `rt1:` sinon (lecture de §14.8, **non vérifiée dans le
+   code de l'app** ; le client L10 doit la confirmer). La règle d'entrée de délégation (§10, ci-dessus) reste
+   fondée sur `creatorId` : la délégation signataire n'y gagne aucun droit.
+3. **Ce que le runtime doit faire** (le serveur n'est pas de confiance ; 04 §6) : à `thread.envelope_reset`,
+   vérifier **avant de signer** qu'il a lui-même créé ce salon (registre local, comme les garde-fous
+   `created_key` ci-dessous) et qu'il détient la clé du salon (entrée `thread:<id>` déchiffrée de la
+   délégation active) ; recalculer `commitment` depuis la clé réelle, jamais depuis une valeur servie par
+   l'API ; signer pour le `delegationId` de la trame. **Contrainte** : si plus aucun processus du runtime ne
+   détient la clé (délégation renouvelée sans l'entrée, redémarrage avant la synchro P11), la repose attend la
+   prochaine synchro du délégant ; l'API n'y peut rien.
+4. **Choix** : l'API ne sait pas si un client a épinglé, et un runtime fautif pourrait remplacer en boucle ;
+   un humain qui constate le refus décide. La sécurité ne dépend pas de l'API : un serveur malveillant peut
+   seulement réinitialiser (déni de service), jamais forger.
+
+**État côté runtime au moment de ce report** : non implémenté (aucun traitement de `thread.envelope_reset`
+ni appel de `repose`, relu dans `crates/`) ; l'app (L10) doit afficher le refus et proposer la
+réinitialisation. Lots : **ouverts** (PC23 : « runtime lot ultérieur », app L10).
 
 **Réalisation par L07 (2026-11-20) : le worker ne signe pas lui-même.** Il n'a ni `csk` ni `DK`
 (mesure 7). Les étapes 2 et 4 (signature `rt1` et chiffrement de l'entrée sous `DK`) sont faites par
@@ -521,6 +557,29 @@ en TOFU. Les clés RSA publiques des membres utilisées pour sceller la clé du 
 par le superviseur** (L05b, 2026-11-21, Q25) : une clé changée sans chaîne de transitions d'identité
 valide (§4, étape 2) bloque la création de tout salon (06 §4.3). Limite : la clé RSA du
 **propriétaire** n'est pas liée à son mandat (le format du mandat est inchangé ; question 00 §6, Q25).
+
+**Épinglage des clés RSA : décisions du 2026-11-21 (PC27)**, reportées telles quelles (aucune n'est
+réalisée dans le code à ce jour sauf mention) :
+
+- **(a) Empreinte affichée par l'app** : l'app affichera à chaque membre l'**empreinte RFC 7638 de sa propre
+  clé RSA locale**, pour une vérification hors bande par l'admin du runtime (lots L10 / L11). Aujourd'hui
+  elle ne l'affiche pas (06 §4.3, revue I4) : l'admin ne peut pas comparer d'empreintes.
+- **(b) Mandat v2** : un mandat v2 inclura l'**empreinte SPKI de la clé RSA du propriétaire**, en priorité ;
+  le runtime lira **v1 et v2** (règle des formats rétrocompatibles). Changement côté app (L10) et côté
+  API (champ de version). **Format exact du mandat v2 : ouvert** (L05b a seulement proposé, comme
+  hypothèse, `synco-rt-mandate-v2|…|hex(SHA-256(SPKI))` ; non fixé ici). Le mandat v1 de §4 est inchangé.
+- **(d) Réinitialisation E2EE sans transition signée** (`/e2ee/v4/reset`, v3 : aucune preuve possible) :
+  **bloque la création de salons jusqu'à l'acceptation par l'admin du runtime** (v1). C'est le
+  comportement déjà réalisé par L05b (06 §4.3).
+- **(e) Refus global en v1** (déjà réalisé, 06 §4.3), avec un **raffinement `scope=owner` plus tard**
+  (limiter le refus aux salons dont le propriétaire est le seul destinataire) : non fait, non spécifié.
+- **(c) Route « chaîne de transitions »** (une route S+A du canal servant la chaîne d'identité de **tout**
+  membre de l'org, pour accepter automatiquement la rotation d'un membre qui n'a jamais délégué) :
+  **reportée** (non décidée pour la v1).
+- **Ouvert, non tranché, sans chiffre définitif** : (1) les **bornes de `member-rsa-pins.json`**
+  (2 000 épingles par org aujourd'hui, `member_pins_limit` ; Synco doit tenir **au moins 1 000 membres par
+  org** ; la valeur définitive n'est pas fixée) ; (2) la **purge d'`AiThreadEnvelopeEvent`** (aucune
+  rétention définie, 07 §5).
 
 ## 11. Salon créé par un autre membre en l'absence de l'utilisateur
 
@@ -599,4 +658,5 @@ vérifient mais ne se reproduisent pas à l'octet près.
 | `not_found` | API 404 | Délégation absente ou d'un autre ; pas de délégation active (`…/missing`) |
 | `forbidden` | API 403 | Non membre, appartenance perdue pendant le dépôt, non admin (révocations admin) |
 | `ai_disabled` | API 403 | Module IA coupé ou org bannie |
-| `envelope_exists` | API 409 | Une `ThreadKey` `rt1:` du salon porte déjà une enveloppe différente (§10.1 ; révisé après L03c) |
+| `envelope_exists` | API 409 | Une `ThreadKey` `rt1:` du salon porte déjà une enveloppe différente, à la pose comme à la nouvelle pose (§10.1 ; révisé après L03c et L03d) |
+| `envelope_not_set` / `repose_unavailable` | API 409 (route utilisateur de réinitialisation) | Aucune enveloppe à réinitialiser / runtime créateur désappairé ou sans délégation active du délégant (§10.1, 04 §4.3 ; L03d) |

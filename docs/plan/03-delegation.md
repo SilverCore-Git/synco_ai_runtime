@@ -138,8 +138,10 @@ avec la délégation `mandateVersion` (absent = `1`) et, pour le v2, `mode` et `
 Le runtime se fie au mode du mandat **vérifié**, jamais au champ servi seul ; la signature d'une version
 présentée comme l'autre échoue. Tout refus est `delegation_unusable` (§4, étape 3). Les clients
 n'écrivent plus que le v2 ; l'API accepte encore un dépôt v1 (lu comme `plan`), et le runtime lit v1 et
-v2. Vecteurs : `docs/plan/vectors/mandate-v2.json`. Usage de l'empreinte par le superviseur : 12 §15,
-QP4 (ouverte).
+v2. Vecteurs : `docs/plan/vectors/mandate-v2.json`. Usage de l'empreinte par le superviseur (**PC46**,
+2026-11-21 ; 12 §10.3) : pour un mandat v2 vérifié, `ownerRsaSpkiHex` est l'épingle de la clé RSA du
+propriétaire et prime sur l'épingle TOFU de `member-rsa-pins.json` ; un écart donne
+`409 member_key_changed` et une alerte, comme L05b ; mandat v1 : épinglage TOFU actuel.
 
 **Côté API.** Le dépôt (§7.1) porte `mandateVersion?`, `mode?`, `ownerRsaSpkiHex?` (12 §12.1) ;
 `AiRuntimeDelegation` les stocke en clair (07 §3) : `mode` sert au second verrou et aux conditions
@@ -375,7 +377,7 @@ remplacement par une nouvelle délégation (`superseded`).
 | Utilisateur banni de la plateforme (`User.bannedAt`, Q17 = C) | `POST /api/admin/users/:id/ban` → `onUserBanned(userId)`, filet `sweepBannedUserDelegations` | `revoked` / `user_banned` : **toutes** ses délégations actives, dans toutes ses orgs |
 | Expiration | maintenance (07 §9) | `expired` / `revokedReason = null` ; `delegation.revoked.reason = "expired"` |
 | Remplacement | nouveau dépôt (§7.1) | `superseded` / `superseded` (pas de `delegation.revoked` : `delegation.updated`) |
-| **Retrait du mode autonome** (L00f, PC40 ; 12 §11.4) | `isFeatureAllowed(autonomous_mode)` devient faux (politique, liste, opt-in retiré) ; délégations `mode = auto` seulement | `revoked` / `autonomy_withdrawn` ; **exception aux effets communs** : les conversations ne repassent pas en local, elles sont mises en pause puis reprennent en mode plan (12 §15, QP3) |
+| **Retrait du mode autonome** (L00f, PC40 ; 12 §11.4) | `isFeatureAllowed(autonomous_mode)` devient faux (politique, liste, opt-in retiré) ; délégations `mode = auto` seulement | `revoked` / `autonomy_withdrawn` ; **exception aux effets communs** : les conversations ne repassent pas en local, elles sont mises en pause puis reprennent en mode plan (PC45 ; 12 §11.4) : autorisations de session conservées, `queued` / `running` → `awaiting_key` (`delegation:<runtimeId>`) |
 
 Effets communs (`revokeDelegations`, `delegationService.ts:366-439`) : statut changé par `updateMany`
 conditionné (`status = active`), `activeKey = null` ; chaque conversation autorisée par la

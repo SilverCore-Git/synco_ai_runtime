@@ -50,26 +50,20 @@ impl CreatedThreadStore {
         Self { file: None, map: BTreeMap::new(), tampered: false }
     }
 
-    /// Ouvre le fichier. Absent : vide. Ancien format (sans MAC) : lu puis réécrit scellé. MAC
-    /// invalide ou fichier modifié : registre vide, fichier mis de côté, [`Self::tampered`]. Une
+    /// Ouvre le fichier. Absent : vide. MAC
+    /// invalide, fichier modifié ou sans MAC (ancien format L08b, refusé) : registre vide, fichier mis de côté, [`Self::tampered`]. Une
     /// erreur d'entrée/sortie reste une erreur (jamais un registre vide silencieux).
     pub fn open(state_dir: &Path, keys: &RuntimeKeys) -> Result<Self> {
         let file = SealedFile::new(state_dir, CREATED_THREADS_FILE, MacKey::derive(keys, CREATED_THREADS_FILE)?);
-        let (map, tampered, migrate) = match file.load::<BTreeMap<String, CreatedThread>>(true)? {
-            Loaded::Absent => (BTreeMap::new(), false, false),
-            Loaded::Sealed(m) => (m, false, false),
-            Loaded::Legacy(m) => (m, false, true),
+        let (map, tampered) = match file.load::<BTreeMap<String, CreatedThread>>()? {
+            Loaded::Absent => (BTreeMap::new(), false),
+            Loaded::Sealed(m) => (m, false),
             Loaded::Tampered => {
                 file.quarantine();
-                (BTreeMap::new(), true, false)
+                (BTreeMap::new(), true)
             }
         };
-        let mut store = Self { file: Some(file), map, tampered };
-        if migrate {
-            store.mark_dirty();
-            store.flush()?;
-        }
-        Ok(store)
+        Ok(Self { file: Some(file), map, tampered })
     }
 
     /// Le fichier lu était altéré (MAC invalide) : à signaler une fois au dashboard.
@@ -199,17 +193,18 @@ mod tests {
         assert!(CreatedThreadStore::open(dir.path(), &keys()).unwrap().is_empty());
     }
 
-    /// Ancien format de L08b (JSON nu) : lu, puis réécrit scellé.
+    /// Ancien format de L08b (JSON nu, jamais livré) : refusé comme altéré, registre vide, rien
+    /// n'est réparable.
     #[test]
-    fn ancien_format_migre() {
+    fn ancien_format_refuse_comme_altere() {
         let (dir, k) = (tempfile::tempdir().unwrap(), keys());
         let path = dir.path().join(CREATED_THREADS_FILE);
         std::fs::write(&path, br#"{"t1":{"userId":"u1","delegationId":"d1"}}"#).unwrap();
         let mut s = CreatedThreadStore::open(dir.path(), &k).unwrap();
-        assert!(!s.take_tampered());
-        assert_eq!(s.get("t1").map(|c| c.user_id.as_str()), Some("u1"));
-        assert!(std::fs::read_to_string(&path).unwrap().contains("\"mac\""), "réécrit scellé");
-        assert!(CreatedThreadStore::open(dir.path(), &k).unwrap().get("t1").is_some());
+        assert!(s.is_empty() && s.get("t1").is_none(), "registre vide : aucune signature possible");
+        assert!(s.take_tampered(), "alerte");
+        assert!(dir.path().join("created_threads.rejected").exists(), "fichier mis de côté");
+        assert!(!path.exists());
     }
 
     #[test]

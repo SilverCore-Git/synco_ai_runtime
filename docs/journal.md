@@ -1066,10 +1066,9 @@ Rust → TS : OK ; `synco_app` et `synco_api` non modifiés.
   `synco-ai-runtime/state-mac/v1`, info `file:<nom>`) du matériel de `keys.sealed` (`RuntimeKeys::to_secret_bytes`) : une clé par
   fichier, jamais écrite. Aucune dépendance nouvelle (`hmac`/`hkdf` étaient déjà derrière `synco-e2ee`). MAC invalide, fichier modifié
   ou illisible : registre/file **vide**, fichier mis de côté en `.rejected`, alerte `created_threads_tampered` /
-  `envelope_repairs_tampered`, le runtime continue. Ancien format de L08b (JSON nu) : lu une fois, réécrit scellé.
-  **Limite assumée** : le registre accepte l'ancien format sans MAC (règle de rétrocompatibilité) ; quelqu'un qui peut écrire dans
-  `state_dir` peut donc déposer un fichier sans MAC et le faire adopter une fois. La protection vaut contre une modification du
-  fichier scellé, pas contre un maître du répertoire d'état. La file, nouvelle, n'a pas d'ancien format et refuse tout fichier sans MAC.
+  `envelope_repairs_tampered`, le runtime continue. Fichier sans MAC (ancien
+  format de L08b) : refusé comme altéré, **pas de lecture de l'ancien format** (PC43, décision de l'utilisateur : L08b n'a jamais
+  été livré, la règle de rétrocompatibilité ne s'applique pas ; sinon qui écrit dans `state_dir` ferait adopter un fichier nu).
 - **Constat 5** (`c66678b`) : l'écriture du registre ne tient plus le verrou d'état (photo `Snapshot` sous le verrou, écriture par
   `spawn_blocking`, comme `member_pins` ; échec : alerte `created_threads_not_saved`).
 - **Constat 7** (`c66678b`) : au désappairage, le registre et la file sont **supprimés** en premier ; si la suppression échoue,

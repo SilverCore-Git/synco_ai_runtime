@@ -9,13 +9,12 @@
 //! { "v": 2, "body": "<JSON du contenu, en texte>", "mac": "<base64url HMAC-SHA256(clé, body)>" }
 //! ```
 //!
-//! - MAC invalide, fichier illisible ou forme inconnue : [`Loaded::Tampered`] (l'appelant considère le
-//!   contenu comme vide et lève une alerte ; le fichier refusé est mis de côté en `.rejected`).
-//! - Ancien format (sans MAC, L08b) : [`Loaded::Legacy`], lu **une fois** puis réécrit scellé (règle
-//!   de rétrocompatibilité : on lit l'ancien, on n'écrit que le nouveau). Limite assumée : qui peut
-//!   écrire dans le répertoire d'état peut donc aussi déposer un fichier sans MAC ; le MAC protège
-//!   contre une modification qui ne sait pas produire ce format (ou le répertoire en lecture seule
-//!   pour un autre canal), pas contre un attaquant déjà maître du répertoire et de ce choix.
+//! - MAC invalide, fichier illisible, forme inconnue **ou fichier sans MAC** : [`Loaded::Tampered`]
+//!   (l'appelant considère le contenu comme vide et lève une alerte ; le fichier refusé est mis de
+//!   côté en `.rejected`).
+//! - Aucune lecture de l'ancien format sans MAC (L08b), jamais livré : la règle de rétrocompatibilité
+//!   ne s'applique pas, et accepter un fichier nu laisserait qui écrit dans le répertoire d'état
+//!   le faire adopter sans MAC (décision de l'utilisateur, 2026-11-21).
 //!
 //! L'écriture se fait **hors** du verrou d'état : [`SealedFile::snapshot`] prend l'état sous le
 //! verrou, [`Snapshot::write`] l'écrit ensuite (`spawn_blocking`), comme `member_pins`.
@@ -70,8 +69,6 @@ pub enum Loaded<T> {
     Absent,
     /// Fichier scellé, MAC valide.
     Sealed(T),
-    /// Ancien format sans MAC (à réécrire scellé).
-    Legacy(T),
     /// MAC invalide, fichier modifié ou illisible : le contenu n'est pas fiable.
     Tampered,
 }
@@ -116,46 +113,42 @@ impl SealedFile {
         Self { path: state_dir.join(name), key, dirty: false, generation: 0, written: Arc::new(Mutex::new(0)) }
     }
 
-    /// Lit le fichier. `legacy` : un contenu de l'ancien format (JSON nu) est accepté
-    /// ([`Loaded::Legacy`]). Une erreur d'entrée/sortie autre que « absent » est une erreur (jamais
-    /// un registre vide silencieux).
-    pub fn load<T: DeserializeOwned>(&self, legacy: bool) -> Result<Loaded<T>> {
+    /// Lit le fichier. Une erreur d'entrée/sortie autre que « absent » est une erreur (jamais un
+    /// registre vide silencieux).
+    pub fn load<T: DeserializeOwned>(&self) -> Result<Loaded<T>> {
         let bytes = match std::fs::read(&self.path) {
             Ok(b) => b,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Loaded::Absent),
             Err(e) => return Err(Error::Io(format!("{} : {}", self.name(), e.kind()))),
         };
-        Ok(self.decode(&bytes, legacy))
+        Ok(self.decode(&bytes))
     }
 
     fn name(&self) -> String {
         self.path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned())
     }
 
-    fn decode<T: DeserializeOwned>(&self, bytes: &[u8], legacy: bool) -> Loaded<T> {
+    fn decode<T: DeserializeOwned>(&self, bytes: &[u8]) -> Loaded<T> {
         let Ok(value) = serde_json::from_slice::<serde_json::Value>(bytes) else {
             return Loaded::Tampered;
         };
-        // Forme scellée : exactement `v`, `body`, `mac`. Toute autre forme est l'ancien format.
+        // Forme scellée : exactement `v`, `body`, `mac`. Toute autre forme est refusée.
         let sealed_shape = value
             .as_object()
             .is_some_and(|o| o.len() == 3 && o.contains_key("v") && o.contains_key("body") && o.contains_key("mac"));
-        if sealed_shape {
-            let Ok(sealed) = serde_json::from_value::<Sealed>(value) else {
-                return Loaded::Tampered;
-            };
-            let valid = sealed.v == FORMAT
-                && from_b64u(&sealed.mac)
-                    .is_ok_and(|tag| hmac_sha256_verify(self.key.0.as_slice(), sealed.body.as_bytes(), &tag));
-            if !valid {
-                return Loaded::Tampered;
-            }
-            return serde_json::from_str(&sealed.body).map_or(Loaded::Tampered, Loaded::Sealed);
+        if !sealed_shape {
+            return Loaded::Tampered;
         }
-        if legacy {
-            return serde_json::from_value(value).map_or(Loaded::Tampered, Loaded::Legacy);
+        let Ok(sealed) = serde_json::from_value::<Sealed>(value) else {
+            return Loaded::Tampered;
+        };
+        let valid = sealed.v == FORMAT
+            && from_b64u(&sealed.mac)
+                .is_ok_and(|tag| hmac_sha256_verify(self.key.0.as_slice(), sealed.body.as_bytes(), &tag));
+        if !valid {
+            return Loaded::Tampered;
         }
-        Loaded::Tampered
+        serde_json::from_str(&sealed.body).map_or(Loaded::Tampered, Loaded::Sealed)
     }
 
     /// Met de côté un fichier refusé (`.rejected`, un seul exemplaire) : la preuve reste pour
@@ -236,30 +229,28 @@ mod tests {
     fn scelle_puis_relu_et_altere() {
         let dir = tempfile::tempdir().unwrap();
         let mut f = file(dir.path(), "a");
-        assert_eq!(f.load::<M>(true).unwrap(), Loaded::Absent);
+        assert_eq!(f.load::<M>().unwrap(), Loaded::Absent);
         f.mark_dirty();
         let mut m = M::new();
         m.insert("t".into(), "u".into());
         f.flush(&m).unwrap();
-        assert_eq!(f.load::<M>(true).unwrap(), Loaded::Sealed(m.clone()));
+        assert_eq!(f.load::<M>().unwrap(), Loaded::Sealed(m.clone()));
         // Autre clé (autre fichier, autre runtime) : refusé.
-        assert_eq!(file(dir.path(), "b").load::<M>(true).unwrap(), Loaded::Tampered);
+        assert_eq!(file(dir.path(), "b").load::<M>().unwrap(), Loaded::Tampered);
         // Corps modifié, MAC inchangé.
         let text = std::fs::read_to_string(dir.path().join("x.json")).unwrap().replace("\\\"u\\\"", "\\\"v\\\"");
         std::fs::write(dir.path().join("x.json"), text).unwrap();
-        assert_eq!(f.load::<M>(true).unwrap(), Loaded::Tampered);
+        assert_eq!(f.load::<M>().unwrap(), Loaded::Tampered);
         // Illisible.
         std::fs::write(dir.path().join("x.json"), b"pas du json").unwrap();
-        assert_eq!(f.load::<M>(true).unwrap(), Loaded::Tampered);
+        assert_eq!(f.load::<M>().unwrap(), Loaded::Tampered);
     }
 
     #[test]
-    fn ancien_format_lu_une_fois() {
+    fn fichier_sans_mac_refuse() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("x.json"), br#"{"t":"u"}"#).unwrap();
-        let f = file(dir.path(), "a");
-        assert!(matches!(f.load::<M>(true).unwrap(), Loaded::Legacy(_)));
-        assert_eq!(f.load::<M>(false).unwrap(), Loaded::Tampered, "sans rétrocompatibilité : refusé");
+        assert_eq!(file(dir.path(), "a").load::<M>().unwrap(), Loaded::Tampered);
     }
 
     #[test]

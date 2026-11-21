@@ -72,13 +72,12 @@ impl RepairQueue {
         Self { file: None, items: BTreeMap::new(), tampered: false }
     }
 
-    /// Ouvre le fichier (absent : vide). MAC invalide, fichier modifié ou sans MAC (ce fichier n'a
-    /// pas d'ancien format) : file vide, fichier mis de côté, [`Self::take_tampered`].
+    /// Ouvre le fichier (absent : vide). MAC invalide, fichier modifié ou sans MAC : file vide, fichier mis de côté, [`Self::take_tampered`].
     pub fn open(state_dir: &Path, keys: &RuntimeKeys) -> Result<Self> {
         let file = SealedFile::new(state_dir, REPAIRS_FILE, MacKey::derive(keys, REPAIRS_FILE)?);
-        let (stored, tampered) = match file.load::<Vec<Stored>>(false)? {
+        let (stored, tampered) = match file.load::<Vec<Stored>>()? {
             Loaded::Absent => (Vec::new(), false),
-            Loaded::Sealed(v) | Loaded::Legacy(v) => (v, false),
+            Loaded::Sealed(v) => (v, false),
             Loaded::Tampered => {
                 file.quarantine();
                 (Vec::new(), true)
@@ -229,7 +228,7 @@ mod tests {
         std::fs::write(&path, text.replace("t1", "t2")).unwrap();
         let mut bad = RepairQueue::open(dir.path(), &keys).unwrap();
         assert!(bad.is_empty() && bad.take_tampered());
-        // Sans MAC (ce fichier n'a pas d'ancien format) : refusé de même.
+        // Sans MAC : refusé de même.
         std::fs::write(&path, br#"[{"threadId":"t","userId":"u","delegationId":"d","at":1}]"#).unwrap();
         let mut bare = RepairQueue::open(dir.path(), &keys).unwrap();
         assert!(bare.is_empty() && bare.take_tampered());

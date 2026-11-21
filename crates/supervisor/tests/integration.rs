@@ -1058,21 +1058,25 @@ async fn registre_altere_ne_fait_rien_signer() {
     synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }
 
-/// PC33 : l'ancien format de L08b (JSON nu, sans MAC) est lu une fois puis réécrit scellé.
+/// PC43 : l'ancien format de L08b (JSON nu, jamais livré) est refusé comme altéré : alerte, registre
+/// vide, aucune signature.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn ancien_registre_migre_et_scelle() {
+async fn ancien_registre_refuse_comme_altere() {
     let env = setup().await;
-    let file = env.state_dir.join(synco_ai_runtime::created_threads::CREATED_THREADS_FILE);
     let env = restart(env, |dir| {
         let legacy = json!({ THREAD: { "userId": USER, "delegationId": "d-good" } });
         std::fs::write(dir.join(synco_ai_runtime::created_threads::CREATED_THREADS_FILE), legacy.to_string()).unwrap();
     })
     .await;
     wait_until_async(&env.running.runtime, |st| st.vault.get(USER).is_some()).await;
-    assert!(!has_alert(&*env.running.runtime.state.lock().await, "created_threads_tampered"));
-    assert!(std::fs::read_to_string(&file).unwrap().contains("\"mac\""), "réécrit scellé");
+    {
+        let st = env.running.runtime.state.lock().await;
+        assert!(has_alert(&st, "created_threads_tampered"), "alerte au dashboard");
+        assert!(st.created_threads.is_empty(), "registre vide");
+    }
     env.api.push(reset_frame(THREAD, USER, "d-good"));
-    wait_until("réparation d'un salon de l'ancien registre", || reposes(&env).len() == 1).await;
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert!(reposes(&env).is_empty(), "ancien format : rien n'est signé");
     synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }
 

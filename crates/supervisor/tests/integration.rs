@@ -1047,7 +1047,7 @@ fn policy(default_provider: &str, gateway_url: Option<&str>) -> Value {
 
 /// B1 : un fournisseur absent de la configuration du runtime (ici `mistral`, un identifiant inconnu,
 /// ou une passerelle dont l'URL de la politique vise une adresse de métadonnées) n'obtient ni
-/// worker ni clé : la conversation passe en `failed` (`provider_error`) et le bail est rendu.
+/// worker ni clé : la conversation passe en `failed` (`provider_not_configured`, Q30) et le bail est rendu.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn fournisseur_non_configure_refuse() {
     for p in [
@@ -1088,7 +1088,7 @@ async fn fournisseur_non_configure_refuse() {
         .await;
         env.api.with(|st| {
             let c = &st.conversations[SESSION];
-            assert_eq!(c.errors, vec!["provider_error".to_owned()], "{p}");
+            assert_eq!(c.errors, vec!["provider_not_configured".to_owned()], "{p}");
             assert!(!c.statuses.iter().any(|s| s == "running"), "aucun worker lancé : {p}");
             assert!(c.lease_released);
         });

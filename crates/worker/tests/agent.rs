@@ -321,6 +321,39 @@ async fn plafonds_etapes_budget_et_mandataire() {
     api.with(|st| assert_eq!(st.last_error.as_deref(), Some("provider_auth")));
 }
 
+/// Q30 : `provider_not_configured` (code du fournisseur ou de la passerelle, ou ticket refusé pour
+/// `gateway_not_configured`) échoue en `provider_not_configured`, sans nouvel essai, distinct de
+/// `provider_error`.
+#[tokio::test]
+async fn fournisseur_non_configure_distinct_de_provider_error() {
+    // Code du fournisseur / de la passerelle dans la réponse.
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.deposit_message(M1, "Bonjour");
+    for _ in 0..4 {
+        llm.push(Script::error(409, json!({ "error": "provider_not_configured" })));
+    }
+    let (peer, _t) = spawn_worker(&api, &llm, init(1), default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Failed);
+    assert_eq!(llm.requests().len(), 1, "pas de nouvel essai : ce n'est pas une panne");
+    api.with(|st| assert_eq!(st.last_error.as_deref(), Some("provider_not_configured")));
+
+    // Ticket de la passerelle refusé : aucun appel au fournisseur.
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.deposit_message(M1, "Bonjour");
+    api.with(|st| st.ticket_refusal = Some("gateway_not_configured".into()));
+    let mut ini = init(1);
+    ini.llm.provider = runtime_protocol::pipe::LlmProvider::Gateway;
+    let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Failed);
+    assert!(llm.requests().is_empty(), "rien n'est envoyé au fournisseur");
+    api.with(|st| {
+        assert_eq!(st.last_error.as_deref(), Some("provider_not_configured"));
+        assert_eq!(st.tickets, 1);
+    });
+}
+
 #[tokio::test]
 async fn annulation_pendant_le_flux() {
     let api = FakeApi::new();

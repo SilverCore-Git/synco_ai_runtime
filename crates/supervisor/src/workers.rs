@@ -122,12 +122,13 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
         Err(code) => {
             if code != "init_unavailable" {
                 // Fournisseur LLM non configuré dans le runtime (ou URL de passerelle refusée) : la
-                // conversation échoue clairement au lieu d'être relancée en boucle. Code de l'API
-                // le plus proche (08 §6) ; la cause exacte est dans le journal du runtime.
+                // conversation échoue clairement au lieu d'être relancée en boucle, avec
+                // `provider_not_configured` (Q30, spec API §14.3), distinct de `provider_error` ; la
+                // cause exacte est dans le journal du runtime.
                 tracing::warn!(code, "conversation refusée : fournisseur LLM non utilisable");
                 let _ = rt
                     .api
-                    .write_status(session_id, &auth_id, lease.lease_epoch, "failed", Some("provider_error"))
+                    .write_status(session_id, &auth_id, lease.lease_epoch, "failed", Some("provider_not_configured"))
                     .await;
             }
             let _ = rt.api.release_lease(session_id, &auth_id, lease.lease_epoch).await;

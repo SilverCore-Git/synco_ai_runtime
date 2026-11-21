@@ -10,6 +10,11 @@
   var STATES = { idle: "Terminé", running: "En cours", queued: "En attente", awaiting_confirmation: "Confirmation demandée",
     awaiting_user: "Réponse attendue", awaiting_key: "Clé attendue", awaiting_client_tool: "Outil client", failed: "Échec",
     cancelled: "Annulé", other: "Autre" };
+  /* Codes d'échec (08 §6) : provider_not_configured (non activé, sans clé, passerelle refusée) est
+     distinct de provider_error (fournisseur configuré qui échoue). Inconnu -> code brut. */
+  var REASONS = { provider_not_configured: "Fournisseur non configuré", provider_error: "Erreur du fournisseur",
+    provider_auth: "Clé ou ticket refusé" };
+  function reasonLabel(r) { return Object.prototype.hasOwnProperty.call(REASONS, r) ? REASONS[r] + " [" + r + "]" : r; }
 
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
@@ -242,7 +247,7 @@
   function entryRow(e) {
     var t = when(e.t), kind = "", info = "";
     if (e.k === "start") { kind = "Lancement"; }
-    else if (e.k === "status") { kind = "État"; info = stateLabel(e.status) + (e.reason ? " (" + e.reason + ")" : ""); }
+    else if (e.k === "status") { kind = "État"; info = stateLabel(e.status) + (e.reason ? " (" + reasonLabel(e.reason) + ")" : ""); }
     else if (e.k === "metrics") {
       kind = "Mesure";
       info = "tour " + e.turn + " : +" + e.steps + " étape(s), +" + e.toolCalls + " outil(s)" + (e.toolErrors ? " dont " + e.toolErrors + " en erreur" : "") +

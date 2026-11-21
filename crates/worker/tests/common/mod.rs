@@ -116,6 +116,8 @@ pub struct ApiState {
     pub seen: Vec<Seen>,
     pub refused: Vec<String>,
     pub tickets: u32,
+    /// `POST /tickets/llm` refusé avec ce code (409), p. ex. `gateway_not_configured`.
+    pub ticket_refusal: Option<String>,
     /// Échec de relais simulé : (suffixe du chemin, code `relay_*`). `relay_network` : la requête
     /// est arrivée à l'API, la réponse est perdue ; autres codes : refus local avant envoi.
     pub relay_fail: Option<(String, String)>,
@@ -206,6 +208,9 @@ impl FakeApi {
         match (method, segs.as_slice()) {
             ("POST", ["tickets", "llm"]) => self.with(|st| {
                 st.tickets += 1;
+                if let Some(code) = st.ticket_refusal.clone() {
+                    return (409, json!({ "error": code }));
+                }
                 (200, json!({ "ticket": format!("sgt1.test{}", st.tickets), "expiresAt": "2030-01-01T00:00:00.000Z", "url": "https://gw.example.com" }))
             }),
             // `members` = {"error": …} : le superviseur a remplacé l'annuaire (Q25, 409).

@@ -224,35 +224,38 @@ Toutes les clés sont des **clés de test** créées pour ces vecteurs (scalaire
 
 Rejoués par L01c (`synco-e2ee` et fonctions pures TS), puis par L10 et L08d (superviseur).
 
-### 4.2 `action-plan.json` (12 §3 à §9 ; amendé le 2026-11-21 par PC44 et PC47)
+### 4.2 `action-plan.json` (12 §3 à §9 ; amendé le 2026-11-21 par PC44, PC47, PC54 et PC58)
 
 - `plan`, `planCanonical` (RFC 8785, entiers seulement), `aadPlan`, `ivPlanHex`, `planValue` : plan de
-  référence et sa valeur `gcm1:` exacte sous `CK` ; `planExecutors` et `planPhases` : exécutant et phase
+  référence et sa valeur `gcm1:` exacte sous `CK` ; `planExecutors` et `planLevels` : exécutant et niveau
   de chaque action (12 §8.1) ; `pendingToolCall` : forme stockée (12 §3.4).
 - `planResult`, `planResultCanonical`, `aadPlanResult`, `planResultValue` : `plan_result` **partiel** de
-  la phase 1 (AAD `sessionId:planId:plan_result:1`, 12 §9).
-- `mixedPlan` : plan à **deux phases d'appareil** et deux phases d'agent (phases `1, 2, 3, 3, 4`), avec
-  ses valeurs chiffrées : le plan, `plan_result:1`, `plan_agent_result:2` (résultat de phase de
-  l'agent) et `plan_result:3`.
+  la phase d'appareil 1 (AAD `sessionId:planId:plan_result:1`, 12 §9).
+- `mixedPlan` : plan appareil / agent avec ses niveaux et ses valeurs chiffrées : le plan,
+  `plan_result:1`, `plan_agent_result:1` et `plan_result:2` (phases numérotées **par exécutant**).
+- `categoryPlan` : cas de l'utilisateur (PC58) : 3 `category.create` puis 9 `thread.create` (3 par
+  catégorie, `categoryId` par `argsRefs`, `groups`), chiffré ; `expectLevels`, `wavesUnbounded`
+  (parallélisme maximal), `scheduleConcurrency4` (ordre d'exécution valide avec 4 actions en cours au
+  plus) et `failureOfCategory2` (seuls ses 3 salons sont ignorés, PC54).
 - `toolManifest` : extrait du manifeste utilisé par la validation (outils `server` et `mutating`).
 - `serverDigests` : SHA-256 (`hex`) de `JCS({tool, args, argsRefs})`, `argsRefs` omis s'il est absent
-  (PC47) ; le cas sans `argsRefs` garde le condensat de la première version.
-- `executeCases` : verrou de 12 §8.4 : condensat de l'appel, puis chaque `refs[champ]` égale à la sortie
-  **enregistrée par l'API** (`recordedOutputs`) de l'action visée ; `expect` = `ok` (avec `effectiveArgs`)
-  ou `action_not_accepted`.
-- `encryptionCases` : mêmes champs que `conversation-fields.json` (`sessionId`, `messageId` = `planId`,
-  `fieldName`, `value`, `plaintext`, `ckHex` facultatif) et mêmes codes d'erreur ; couvrent l'échange de
-  phase, l'absence de numéro de phase, le rejeu sur un autre plan et la confusion `plan_result` /
-  `plan_agent_result`.
-- `validationCases` : `plan` → `ok` ou `plan_invalid` (rejoués par le worker L08d, l'appareil L10 et,
-  pour la partie que l'API voit, L03g) ; une action d'appareil peut dépendre d'une action d'agent (PC44).
-- `phaseCases` : exécutant et `after` de chaque action → phases (12 §8.1) ; `cascadeCases` : actions
-  décochées → actions `skipped` (PC37) ; `failureCases` : arrêt à la première action en échec (12 §7.3) ;
-  `runCases` : déroulé par phases (phases vides sautées, arrêt sur échec, aucune phase démarrée après
-  `expiresAt`) → phases exécutées, états, statut final.
+  (PC47). `executeCases` : verrou de 12 §8.4 (condensat de l'appel, puis `refs` contre les sorties
+  **enregistrées par l'API**) ; `expect` = `ok` (avec `effectiveArgs`) ou `action_not_accepted`.
+- `encryptionCases` : mêmes champs que `conversation-fields.json` et mêmes codes d'erreur ; couvrent
+  l'échange de phase, l'absence de numéro de phase, le rejeu sur un autre plan et la confusion
+  `plan_result` / `plan_agent_result`.
+- `validationCases` : `plan` → `ok` ou `plan_invalid` (worker L08d, appareil L10, et pour la forme vue
+  par l'API, L03g) ; groupes, `category.create`, `categoryId`.
+- `levelCases` : graphe → niveaux ; `cascadeCases` : actions décochées → `skipped` (PC37) ;
+  `failureCases` : échec → seules les dépendantes transitives `skipped` (PC54) ; `runCases` : simulation
+  par pas unitaires (chaque exécutant démarre ses actions prêtes, plus petite `n` d'abord, dans la limite
+  de `concurrency` ; toutes finissent en fin de pas ; échec → dépendantes `skipped` ; aucune action ne
+  démarre à partir de `expiresBeforeTick`) → `expectTicks` (`{ device, agent }` démarrées à chaque pas),
+  états, statut. C'est **un** ordre valide parmi d'autres : les implémentations ne doivent pas en
+  dépendre au pas près, mais respecter dépendances, concurrence et règle d'échec.
 
-Revérification après l'amendement (code jetable sous `~/.cache`, supprimé) : chiffrés produits par
-`primitives::seal` de la crate avec un IV figé ; **Rust** : le fichier final relu, 47 vérifications
-(`session::decrypt_field` sur chaque cas et chaque valeur, `serde_json::to_string` = JCS, condensats,
-phases, verrou et `refs`) ; **TS** : 94 vérifications (`decryptAiField` de `synco_app`, WebCrypto pour
-les condensats, validateur de référence pour validation, phases, cascade, échec et déroulé).
+Revérification après le second amendement (code jetable sous `~/.cache`, supprimé) : chiffrés produits
+par `primitives::seal` de la crate avec un IV figé ; **Rust** : le fichier final relu, 66 vérifications
+(`session::decrypt_field`, `serde_json::to_string` = JCS, condensats, verrou et `refs`, niveaux,
+cascade, simulation) ; **TS** : 104 vérifications (`decryptAiField` de `synco_app`, WebCrypto pour les
+condensats, validateur de référence pour validation, niveaux, cascade, échec et simulation).

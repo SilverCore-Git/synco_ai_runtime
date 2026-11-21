@@ -1,5 +1,5 @@
 {
-  "description": "Plan d'action (12 §3–§9, L00f, amendé par PC44 et PC47) : clair canonique (RFC 8785, entiers seulement), chiffrement gcm1: sous CK avec l'AAD sessionId:planId:plan, résultats partiels par phase (plan_result:<k> de l'appareil, plan_agent_result:<k> de l'agent), condensats serverDigests de JCS({tool, args, argsRefs}), verrou et refs, phases de l'ordre libre, validation, cascade (PC37), déroulé par phases et arrêt sur échec. IV fixes : vecteurs seulement. CK de TEST.",
+  "description": "Plan d'action (12 §3–§9, L00f, amendé par PC44, PC47, PC54 et PC58) : clair canonique (RFC 8785, entiers seulement), chiffrement gcm1: sous CK avec l'AAD sessionId:planId:plan, résultats de phase numérotés par exécutant (plan_result:<k> de l'appareil, plan_agent_result:<k> de l'agent), condensats serverDigests de JCS({tool, args, argsRefs}), verrou et refs, niveaux du graphe, exécution parallèle simulée, échec limité aux dépendantes, validation, cascade (PC37). IV fixes : vecteurs seulement. CK de TEST.",
   "keys": {
     "ckHex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
     "otherCkHex": "5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d"
@@ -80,11 +80,11 @@
     "device",
     "agent"
   ],
-  "planPhases": [
+  "planLevels": [
     1,
     1,
     1,
-    1,
+    2,
     2
   ],
   "planCanonical": "{\"actions\":[{\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":1},{\"args\":{\"name\":\"annonces\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":2},{\"args\":{\"name\":\"Lancement\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\\n- budget\\n- annonces\\n\",\"name\":\"plan.md\",\"spaceId\":\"cm3spaceexample0000000001\"},\"argsRefs\":{\"folderId\":\"$3.id\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[1],\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.\",\"toolCallId\":\"call_7\",\"v\":1}",
@@ -208,10 +208,10 @@
       "device",
       "agent"
     ],
-    "phases": [
+    "levels": [
+      1,
       1,
       2,
-      3,
       3,
       4
     ],
@@ -294,7 +294,7 @@
         "value": "gcm1:bm5ubm5ubm5ubm5u3LRbv4Pp9UJkt6Xqgm4VnL5yKuPjjjmTUhbuOwIfm+qXsc7pIsQBoNlICjLSwuQE/1Lja5l03OlwZlxnIAMqN7G7vtziKG28BSO1zI1/Omo9XzhrnzmpVK+srhC9ZH8fH0kKGLRv1wrTB0nkaNX7vgSxUmzM2oAJnxYnRkcwwd5MIJvGIFd8HX+CAEgGwieVzki8DdTBQrT3Z2MOOCXCgA3Km+WemJg5oPwsg1b4yB0dA0+lvc0+trU94/iZozzUeF/nMOONUX3TUPhKVyaVM38ZEfCjZFYIYNHgwX23p8Pats+hCV+85JvLj43SZwkvhF4244xC0m9++v8g1K21UMp11L7AIbO6SJii2euWWR1sMUOob/dR8/i8HKQyAOedpEutl0VeoX0UI+GySCcluwWfSXPl/ncZ8GE+MaKcntMp2ubsFuUwZnfvJ9Tj1NWtgHBD6RD0ixMT6U8N9JOrZCbo8940ys4KC8gafZnXe0wJSfuXO/kRjxRt04FlkwISfR0FFA7iUqRtVBD5NYAEQkdKgXO+HLVMiu1QjlqoCc50W1/9NDiN3WjqmhsABYISe/6IePSrGEEEOD2tQMlSV/hdmeNny762EuIKbPSUP9sc9J3RTTprmV3hHaFP8oHeiEzoOsMke8cjgh8HACiyUTG5FW97Rp08sA+u7G2L3L6gRQhPK+Xdxw5mkraQroWglKr/k28H1zoaPk0THjBigbNiRZfsc6pDI3k5rNXbgVb7Q7V+3hxV6VhpyQKNjbCLLiiANlILxG0PAKakRXM1AxNp5srELtouCr2xtmzY2U83hf//awWaqheCodh4bgtZyOwqgKCWIeuNM1pyeKO2diUcte5F6T54r/8jbBui0oqF9K9NkYRdHKq1QaUBze8eTF+afmb1HlU6B/EGWrcOawiO9nJqR8Zz1sNW529z3kfUdRkkpoKUCEFYq6Ht2v3aj3CAIcY2gVRgm9c7AQC3CORHcDrDBNxT6Hgb0ZzOFzaOEPJo4/JJY2PBL6WEigPIEr7lKm1Up+5gTdVJqya4E1/tKtPKu/JBfaYw3Kv4sD2qYqSJc26EMmBXUuP0i10szKWz0+CKxL6VibteL0FownxnN8BN2ZSP67sY1RrzKO/VN4UOfUsQlD35BMZkVM1GpIE="
       },
       {
-        "label": "plan_result, phase 1 (appareil)",
+        "label": "plan_result, phase d'appareil 1",
         "fieldName": "plan_result:1",
         "aad": "0f0e0d0c-0b0a-4908-8706-050403020100:6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9:plan_result:1",
         "ivHex": "717171717171717171717171",
@@ -317,14 +317,14 @@
         "value": "gcm1:cXFxcXFxcXFxcXFxB+l1oLUqumDu63hZByOF4hdQYfVXykxL+QK+/JYmMpYIOpJifXClfPVjqsYIyx8gwByKBbexpcGuqO85PWgiX9hv8VPm4HvEzba1E3mSuaK6EIkwLDE1vYH0yhpXv1UWFRAktEue12qvvRsyul0JfS2OfJOWI1cUm4FgYts4pE590T/zDMbmN8gbpSAtZ2wOhN0Irl9+SSoFUsSnulBQ+YQz9AITlY6elwHKWEGipJ9Nl21HRQmDmAPoH0j2BmsaERYHdA6yjA=="
       },
       {
-        "label": "plan_agent_result, phase 2 (agent)",
-        "fieldName": "plan_agent_result:2",
-        "aad": "0f0e0d0c-0b0a-4908-8706-050403020100:6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9:plan_agent_result:2",
+        "label": "plan_agent_result, phase d'agent 1",
+        "fieldName": "plan_agent_result:1",
+        "aad": "0f0e0d0c-0b0a-4908-8706-050403020100:6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9:plan_agent_result:1",
         "ivHex": "727272727272727272727272",
         "clear": {
           "v": 1,
           "planId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
-          "phase": 2,
+          "phase": 1,
           "outcomes": [
             {
               "n": 2,
@@ -335,18 +335,18 @@
             }
           ]
         },
-        "canonical": "{\"outcomes\":[{\"n\":2,\"output\":{\"id\":\"cm3spacenew00000000000001\"},\"state\":\"done\"}],\"phase\":2,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"v\":1}",
-        "value": "gcm1:cnJycnJycnJycnJyvwTn4l8tB4IlAzBGlg4k6em0kGZwn1234gwvzY8D7q55y1ezwaZUvbzcRERlW1hcnHqkYke/20X7Y6YER4Dp3leo/ZEmEQeGa/NnC/nOQ2t1vkj1J8QdqtfLN78RNjWR+nMsuCUem3qpmQ6J8gGaoQrLHbA1YTCR/3EJj7vjgWfzw91A2vqhDbJC7ETauhyeiEFIN9yCHALgUbQdX6oUsrQ="
+        "canonical": "{\"outcomes\":[{\"n\":2,\"output\":{\"id\":\"cm3spacenew00000000000001\"},\"state\":\"done\"}],\"phase\":1,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"v\":1}",
+        "value": "gcm1:cnJycnJycnJycnJyvwTn4l8tB4IlAzBGlg4k6em0kGZwn1234gwvzY8D7q55y1ezwaZUvbzcRERlW1hcnHqkYke/20X7Y6YER4Dp3leo/ZEmEQeGa/NnC/nOQ2t1vkj1J8QdqtfIN78RNjWR+nMsuCUem3qpmQ6J8gGaoQrLHbA1YTCR/3EJj7vjgWfzw91A2vqhDbJC7ETauhyeiJU+5/WhunLx1o9eg+zDOpI="
       },
       {
-        "label": "plan_result, phase 3 (appareil)",
-        "fieldName": "plan_result:3",
-        "aad": "0f0e0d0c-0b0a-4908-8706-050403020100:6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9:plan_result:3",
+        "label": "plan_result, phase d'appareil 2",
+        "fieldName": "plan_result:2",
+        "aad": "0f0e0d0c-0b0a-4908-8706-050403020100:6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9:plan_result:2",
         "ivHex": "737373737373737373737373",
         "clear": {
           "v": 1,
           "planId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
-          "phase": 3,
+          "phase": 2,
           "outcomes": [
             {
               "n": 3,
@@ -366,8 +366,8 @@
             }
           ]
         },
-        "canonical": "{\"outcomes\":[{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000003\",\"spaceId\":\"cm3spacenew00000000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000002\",\"spaceId\":\"cm3spacenew00000000000001\"},\"state\":\"done\"}],\"phase\":3,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"v\":1}",
-        "value": "gcm1:c3Nzc3Nzc3Nzc3NzFpbVonlGSz2WXEegLfl0K8Hp6adCKDUQwjcJawNnfy0E00GNRY2IvPduMJOjtp7MXl0TLDCtkL9liw0hYBXupoi7CPHgXMTCv17WBKZwpnbeq+d6H1IOo3qMeRgloxSP1J7/NHRVuP0u3Q2gaJ//7khCowiVQzBHvESlDA4HmYLcJyNuyND2YQ8w+eH4jp4ReYNc+FR0ytQsKBP0SHLuDKWsio8O12Quhqyf0w2DVe+VvAxXDNJLleWBHzREPh8c8murZwk39jnK3Iu2CO0j9ruZ+b6Fv0mIzbGS0Ne4b3PB5MkDgHnMINMOoee4r9jERQB+3blCbcowIEmPK6KbelIJ0vQ8dDl6nEhAYARypD4lCgHMW1/+lWsW/0ggzwBP27t+LNmkOD6uTyN5wUMN"
+        "canonical": "{\"outcomes\":[{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000003\",\"spaceId\":\"cm3spacenew00000000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000002\",\"spaceId\":\"cm3spacenew00000000000001\"},\"state\":\"done\"}],\"phase\":2,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"v\":1}",
+        "value": "gcm1:c3Nzc3Nzc3Nzc3NzFpbVonlGSz2WXEegLfl0K8Hp6adCKDUQwjcJawNnfy0E00GNRY2IvPduMJOjtp7MXl0TLDCtkL9liw0hYBXupoi7CPHgXMTCv17WBKZwpnbeq+d6H1IOo3qMeRgloxSP1J7/NHRVuP0u3Q2gaJ//7khCowiVQzBHvESlDA4HmYLcJyNuyND2YQ8w+eH4jp4ReYNc+FR0ytQsKBP0SHLuDKWsio8O12Quhqyf0w2DVe+VvAxXDNJLleWBHzREPh8c8murZwk39jnK3Iu2CO0j9ruZ+b6Fv0mIzbGS0Ne4b3PB5MkDgHnMIdMOoee4r9jERQB+3blCbcowIEmPK6KbelIJ0vQ8dDl6nEhAYARypD4lCgHMW1/+lWsW/0ggzwCLlXp8LKh4WWE4qKzYre2O"
       }
     ]
   },
@@ -860,20 +860,20 @@
       "expect": "ok"
     },
     {
-      "name": "résultat de phase d'agent, AAD sessionId:planId:plan_agent_result:2",
+      "name": "résultat de phase d'agent, AAD sessionId:planId:plan_agent_result:1",
       "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
       "messageId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
-      "fieldName": "plan_agent_result:2",
-      "value": "gcm1:cnJycnJycnJycnJyvwTn4l8tB4IlAzBGlg4k6em0kGZwn1234gwvzY8D7q55y1ezwaZUvbzcRERlW1hcnHqkYke/20X7Y6YER4Dp3leo/ZEmEQeGa/NnC/nOQ2t1vkj1J8QdqtfLN78RNjWR+nMsuCUem3qpmQ6J8gGaoQrLHbA1YTCR/3EJj7vjgWfzw91A2vqhDbJC7ETauhyeiEFIN9yCHALgUbQdX6oUsrQ=",
-      "plaintext": "{\"outcomes\":[{\"n\":2,\"output\":{\"id\":\"cm3spacenew00000000000001\"},\"state\":\"done\"}],\"phase\":2,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"v\":1}",
+      "fieldName": "plan_agent_result:1",
+      "value": "gcm1:cnJycnJycnJycnJyvwTn4l8tB4IlAzBGlg4k6em0kGZwn1234gwvzY8D7q55y1ezwaZUvbzcRERlW1hcnHqkYke/20X7Y6YER4Dp3leo/ZEmEQeGa/NnC/nOQ2t1vkj1J8QdqtfIN78RNjWR+nMsuCUem3qpmQ6J8gGaoQrLHbA1YTCR/3EJj7vjgWfzw91A2vqhDbJC7ETauhyeiJU+5/WhunLx1o9eg+zDOpI=",
+      "plaintext": "{\"outcomes\":[{\"n\":2,\"output\":{\"id\":\"cm3spacenew00000000000001\"},\"state\":\"done\"}],\"phase\":1,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"v\":1}",
       "expect": "ok"
     },
     {
-      "name": "résultat de phase d'agent ouvert comme plan_result:2",
+      "name": "résultat de phase d'agent ouvert comme plan_result:1",
       "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
       "messageId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
-      "fieldName": "plan_result:2",
-      "value": "gcm1:cnJycnJycnJycnJyvwTn4l8tB4IlAzBGlg4k6em0kGZwn1234gwvzY8D7q55y1ezwaZUvbzcRERlW1hcnHqkYke/20X7Y6YER4Dp3leo/ZEmEQeGa/NnC/nOQ2t1vkj1J8QdqtfLN78RNjWR+nMsuCUem3qpmQ6J8gGaoQrLHbA1YTCR/3EJj7vjgWfzw91A2vqhDbJC7ETauhyeiEFIN9yCHALgUbQdX6oUsrQ=",
+      "fieldName": "plan_result:1",
+      "value": "gcm1:cnJycnJycnJycnJyvwTn4l8tB4IlAzBGlg4k6em0kGZwn1234gwvzY8D7q55y1ezwaZUvbzcRERlW1hcnHqkYke/20X7Y6YER4Dp3leo/ZEmEQeGa/NnC/nOQ2t1vkj1J8QdqtfIN78RNjWR+nMsuCUem3qpmQ6J8gGaoQrLHbA1YTCR/3EJj7vjgWfzw91A2vqhDbJC7ETauhyeiJU+5/WhunLx1o9eg+zDOpI=",
       "expect": "field_authentication_failed"
     },
     {
@@ -885,13 +885,30 @@
       "expect": "field_authentication_failed"
     },
     {
-      "name": "plan_result de la phase 3 du plan mixte",
+      "name": "plan_result de la phase 2 du plan mixte",
       "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
       "messageId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
-      "fieldName": "plan_result:3",
-      "value": "gcm1:c3Nzc3Nzc3Nzc3NzFpbVonlGSz2WXEegLfl0K8Hp6adCKDUQwjcJawNnfy0E00GNRY2IvPduMJOjtp7MXl0TLDCtkL9liw0hYBXupoi7CPHgXMTCv17WBKZwpnbeq+d6H1IOo3qMeRgloxSP1J7/NHRVuP0u3Q2gaJ//7khCowiVQzBHvESlDA4HmYLcJyNuyND2YQ8w+eH4jp4ReYNc+FR0ytQsKBP0SHLuDKWsio8O12Quhqyf0w2DVe+VvAxXDNJLleWBHzREPh8c8murZwk39jnK3Iu2CO0j9ruZ+b6Fv0mIzbGS0Ne4b3PB5MkDgHnMINMOoee4r9jERQB+3blCbcowIEmPK6KbelIJ0vQ8dDl6nEhAYARypD4lCgHMW1/+lWsW/0ggzwBP27t+LNmkOD6uTyN5wUMN",
-      "plaintext": "{\"outcomes\":[{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000003\",\"spaceId\":\"cm3spacenew00000000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000002\",\"spaceId\":\"cm3spacenew00000000000001\"},\"state\":\"done\"}],\"phase\":3,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"v\":1}",
+      "fieldName": "plan_result:2",
+      "value": "gcm1:c3Nzc3Nzc3Nzc3NzFpbVonlGSz2WXEegLfl0K8Hp6adCKDUQwjcJawNnfy0E00GNRY2IvPduMJOjtp7MXl0TLDCtkL9liw0hYBXupoi7CPHgXMTCv17WBKZwpnbeq+d6H1IOo3qMeRgloxSP1J7/NHRVuP0u3Q2gaJ//7khCowiVQzBHvESlDA4HmYLcJyNuyND2YQ8w+eH4jp4ReYNc+FR0ytQsKBP0SHLuDKWsio8O12Quhqyf0w2DVe+VvAxXDNJLleWBHzREPh8c8murZwk39jnK3Iu2CO0j9ruZ+b6Fv0mIzbGS0Ne4b3PB5MkDgHnMIdMOoee4r9jERQB+3blCbcowIEmPK6KbelIJ0vQ8dDl6nEhAYARypD4lCgHMW1/+lWsW/0ggzwCLlXp8LKh4WWE4qKzYre2O",
+      "plaintext": "{\"outcomes\":[{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000003\",\"spaceId\":\"cm3spacenew00000000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000002\",\"spaceId\":\"cm3spacenew00000000000001\"},\"state\":\"done\"}],\"phase\":2,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"v\":1}",
       "expect": "ok"
+    },
+    {
+      "name": "plan des catégories, avec groupes",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "7d3e4f50-6172-4c83-9d94-a5b6c7d8e9fa",
+      "fieldName": "plan",
+      "value": "gcm1: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",
+      "plaintext": "{\"actions\":[{\"args\":{\"name\":\"Finance\",\"spaceId\":\"cm3spaceexample0000000001\"},\"group\":\"finance\",\"kind\":\"category.create\",\"n\":1},{\"args\":{\"name\":\"Marketing\",\"spaceId\":\"cm3spaceexample0000000001\"},\"group\":\"marketing\",\"kind\":\"category.create\",\"n\":2},{\"args\":{\"name\":\"Produit\",\"spaceId\":\"cm3spaceexample0000000001\"},\"group\":\"produit\",\"kind\":\"category.create\",\"n\":3},{\"after\":[1],\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$1.id\"},\"group\":\"finance\",\"kind\":\"thread.create\",\"n\":4},{\"after\":[1],\"args\":{\"name\":\"factures\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$1.id\"},\"group\":\"finance\",\"kind\":\"thread.create\",\"n\":5},{\"after\":[1],\"args\":{\"name\":\"previsions\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$1.id\"},\"group\":\"finance\",\"kind\":\"thread.create\",\"n\":6},{\"after\":[2],\"args\":{\"name\":\"campagnes\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$2.id\"},\"group\":\"marketing\",\"kind\":\"thread.create\",\"n\":7},{\"after\":[2],\"args\":{\"name\":\"reseaux\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$2.id\"},\"group\":\"marketing\",\"kind\":\"thread.create\",\"n\":8},{\"after\":[2],\"args\":{\"name\":\"evenements\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$2.id\"},\"group\":\"marketing\",\"kind\":\"thread.create\",\"n\":9},{\"after\":[3],\"args\":{\"name\":\"roadmap\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$3.id\"},\"group\":\"produit\",\"kind\":\"thread.create\",\"n\":10},{\"after\":[3],\"args\":{\"name\":\"retours\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$3.id\"},\"group\":\"produit\",\"kind\":\"thread.create\",\"n\":11},{\"after\":[3],\"args\":{\"name\":\"versions\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$3.id\"},\"group\":\"produit\",\"kind\":\"thread.create\",\"n\":12}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"groups\":[{\"id\":\"finance\",\"label\":\"Catégorie Finance et ses salons\"},{\"id\":\"marketing\",\"label\":\"Catégorie Marketing et ses salons\"},{\"id\":\"produit\",\"label\":\"Catégorie Produit et ses salons\"}],\"planId\":\"7d3e4f50-6172-4c83-9d94-a5b6c7d8e9fa\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"Je crée trois catégories, Finance, Marketing et Produit, avec trois salons dans chacune.\",\"toolCallId\":\"call_11\",\"v\":1}",
+      "expect": "ok"
+    },
+    {
+      "name": "résultat de phase d'agent 1 ouvert comme phase d'agent 2",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+      "fieldName": "plan_agent_result:2",
+      "value": "gcm1:cnJycnJycnJycnJyvwTn4l8tB4IlAzBGlg4k6em0kGZwn1234gwvzY8D7q55y1ezwaZUvbzcRERlW1hcnHqkYke/20X7Y6YER4Dp3leo/ZEmEQeGa/NnC/nOQ2t1vkj1J8QdqtfIN78RNjWR+nMsuCUem3qpmQ6J8gGaoQrLHbA1YTCR/3EJj7vjgWfzw91A2vqhDbJC7ETauhyeiJU+5/WhunLx1o9eg+zDOpI=",
+      "expect": "field_authentication_failed"
     }
   ],
   "validationCases": [
@@ -3205,12 +3222,1396 @@
         ]
       },
       "expect": "plan_invalid"
+    },
+    {
+      "name": "catégories puis salons, avec groupes (PC58)",
+      "plan": {
+        "v": 1,
+        "planId": "7d3e4f50-6172-4c83-9d94-a5b6c7d8e9fa",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_11",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je crée trois catégories, Finance, Marketing et Produit, avec trois salons dans chacune.",
+        "groups": [
+          {
+            "id": "finance",
+            "label": "Catégorie Finance et ses salons"
+          },
+          {
+            "id": "marketing",
+            "label": "Catégorie Marketing et ses salons"
+          },
+          {
+            "id": "produit",
+            "label": "Catégorie Produit et ses salons"
+          }
+        ],
+        "actions": [
+          {
+            "n": 1,
+            "kind": "category.create",
+            "args": {
+              "name": "Finance",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 2,
+            "kind": "category.create",
+            "args": {
+              "name": "Marketing",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 3,
+            "kind": "category.create",
+            "args": {
+              "name": "Produit",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 4,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 5,
+            "kind": "thread.create",
+            "args": {
+              "name": "factures",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 6,
+            "kind": "thread.create",
+            "args": {
+              "name": "previsions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 7,
+            "kind": "thread.create",
+            "args": {
+              "name": "campagnes",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 8,
+            "kind": "thread.create",
+            "args": {
+              "name": "reseaux",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 9,
+            "kind": "thread.create",
+            "args": {
+              "name": "evenements",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 10,
+            "kind": "thread.create",
+            "args": {
+              "name": "roadmap",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 11,
+            "kind": "thread.create",
+            "args": {
+              "name": "retours",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 12,
+            "kind": "thread.create",
+            "args": {
+              "name": "versions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          }
+        ]
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "group absent de groups",
+      "plan": {
+        "v": 1,
+        "planId": "7d3e4f50-6172-4c83-9d94-a5b6c7d8e9fa",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_11",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je crée trois catégories, Finance, Marketing et Produit, avec trois salons dans chacune.",
+        "groups": [
+          {
+            "id": "finance",
+            "label": "Catégorie Finance et ses salons"
+          },
+          {
+            "id": "marketing",
+            "label": "Catégorie Marketing et ses salons"
+          },
+          {
+            "id": "produit",
+            "label": "Catégorie Produit et ses salons"
+          }
+        ],
+        "actions": [
+          {
+            "n": 1,
+            "kind": "category.create",
+            "args": {
+              "name": "Finance",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 2,
+            "kind": "category.create",
+            "args": {
+              "name": "Marketing",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 3,
+            "kind": "category.create",
+            "args": {
+              "name": "Produit",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 4,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "ventes"
+          },
+          {
+            "n": 5,
+            "kind": "thread.create",
+            "args": {
+              "name": "factures",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 6,
+            "kind": "thread.create",
+            "args": {
+              "name": "previsions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 7,
+            "kind": "thread.create",
+            "args": {
+              "name": "campagnes",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 8,
+            "kind": "thread.create",
+            "args": {
+              "name": "reseaux",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 9,
+            "kind": "thread.create",
+            "args": {
+              "name": "evenements",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 10,
+            "kind": "thread.create",
+            "args": {
+              "name": "roadmap",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 11,
+            "kind": "thread.create",
+            "args": {
+              "name": "retours",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 12,
+            "kind": "thread.create",
+            "args": {
+              "name": "versions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "identifiant de groupe non conforme (majuscule)",
+      "plan": {
+        "v": 1,
+        "planId": "7d3e4f50-6172-4c83-9d94-a5b6c7d8e9fa",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_11",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je crée trois catégories, Finance, Marketing et Produit, avec trois salons dans chacune.",
+        "groups": [
+          {
+            "id": "Finance",
+            "label": "x"
+          }
+        ],
+        "actions": [
+          {
+            "n": 1,
+            "kind": "category.create",
+            "args": {
+              "name": "Finance",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "category.create",
+            "args": {
+              "name": "Marketing",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "category.create",
+            "args": {
+              "name": "Produit",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "thread.create",
+            "args": {
+              "name": "factures",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            }
+          },
+          {
+            "n": 6,
+            "kind": "thread.create",
+            "args": {
+              "name": "previsions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            }
+          },
+          {
+            "n": 7,
+            "kind": "thread.create",
+            "args": {
+              "name": "campagnes",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            }
+          },
+          {
+            "n": 8,
+            "kind": "thread.create",
+            "args": {
+              "name": "reseaux",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            }
+          },
+          {
+            "n": 9,
+            "kind": "thread.create",
+            "args": {
+              "name": "evenements",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            }
+          },
+          {
+            "n": 10,
+            "kind": "thread.create",
+            "args": {
+              "name": "roadmap",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            }
+          },
+          {
+            "n": 11,
+            "kind": "thread.create",
+            "args": {
+              "name": "retours",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            }
+          },
+          {
+            "n": 12,
+            "kind": "thread.create",
+            "args": {
+              "name": "versions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "libellé de groupe vide",
+      "plan": {
+        "v": 1,
+        "planId": "7d3e4f50-6172-4c83-9d94-a5b6c7d8e9fa",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_11",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je crée trois catégories, Finance, Marketing et Produit, avec trois salons dans chacune.",
+        "groups": [
+          {
+            "id": "finance",
+            "label": ""
+          },
+          {
+            "id": "marketing",
+            "label": "Catégorie Marketing et ses salons"
+          },
+          {
+            "id": "produit",
+            "label": "Catégorie Produit et ses salons"
+          }
+        ],
+        "actions": [
+          {
+            "n": 1,
+            "kind": "category.create",
+            "args": {
+              "name": "Finance",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 2,
+            "kind": "category.create",
+            "args": {
+              "name": "Marketing",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 3,
+            "kind": "category.create",
+            "args": {
+              "name": "Produit",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 4,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 5,
+            "kind": "thread.create",
+            "args": {
+              "name": "factures",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 6,
+            "kind": "thread.create",
+            "args": {
+              "name": "previsions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 7,
+            "kind": "thread.create",
+            "args": {
+              "name": "campagnes",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 8,
+            "kind": "thread.create",
+            "args": {
+              "name": "reseaux",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 9,
+            "kind": "thread.create",
+            "args": {
+              "name": "evenements",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 10,
+            "kind": "thread.create",
+            "args": {
+              "name": "roadmap",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 11,
+            "kind": "thread.create",
+            "args": {
+              "name": "retours",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 12,
+            "kind": "thread.create",
+            "args": {
+              "name": "versions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "groupes en double",
+      "plan": {
+        "v": 1,
+        "planId": "7d3e4f50-6172-4c83-9d94-a5b6c7d8e9fa",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_11",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je crée trois catégories, Finance, Marketing et Produit, avec trois salons dans chacune.",
+        "groups": [
+          {
+            "id": "finance",
+            "label": "Catégorie Finance et ses salons"
+          },
+          {
+            "id": "marketing",
+            "label": "Catégorie Marketing et ses salons"
+          },
+          {
+            "id": "produit",
+            "label": "Catégorie Produit et ses salons"
+          },
+          {
+            "id": "finance",
+            "label": "Catégorie Finance et ses salons"
+          }
+        ],
+        "actions": [
+          {
+            "n": 1,
+            "kind": "category.create",
+            "args": {
+              "name": "Finance",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 2,
+            "kind": "category.create",
+            "args": {
+              "name": "Marketing",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 3,
+            "kind": "category.create",
+            "args": {
+              "name": "Produit",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 4,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 5,
+            "kind": "thread.create",
+            "args": {
+              "name": "factures",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 6,
+            "kind": "thread.create",
+            "args": {
+              "name": "previsions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 7,
+            "kind": "thread.create",
+            "args": {
+              "name": "campagnes",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 8,
+            "kind": "thread.create",
+            "args": {
+              "name": "reseaux",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 9,
+            "kind": "thread.create",
+            "args": {
+              "name": "evenements",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 10,
+            "kind": "thread.create",
+            "args": {
+              "name": "roadmap",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 11,
+            "kind": "thread.create",
+            "args": {
+              "name": "retours",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 12,
+            "kind": "thread.create",
+            "args": {
+              "name": "versions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "champ inconnu dans args de category.create (index)",
+      "plan": {
+        "v": 1,
+        "planId": "7d3e4f50-6172-4c83-9d94-a5b6c7d8e9fa",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_11",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je crée trois catégories, Finance, Marketing et Produit, avec trois salons dans chacune.",
+        "groups": [
+          {
+            "id": "finance",
+            "label": "Catégorie Finance et ses salons"
+          },
+          {
+            "id": "marketing",
+            "label": "Catégorie Marketing et ses salons"
+          },
+          {
+            "id": "produit",
+            "label": "Catégorie Produit et ses salons"
+          }
+        ],
+        "actions": [
+          {
+            "n": 1,
+            "kind": "category.create",
+            "args": {
+              "name": "Finance",
+              "spaceId": "cm3spaceexample0000000001",
+              "index": 0
+            },
+            "group": "finance"
+          },
+          {
+            "n": 2,
+            "kind": "category.create",
+            "args": {
+              "name": "Marketing",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 3,
+            "kind": "category.create",
+            "args": {
+              "name": "Produit",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 4,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 5,
+            "kind": "thread.create",
+            "args": {
+              "name": "factures",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 6,
+            "kind": "thread.create",
+            "args": {
+              "name": "previsions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 7,
+            "kind": "thread.create",
+            "args": {
+              "name": "campagnes",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 8,
+            "kind": "thread.create",
+            "args": {
+              "name": "reseaux",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 9,
+            "kind": "thread.create",
+            "args": {
+              "name": "evenements",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 10,
+            "kind": "thread.create",
+            "args": {
+              "name": "roadmap",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 11,
+            "kind": "thread.create",
+            "args": {
+              "name": "retours",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 12,
+            "kind": "thread.create",
+            "args": {
+              "name": "versions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "categoryId par argsRefs sans after vers la catégorie",
+      "plan": {
+        "v": 1,
+        "planId": "7d3e4f50-6172-4c83-9d94-a5b6c7d8e9fa",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_11",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je crée trois catégories, Finance, Marketing et Produit, avec trois salons dans chacune.",
+        "groups": [
+          {
+            "id": "finance",
+            "label": "Catégorie Finance et ses salons"
+          },
+          {
+            "id": "marketing",
+            "label": "Catégorie Marketing et ses salons"
+          },
+          {
+            "id": "produit",
+            "label": "Catégorie Produit et ses salons"
+          }
+        ],
+        "actions": [
+          {
+            "n": 1,
+            "kind": "category.create",
+            "args": {
+              "name": "Finance",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 2,
+            "kind": "category.create",
+            "args": {
+              "name": "Marketing",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 3,
+            "kind": "category.create",
+            "args": {
+              "name": "Produit",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 4,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 5,
+            "kind": "thread.create",
+            "args": {
+              "name": "factures",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 6,
+            "kind": "thread.create",
+            "args": {
+              "name": "previsions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "categoryId": "$1.id"
+            },
+            "group": "finance"
+          },
+          {
+            "n": 7,
+            "kind": "thread.create",
+            "args": {
+              "name": "campagnes",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 8,
+            "kind": "thread.create",
+            "args": {
+              "name": "reseaux",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 9,
+            "kind": "thread.create",
+            "args": {
+              "name": "evenements",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "categoryId": "$2.id"
+            },
+            "group": "marketing"
+          },
+          {
+            "n": 10,
+            "kind": "thread.create",
+            "args": {
+              "name": "roadmap",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 11,
+            "kind": "thread.create",
+            "args": {
+              "name": "retours",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          },
+          {
+            "n": 12,
+            "kind": "thread.create",
+            "args": {
+              "name": "versions",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "categoryId": "$3.id"
+            },
+            "group": "produit"
+          }
+        ]
+      },
+      "expect": "plan_invalid"
     }
   ],
-  "phaseCases": [
+  "levelCases": [
     {
-      "name": "plan de référence, mode plan",
-      "mode": "plan",
+      "name": "plan de référence",
       "actions": [
         {
           "n": 1,
@@ -3239,17 +4640,16 @@
           ]
         }
       ],
-      "expectPhases": [
+      "expectLevels": [
         1,
         1,
         1,
-        1,
+        2,
         2
       ]
     },
     {
-      "name": "plan mixte : deux phases d'appareil, deux phases d'agent",
-      "mode": "plan",
+      "name": "plan mixte",
       "actions": [
         {
           "n": 1,
@@ -3281,75 +4681,16 @@
           ]
         }
       ],
-      "expectPhases": [
+      "expectLevels": [
+        1,
         1,
         2,
-        3,
         3,
         4
       ]
     },
     {
-      "name": "plan de référence, mode autonome (thread.create par le runtime)",
-      "mode": "auto",
-      "actions": [
-        {
-          "n": 1,
-          "executor": "agent"
-        },
-        {
-          "n": 2,
-          "executor": "agent"
-        },
-        {
-          "n": 3,
-          "executor": "device"
-        },
-        {
-          "n": 4,
-          "executor": "device",
-          "after": [
-            3
-          ]
-        },
-        {
-          "n": 5,
-          "executor": "agent",
-          "after": [
-            1
-          ]
-        }
-      ],
-      "expectPhases": [
-        2,
-        2,
-        1,
-        1,
-        2
-      ]
-    },
-    {
-      "name": "agent seul",
-      "actions": [
-        {
-          "n": 1,
-          "executor": "agent"
-        },
-        {
-          "n": 2,
-          "executor": "agent",
-          "after": [
-            1
-          ]
-        }
-      ],
-      "expectPhases": [
-        1,
-        1
-      ]
-    },
-    {
-      "name": "action d'appareil qui dépend de l'agent",
+      "name": "agent puis appareil dépendant",
       "actions": [
         {
           "n": 1,
@@ -3363,13 +4704,13 @@
           ]
         }
       ],
-      "expectPhases": [
+      "expectLevels": [
         1,
         2
       ]
     },
     {
-      "name": "à égalité, l'appareil commence",
+      "name": "deux branches indépendantes, exécutants différents : même niveau",
       "actions": [
         {
           "n": 1,
@@ -3380,8 +4721,8 @@
           "executor": "device"
         }
       ],
-      "expectPhases": [
-        2,
+      "expectLevels": [
+        1,
         1
       ]
     },
@@ -3414,7 +4755,7 @@
           ]
         }
       ],
-      "expectPhases": [
+      "expectLevels": [
         1,
         2,
         3,
@@ -3422,32 +4763,7 @@
       ]
     },
     {
-      "name": "aucune action d'appareil sans dépendance : renumérotation depuis 1",
-      "actions": [
-        {
-          "n": 1,
-          "executor": "agent"
-        },
-        {
-          "n": 2,
-          "executor": "device",
-          "after": [
-            1
-          ]
-        },
-        {
-          "n": 3,
-          "executor": "agent"
-        }
-      ],
-      "expectPhases": [
-        1,
-        2,
-        1
-      ]
-    },
-    {
-      "name": "appareil → appareil : même phase",
+      "name": "losange",
       "actions": [
         {
           "n": 1,
@@ -3455,23 +4771,32 @@
         },
         {
           "n": 2,
-          "executor": "device",
+          "executor": "agent",
           "after": [
             1
           ]
         },
         {
           "n": 3,
+          "executor": "device",
+          "after": [
+            1
+          ]
+        },
+        {
+          "n": 4,
           "executor": "agent",
           "after": [
-            2
+            2,
+            3
           ]
         }
       ],
-      "expectPhases": [
+      "expectLevels": [
         1,
-        1,
-        2
+        2,
+        2,
+        3
       ]
     }
   ],
@@ -3603,7 +4928,7 @@
   ],
   "failureCases": [
     {
-      "name": "échec de l'action 3 : les suivantes passent en skipped, aucune annulation",
+      "name": "échec de l'action 3 : seule sa dépendante (4) est ignorée, aucune annulation (PC54)",
       "accepted": [
         1,
         2,
@@ -3617,11 +4942,12 @@
         "2": "done",
         "3": "failed",
         "4": "skipped",
-        "5": "skipped"
-      }
+        "5": "done"
+      },
+      "expectStatus": "failed"
     },
     {
-      "name": "échec de l'action 1 avec #annonces décochée",
+      "name": "échec de l'action 1 avec #annonces décochée : seule la tâche (5), qui en dépend, est ignorée",
       "accepted": [
         1,
         3,
@@ -3632,15 +4958,16 @@
       "expectStates": {
         "1": "failed",
         "2": "skipped",
-        "3": "skipped",
-        "4": "skipped",
+        "3": "done",
+        "4": "done",
         "5": "skipped"
-      }
+      },
+      "expectStatus": "failed"
     }
   ],
   "runCases": [
     {
-      "name": "plan mixte, tout accepté",
+      "name": "plan mixte, tout accepté : l'agent (2) démarre en même temps que l'appareil (1)",
       "plan": "mixedPlan",
       "accepted": [
         1,
@@ -3649,11 +4976,34 @@
         4,
         5
       ],
-      "expectPhasesRun": [
-        1,
-        2,
-        3,
-        4
+      "concurrency": 4,
+      "expectTicks": [
+        {
+          "device": [
+            1
+          ],
+          "agent": [
+            2
+          ]
+        },
+        {
+          "device": [
+            3
+          ],
+          "agent": []
+        },
+        {
+          "device": [
+            4
+          ],
+          "agent": []
+        },
+        {
+          "device": [],
+          "agent": [
+            5
+          ]
+        }
       ],
       "expectStates": {
         "1": "done",
@@ -3665,7 +5015,7 @@
       "expectStatus": "done"
     },
     {
-      "name": "plan mixte, #1 décochée : la phase 1 est vide, l'agent commence",
+      "name": "plan mixte, #1 décochée",
       "plan": "mixedPlan",
       "accepted": [
         2,
@@ -3673,10 +5023,32 @@
         4,
         5
       ],
-      "expectPhasesRun": [
-        2,
-        3,
-        4
+      "concurrency": 4,
+      "expectTicks": [
+        {
+          "device": [],
+          "agent": [
+            2
+          ]
+        },
+        {
+          "device": [
+            3
+          ],
+          "agent": []
+        },
+        {
+          "device": [
+            4
+          ],
+          "agent": []
+        },
+        {
+          "device": [],
+          "agent": [
+            5
+          ]
+        }
       ],
       "expectStates": {
         "1": "skipped",
@@ -3688,27 +5060,7 @@
       "expectStatus": "done"
     },
     {
-      "name": "plan mixte, #3 décochée (cascade 4, 5) : phases 1 et 2 seulement",
-      "plan": "mixedPlan",
-      "accepted": [
-        1,
-        2
-      ],
-      "expectPhasesRun": [
-        1,
-        2
-      ],
-      "expectStates": {
-        "1": "done",
-        "2": "done",
-        "3": "skipped",
-        "4": "skipped",
-        "5": "skipped"
-      },
-      "expectStatus": "done"
-    },
-    {
-      "name": "plan mixte, échec de l'action d'agent 2 : les phases 3 et 4 ne démarrent pas",
+      "name": "plan mixte, échec de l'action d'agent 2 : 3, 4, 5 ignorées, 1 faite",
       "plan": "mixedPlan",
       "accepted": [
         1,
@@ -3717,10 +5069,19 @@
         4,
         5
       ],
-      "failedAt": 2,
-      "expectPhasesRun": [
-        1,
+      "concurrency": 4,
+      "failedAt": [
         2
+      ],
+      "expectTicks": [
+        {
+          "device": [
+            1
+          ],
+          "agent": [
+            2
+          ]
+        }
       ],
       "expectStates": {
         "1": "done",
@@ -3732,7 +5093,7 @@
       "expectStatus": "failed"
     },
     {
-      "name": "plan mixte, échec de l'action 3 dans la seconde phase d'appareil",
+      "name": "plan mixte, échec de l'action d'appareil 1 : rien n'en dépend, le reste continue",
       "plan": "mixedPlan",
       "accepted": [
         1,
@@ -3741,23 +5102,49 @@
         4,
         5
       ],
-      "failedAt": 3,
-      "expectPhasesRun": [
-        1,
-        2,
-        3
+      "concurrency": 4,
+      "failedAt": [
+        1
+      ],
+      "expectTicks": [
+        {
+          "device": [
+            1
+          ],
+          "agent": [
+            2
+          ]
+        },
+        {
+          "device": [
+            3
+          ],
+          "agent": []
+        },
+        {
+          "device": [
+            4
+          ],
+          "agent": []
+        },
+        {
+          "device": [],
+          "agent": [
+            5
+          ]
+        }
       ],
       "expectStates": {
-        "1": "done",
+        "1": "failed",
         "2": "done",
-        "3": "failed",
-        "4": "skipped",
-        "5": "skipped"
+        "3": "done",
+        "4": "done",
+        "5": "done"
       },
       "expectStatus": "failed"
     },
     {
-      "name": "plan mixte, expiré avant la phase 3 : aucune phase ne démarre après expiresAt",
+      "name": "plan mixte, expiré avant le pas 3 : aucune action ne démarre après expiresAt",
       "plan": "mixedPlan",
       "accepted": [
         1,
@@ -3766,19 +5153,75 @@
         4,
         5
       ],
-      "expiresBeforePhase": 3,
-      "expectPhasesRun": [
-        1,
-        2
+      "concurrency": 4,
+      "expiresBeforeTick": 3,
+      "expectTicks": [
+        {
+          "device": [
+            1
+          ],
+          "agent": [
+            2
+          ]
+        },
+        {
+          "device": [
+            3
+          ],
+          "agent": []
+        }
       ],
       "expectStates": {
         "1": "done",
         "2": "done",
-        "3": "skipped",
+        "3": "done",
         "4": "skipped",
         "5": "skipped"
       },
       "expectStatus": "expired"
+    },
+    {
+      "name": "plan de référence, concurrence 2",
+      "plan": "plan",
+      "accepted": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "concurrency": 2,
+      "expectTicks": [
+        {
+          "device": [
+            1,
+            2
+          ],
+          "agent": []
+        },
+        {
+          "device": [
+            3
+          ],
+          "agent": [
+            5
+          ]
+        },
+        {
+          "device": [
+            4
+          ],
+          "agent": []
+        }
+      ],
+      "expectStates": {
+        "1": "done",
+        "2": "done",
+        "3": "done",
+        "4": "done",
+        "5": "done"
+      },
+      "expectStatus": "done"
     },
     {
       "name": "plan de référence, #annonces décochée",
@@ -3789,9 +5232,23 @@
         4,
         5
       ],
-      "expectPhasesRun": [
-        1,
-        2
+      "concurrency": 4,
+      "expectTicks": [
+        {
+          "device": [
+            1,
+            3
+          ],
+          "agent": []
+        },
+        {
+          "device": [
+            4
+          ],
+          "agent": [
+            5
+          ]
+        }
       ],
       "expectStates": {
         "1": "done",
@@ -3802,5 +5259,340 @@
       },
       "expectStatus": "done"
     }
-  ]
+  ],
+  "categoryPlan": {
+    "note": "Cas de l'utilisateur (PC58) : 3 catégories en parallèle, puis les 9 salons en parallèle (3 par catégorie, categoryId par argsRefs). Exécutant : appareil (mode plan).",
+    "planId": "7d3e4f50-6172-4c83-9d94-a5b6c7d8e9fa",
+    "plan": {
+      "v": 1,
+      "planId": "7d3e4f50-6172-4c83-9d94-a5b6c7d8e9fa",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "toolCallId": "call_11",
+      "createdAt": 1795000000,
+      "expiresAt": 1795604800,
+      "summary": "Je crée trois catégories, Finance, Marketing et Produit, avec trois salons dans chacune.",
+      "groups": [
+        {
+          "id": "finance",
+          "label": "Catégorie Finance et ses salons"
+        },
+        {
+          "id": "marketing",
+          "label": "Catégorie Marketing et ses salons"
+        },
+        {
+          "id": "produit",
+          "label": "Catégorie Produit et ses salons"
+        }
+      ],
+      "actions": [
+        {
+          "n": 1,
+          "kind": "category.create",
+          "args": {
+            "name": "Finance",
+            "spaceId": "cm3spaceexample0000000001"
+          },
+          "group": "finance"
+        },
+        {
+          "n": 2,
+          "kind": "category.create",
+          "args": {
+            "name": "Marketing",
+            "spaceId": "cm3spaceexample0000000001"
+          },
+          "group": "marketing"
+        },
+        {
+          "n": 3,
+          "kind": "category.create",
+          "args": {
+            "name": "Produit",
+            "spaceId": "cm3spaceexample0000000001"
+          },
+          "group": "produit"
+        },
+        {
+          "n": 4,
+          "kind": "thread.create",
+          "args": {
+            "name": "budget",
+            "type": "text",
+            "spaceId": "cm3spaceexample0000000001"
+          },
+          "after": [
+            1
+          ],
+          "argsRefs": {
+            "categoryId": "$1.id"
+          },
+          "group": "finance"
+        },
+        {
+          "n": 5,
+          "kind": "thread.create",
+          "args": {
+            "name": "factures",
+            "type": "text",
+            "spaceId": "cm3spaceexample0000000001"
+          },
+          "after": [
+            1
+          ],
+          "argsRefs": {
+            "categoryId": "$1.id"
+          },
+          "group": "finance"
+        },
+        {
+          "n": 6,
+          "kind": "thread.create",
+          "args": {
+            "name": "previsions",
+            "type": "text",
+            "spaceId": "cm3spaceexample0000000001"
+          },
+          "after": [
+            1
+          ],
+          "argsRefs": {
+            "categoryId": "$1.id"
+          },
+          "group": "finance"
+        },
+        {
+          "n": 7,
+          "kind": "thread.create",
+          "args": {
+            "name": "campagnes",
+            "type": "text",
+            "spaceId": "cm3spaceexample0000000001"
+          },
+          "after": [
+            2
+          ],
+          "argsRefs": {
+            "categoryId": "$2.id"
+          },
+          "group": "marketing"
+        },
+        {
+          "n": 8,
+          "kind": "thread.create",
+          "args": {
+            "name": "reseaux",
+            "type": "text",
+            "spaceId": "cm3spaceexample0000000001"
+          },
+          "after": [
+            2
+          ],
+          "argsRefs": {
+            "categoryId": "$2.id"
+          },
+          "group": "marketing"
+        },
+        {
+          "n": 9,
+          "kind": "thread.create",
+          "args": {
+            "name": "evenements",
+            "type": "text",
+            "spaceId": "cm3spaceexample0000000001"
+          },
+          "after": [
+            2
+          ],
+          "argsRefs": {
+            "categoryId": "$2.id"
+          },
+          "group": "marketing"
+        },
+        {
+          "n": 10,
+          "kind": "thread.create",
+          "args": {
+            "name": "roadmap",
+            "type": "text",
+            "spaceId": "cm3spaceexample0000000001"
+          },
+          "after": [
+            3
+          ],
+          "argsRefs": {
+            "categoryId": "$3.id"
+          },
+          "group": "produit"
+        },
+        {
+          "n": 11,
+          "kind": "thread.create",
+          "args": {
+            "name": "retours",
+            "type": "text",
+            "spaceId": "cm3spaceexample0000000001"
+          },
+          "after": [
+            3
+          ],
+          "argsRefs": {
+            "categoryId": "$3.id"
+          },
+          "group": "produit"
+        },
+        {
+          "n": 12,
+          "kind": "thread.create",
+          "args": {
+            "name": "versions",
+            "type": "text",
+            "spaceId": "cm3spaceexample0000000001"
+          },
+          "after": [
+            3
+          ],
+          "argsRefs": {
+            "categoryId": "$3.id"
+          },
+          "group": "produit"
+        }
+      ]
+    },
+    "executors": [
+      "device",
+      "device",
+      "device",
+      "device",
+      "device",
+      "device",
+      "device",
+      "device",
+      "device",
+      "device",
+      "device",
+      "device"
+    ],
+    "canonical": "{\"actions\":[{\"args\":{\"name\":\"Finance\",\"spaceId\":\"cm3spaceexample0000000001\"},\"group\":\"finance\",\"kind\":\"category.create\",\"n\":1},{\"args\":{\"name\":\"Marketing\",\"spaceId\":\"cm3spaceexample0000000001\"},\"group\":\"marketing\",\"kind\":\"category.create\",\"n\":2},{\"args\":{\"name\":\"Produit\",\"spaceId\":\"cm3spaceexample0000000001\"},\"group\":\"produit\",\"kind\":\"category.create\",\"n\":3},{\"after\":[1],\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$1.id\"},\"group\":\"finance\",\"kind\":\"thread.create\",\"n\":4},{\"after\":[1],\"args\":{\"name\":\"factures\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$1.id\"},\"group\":\"finance\",\"kind\":\"thread.create\",\"n\":5},{\"after\":[1],\"args\":{\"name\":\"previsions\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$1.id\"},\"group\":\"finance\",\"kind\":\"thread.create\",\"n\":6},{\"after\":[2],\"args\":{\"name\":\"campagnes\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$2.id\"},\"group\":\"marketing\",\"kind\":\"thread.create\",\"n\":7},{\"after\":[2],\"args\":{\"name\":\"reseaux\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$2.id\"},\"group\":\"marketing\",\"kind\":\"thread.create\",\"n\":8},{\"after\":[2],\"args\":{\"name\":\"evenements\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$2.id\"},\"group\":\"marketing\",\"kind\":\"thread.create\",\"n\":9},{\"after\":[3],\"args\":{\"name\":\"roadmap\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$3.id\"},\"group\":\"produit\",\"kind\":\"thread.create\",\"n\":10},{\"after\":[3],\"args\":{\"name\":\"retours\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$3.id\"},\"group\":\"produit\",\"kind\":\"thread.create\",\"n\":11},{\"after\":[3],\"args\":{\"name\":\"versions\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"argsRefs\":{\"categoryId\":\"$3.id\"},\"group\":\"produit\",\"kind\":\"thread.create\",\"n\":12}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"groups\":[{\"id\":\"finance\",\"label\":\"Catégorie Finance et ses salons\"},{\"id\":\"marketing\",\"label\":\"Catégorie Marketing et ses salons\"},{\"id\":\"produit\",\"label\":\"Catégorie Produit et ses salons\"}],\"planId\":\"7d3e4f50-6172-4c83-9d94-a5b6c7d8e9fa\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"Je crée trois catégories, Finance, Marketing et Produit, avec trois salons dans chacune.\",\"toolCallId\":\"call_11\",\"v\":1}",
+    "aad": "0f0e0d0c-0b0a-4908-8706-050403020100:7d3e4f50-6172-4c83-9d94-a5b6c7d8e9fa:plan",
+    "ivHex": "747474747474747474747474",
+    "value": "gcm1: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",
+    "expectLevels": [
+      1,
+      1,
+      1,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "wavesUnbounded": [
+      [
+        1,
+        2,
+        3
+      ],
+      [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ]
+    ],
+    "scheduleConcurrency4": {
+      "concurrency": 4,
+      "expectTicks": [
+        {
+          "device": [
+            1,
+            2,
+            3
+          ],
+          "agent": []
+        },
+        {
+          "device": [
+            4,
+            5,
+            6,
+            7
+          ],
+          "agent": []
+        },
+        {
+          "device": [
+            8,
+            9,
+            10,
+            11
+          ],
+          "agent": []
+        },
+        {
+          "device": [
+            12
+          ],
+          "agent": []
+        }
+      ],
+      "expectStatus": "done"
+    },
+    "failureOfCategory2": {
+      "concurrency": 4,
+      "failedAt": [
+        2
+      ],
+      "expectTicks": [
+        {
+          "device": [
+            1,
+            2,
+            3
+          ],
+          "agent": []
+        },
+        {
+          "device": [
+            4,
+            5,
+            6,
+            10
+          ],
+          "agent": []
+        },
+        {
+          "device": [
+            11,
+            12
+          ],
+          "agent": []
+        }
+      ],
+      "expectStates": {
+        "1": "done",
+        "2": "failed",
+        "3": "done",
+        "4": "done",
+        "5": "done",
+        "6": "done",
+        "7": "skipped",
+        "8": "skipped",
+        "9": "skipped",
+        "10": "done",
+        "11": "done",
+        "12": "done"
+      },
+      "expectStatus": "failed"
+    }
+  }
 }

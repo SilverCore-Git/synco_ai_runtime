@@ -93,7 +93,7 @@ maintenance reborne [1 h, 7 j] toute valeur lue, y compris une ancienne valeur e
 | Historique d'une conversation (`messages`) | 8 Mio sérialisés ; au-delà, refus d'écriture (`invalid_body`) et `failed` `internal` — compaction hors v1 |
 | Entrées par délégation | 5 000 |
 | Dépôt de délégations | 10 / h par utilisateur |
-| Ajout d'entrées (client) | 1 requête / 5 s, ≤ 500 entrées par requête |
+| Ajout d'entrées (client) | **3 requêtes / 15 s** par utilisateur (Q16 c, valeur réelle ; remplace « 1 / 5 s »), ≤ 500 entrées par requête |
 | Trames WebSocket client | 256 Kio (client → runtime), 1 Mio (runtime → client) ; 20 trames / 10 s par connexion ; 5 connexions par conversation |
 | Boîte de réception | 100 éléments non consommés par conversation ; 20 dépôts / 10 s |
 | Notifications push | une par **entrée** dans l'état annoncé ; plafond de **6 / min** par conversation (`429 rt_rate_limited`) ; état non courant ou doublon : `202 { sent: false }` (04 §4.2 ; L03d) |

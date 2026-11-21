@@ -577,10 +577,8 @@ réalisée dans le code à ce jour sauf mention) :
 - **(c) Route « chaîne de transitions »** (une route S+A du canal servant la chaîne d'identité de **tout**
   membre de l'org, pour accepter automatiquement la rotation d'un membre qui n'a jamais délégué) :
   **reportée** (non décidée pour la v1).
-- **Ouvert, non tranché, sans chiffre définitif** : (1) les **bornes de `member-rsa-pins.json`**
-  (2 000 épingles par org aujourd'hui, `member_pins_limit` ; Synco doit tenir **au moins 1 000 membres par
-  org** ; la valeur définitive n'est pas fixée) ; (2) la **purge d'`AiThreadEnvelopeEvent`** (aucune
-  rétention définie, 07 §5).
+- **PC28 (2026-11-21), épingles hybrides : décidé, implémentation au lot L05c ; le code actuel applique encore 2 000 par org (`member_pins_limit`)**. Cible : plafond de sécurité de **50 000 par org**, réglable dans la configuration ; épingles **inactives depuis plus de 180 jours archivées en compact** (empreinte seule, toujours détectées au retour du membre) ; **éviction de la plus ancienne archive** en cas de débordement ; **alerte du dashboard à 80 %**. Limite de 1 000 membres par org (PC30) : voir 00 §6.
+- **PC29** : `AiThreadEnvelopeEvent` conservé **1 an**, purge bornée côté API (lot L03e, en cours ; 07 §5).
 
 ## 11. Salon créé par un autre membre en l'absence de l'utilisateur
 

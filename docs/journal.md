@@ -1066,3 +1066,7 @@ par marqueurs a été faite.
 `cargo fmt --all --check` et `git diff --cached --name-only` limité à `docs/` avant chaque commit ; `check-secrets` du hook
 actif à chaque commit. Relecture du code (`crates/`) pour chaque état « côté runtime ». Aucune compilation ni aucun test :
 documentation seule.
+
+### 2026-11-21 — L00e, suite : PC28 à PC30, Q24 et Q29, limite d'ajout d'entrées
+
+PC28 (épingles RSA hybrides : 50 000 par org réglable, archivage compact après 180 j, éviction de la plus ancienne archive, alerte à 80 % ; décidé, implémentation au lot L05c, le code applique encore 2 000) en 03 §10.1, 06 §4.3, 00 Q25 ; PC29 (`AiThreadEnvelopeEvent` 1 an, purge L03e en cours) en 07 §3.1, 03, 00 ; PC30 (1 000 membres par org) en 00 Q25 seulement ; PC7 (Q24) et PC13 à PC15 (Q29) en 00 §6 et 11 §7 ; 09 §4 : ajout d'entrées 3 req/15 s. Ni nettoyage `memory.high` ni adoption runtime (lot L08b). Le point (c) de Q29 reste non tranché.

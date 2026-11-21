@@ -119,6 +119,13 @@ UTC, le coût étant attribué au jour où la mesure est arrivée.
 
 ## 7. Questions ouvertes (L08, reportées le 2026-11-20 ; non tranchées, 00 §6, Q29)
 
+**Décisions du 2026-11-21 (porte C, PC13 à PC15), reportées sans changement de code** : (a) **PC13** : mot de
+passe local seul en v1, pas de connexion par ticket Synco ; (b) **PC14** : pas de compteur par outil ; l'usage
+est présenté comme des analytics de ressources par session et par utilisateur ; **PC15** : mot de passe créé par
+la commande `dashboard-password`, comme prévu (l'idée d'un `.env` est abandonnée). Le point (c) reste non
+tranché. Les puces ci-dessous gardent leur texte d'origine pour mémoire. **PC28** : le dashboard affichera une
+alerte à 80 % du plafond d'épingles RSA (lot L05c, non réalisé).
+
 - **(a) Connexion par ticket Synco** des admins de l'org, **en complément** du mot de passe local
   (jamais à sa place, §1) : demande une nouvelle route de `synco_api` et un rôle.
 - **(b) Compteur d'appels par outil** dans `metrics` (06 §5) : évolution du protocole et de

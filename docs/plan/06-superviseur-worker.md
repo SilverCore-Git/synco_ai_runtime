@@ -213,7 +213,7 @@ relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pi
   réponse n'est rendue au worker qu'après l'écriture (échec : refus fermé `member_pins_unavailable`
   et alerte `member_pins_not_saved`, l'état complet est réécrit à la prochaine occasion). Absent :
   vide ; illisible ou de version inconnue (`v` ≠ 1, revue M5) : le superviseur ne démarre pas (pas de
-  remise à zéro silencieuse). **Bornes** (revue I3) : 2 000 épingles par org (au-delà, refus
+  remise à zéro silencieuse). **Bornes** (revue I3 ; PC28 les remplacera au lot L05c, ci-dessous) : 2 000 épingles par org (au-delà, refus
   fermé `member_pins_limit` et alerte), 16 empreintes précédentes par membre, 100 clés en attente
   par org (au-delà, le refus reste fermé sans être mémorisé). Mesure : 2 000 premières vues dans une
   réponse en 0,12 s, verrou d'état tenu au plus 16 ms (`integration.rs::cles_rsa_charge_et_plafond`).
@@ -263,9 +263,8 @@ RSA locale du membre (L10 / L11), ce qui rendra possible la comparaison hors ban
 actuel (revue I4 ci-dessus) ; (b) un mandat v2 liera l'empreinte SPKI de la clé RSA du propriétaire, le
 runtime lisant v1 et v2 ; (d) une réinitialisation E2EE sans transition signée bloque la création de
 salons jusqu'à l'acceptation par l'admin du runtime (v1, comportement actuel) ; (e) refus global en v1, avec
-un raffinement `scope=owner` plus tard ; (c) la route « chaîne de transitions » est reportée. **Ouvert**,
-sans chiffre définitif : les bornes de `member-rsa-pins.json` (2 000 par org aujourd'hui ; Synco doit tenir
-au moins 1 000 membres par org) et la purge d'`AiThreadEnvelopeEvent`.
+un raffinement `scope=owner` plus tard ; (c) la route « chaîne de transitions » est reportée. Bornes
+de `member-rsa-pins.json` : **PC28 (2026-11-21), épingles hybrides : décidé, implémentation au lot L05c ; le code actuel applique encore 2 000 par org (`member_pins_limit`)**. Cible : plafond de sécurité de **50 000 par org**, réglable dans la configuration ; épingles **inactives depuis plus de 180 jours archivées en compact** (empreinte seule, toujours détectées au retour du membre) ; **éviction de la plus ancienne archive** en cas de débordement ; **alerte du dashboard à 80 %**. Limite de 1 000 membres par org (PC30) : voir 00 §6. Purge d'`AiThreadEnvelopeEvent` : 1 an (PC29, 07 §5).
 
 ## 5. Métriques (sans contenu, P9)
 

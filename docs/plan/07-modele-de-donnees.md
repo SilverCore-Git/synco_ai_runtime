@@ -205,8 +205,8 @@ Nouveau modèle `AiThreadEnvelopeEvent` (journal sans contenu des réinitialisat
 | `keys` | nombre de `ThreadKey` modifiées |
 | `createdAt` | horodatage |
 
-Écrit dans la **même transaction** que la modification des `ThreadKey` (04 §4.3). **Aucune rétention
-n'est définie** : la purge d'`AiThreadEnvelopeEvent` est **ouverte** (PC27, non tranchée). Source :
+Écrit dans la **même transaction** que la modification des `ThreadKey` (04 §4.3). **Rétention de 1 an
+(PC29, 2026-11-21)**, avec une purge bornée côté API (lot L03e, en cours : pas encore dans le code relu). Source :
 `synco_api/prisma/schema.prisma`, `SYNCOAI_REFONTE_FEATURE.md` §14.8.
 
 ## 4. Extension de `AiChatSession` et bail

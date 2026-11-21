@@ -346,6 +346,8 @@ pub struct State {
     /// Réparations d'enveloppe en cours (un salon à la fois : un rejeu de la trame n'ouvre pas une
     /// seconde réparation).
     pub repose_inflight: std::collections::HashSet<String>,
+    /// L'alerte `unpair_erase_failed` est levée (une seule tant que l'échec persiste).
+    pub unpair_erase_alerted: bool,
 }
 
 impl State {
@@ -372,6 +374,7 @@ impl State {
             created_threads: crate::created_threads::CreatedThreadStore::in_memory(),
             repairs: crate::repair_queue::RepairQueue::in_memory(),
             repose_inflight: std::collections::HashSet::new(),
+            unpair_erase_alerted: false,
         }
     }
 

@@ -101,15 +101,18 @@ async fn main_loop(rt: Arc<Runtime>) {
             StreamEnd::Shutdown => break,
             StreamEnd::Unpaired => {
                 tracing::warn!(code = "runtime_unpaired", "désappairé : effacement des clés déléguées");
-                // Effacement des fichiers d'état impossible : le désappairage échoue et se retente
-                // (rien d'autre n'est oublié tant que le registre n'est pas effacé).
-                while let Err(e) = rt.forget_org().await {
-                    tracing::error!(code = "unpair_erase_failed", error = %e, "désappairage incomplet, nouvel essai");
-                    rt.state.lock().await.alert(crate::clock::now_secs(), "unpair_erase_failed");
+                // L'oubli en mémoire est fait ; seul l'effacement des fichiers d'état peut échouer :
+                // on le retente (une seule alerte, journal à débit limité, voir `erase_state_files`).
+                if rt.forget_org().await.is_err() {
                     let mut shutdown = rt.shutdown.subscribe();
-                    tokio::select! {
-                        () = tokio::time::sleep(Duration::from_secs(5)) => {}
-                        () = crate::runtime::stopped(&mut shutdown) => break,
+                    loop {
+                        tokio::select! {
+                            () = tokio::time::sleep(Duration::from_secs(5)) => {}
+                            () = crate::runtime::stopped(&mut shutdown) => break,
+                        }
+                        if rt.erase_state_files().await.is_ok() {
+                            break;
+                        }
                     }
                 }
             }

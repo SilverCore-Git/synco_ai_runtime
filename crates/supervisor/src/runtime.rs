@@ -767,27 +767,56 @@ impl Runtime {
         tracing::info!(code = "conversation_stopped", "conversation arrêtée");
     }
 
-    /// Désappairage (01 §9) : arrêt des workers sans attendre, effacement des clés déléguées,
-    /// oubli de l'org et des autorisations. Les clés du runtime sont conservées. Le registre des salons
-    /// créés est effacé **en premier** : s'il ne peut pas l'être (fichier impossible à supprimer),
-    /// le désappairage échoue (rien d'autre n'est oublié) et l'appelant le retente.
+    /// Désappairage (01 §9) : arrêt des workers sans attendre, puis **oubli en mémoire** (qui ne peut
+    /// pas échouer : org, coffre des clés déléguées, autorisations, registre et file en mémoire), puis
+    /// effacement des fichiers d'état. Les clés du runtime sont conservées. Seul l'effacement des
+    /// fichiers peut échouer : l'appelant le retente avec [`Self::erase_state_files`], sans refaire
+    /// l'oubli.
     pub async fn forget_org(self: &Arc<Self>) -> crate::error::Result<()> {
         let sessions: Vec<String> = self.state.lock().await.convs.keys().cloned().collect();
         for s in sessions {
             self.stop_conversation(&s, ShutdownReason::Unpaired, "revoked").await;
         }
+        {
+            let mut st = self.state.lock().await;
+            st.created_threads.forget();
+            st.repairs.forget();
+            st.generation = st.generation.saturating_add(1);
+            st.vault.clear();
+            st.auths.clear();
+            st.policy = None;
+            st.org_id = None;
+            st.tickets.revoked_users.clear();
+            st.tickets.revoked_conversations.clear();
+            st.alert(now_secs(), "runtime_unpaired");
+        }
+        self.erase_state_files().await
+    }
+
+    /// Efface le registre des salons créés et la file de réparations (les deux sont essayés). Échec :
+    /// une **seule** alerte `unpair_erase_failed` tant qu'il persiste (l'anneau d'alertes n'est pas
+    /// saturé par les réessais) et un journal à débit limité ; l'alerte est ré-armée au succès.
+    pub async fn erase_state_files(&self) -> crate::error::Result<()> {
         let mut st = self.state.lock().await;
-        st.created_threads.clear()?;
-        st.repairs.clear()?;
-        st.generation = st.generation.saturating_add(1);
-        st.vault.clear();
-        st.auths.clear();
-        st.policy = None;
-        st.org_id = None;
-        st.tickets.revoked_users.clear();
-        st.tickets.revoked_conversations.clear();
-        st.alert(now_secs(), "runtime_unpaired");
-        Ok(())
+        let threads = st.created_threads.clear();
+        let repairs = st.repairs.clear();
+        let result = threads.and(repairs);
+        match &result {
+            Ok(()) => st.unpair_erase_alerted = false,
+            Err(_) => {
+                if !std::mem::replace(&mut st.unpair_erase_alerted, true) {
+                    st.alert(now_secs(), "unpair_erase_failed");
+                }
+            }
+        }
+        drop(st);
+        if result.is_err() {
+            self.error_limited(
+                "unpair_erase_failed",
+                "désappairage incomplet : effacement des fichiers d'état impossible",
+            );
+        }
+        result
     }
 
     /// Diffuse une trame à tous les clients d'une conversation ; un client trop lent est coupé.

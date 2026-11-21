@@ -119,6 +119,12 @@ impl CreatedThreadStore {
         self.map.get(thread_id)
     }
 
+    /// Oublie le contenu en mémoire (ne peut pas échouer) ; le fichier est effacé ensuite par
+    /// [`Self::clear`].
+    pub fn forget(&mut self) {
+        self.map.clear();
+    }
+
     /// Tout oublier et **effacer le fichier** (désappairage : les salons sont ceux d'une org). Échec
     /// d'effacement : erreur, le désappairage ne doit pas laisser un registre sur le disque.
     pub fn clear(&mut self) -> Result<()> {

@@ -89,6 +89,15 @@ impl Runtime {
         }
     }
 
+    /// Comme [`Self::warn_limited`], au niveau erreur.
+    pub(crate) fn error_limited(&self, code: &'static str, message: &'static str) {
+        let allowed =
+            self.repair_log.lock().unwrap_or_else(std::sync::PoisonError::into_inner).allow(code, Instant::now());
+        if let Some(suppressed) = allowed {
+            tracing::error!(code, suppressed, "{message}");
+        }
+    }
+
     /// Demande une réparation (trame du flux ou item de la relecture API). Contrôle **local et
     /// immédiat** : un salon qui n'est pas à ce runtime n'entre jamais dans la file. Le reste
     /// (délégation, clé, signature) est fait par le travailleur, à chaque essai.

@@ -193,6 +193,12 @@ impl RepairQueue {
         }
     }
 
+    /// Oublie le contenu en mémoire (ne peut pas échouer) ; le fichier est effacé ensuite par
+    /// [`Self::clear`].
+    pub fn forget(&mut self) {
+        self.items.clear();
+    }
+
     /// Tout oublier et effacer le fichier (désappairage). Échec : erreur.
     pub fn clear(&mut self) -> Result<()> {
         self.items.clear();

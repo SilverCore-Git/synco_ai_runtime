@@ -1080,8 +1080,9 @@ async fn ancien_registre_refuse_comme_altere() {
     synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }
 
-/// Revue L08b (7) : si le registre ne peut pas être effacé, le désappairage échoue (rien d'autre
-/// n'est oublié) au lieu de se contenter d'un journal ; une fois possible, il aboutit.
+/// Revue L08b (7) : l'oubli en mémoire (org, coffre, autorisations) se fait d'abord et ne dépend pas
+/// de l'effacement. Si le registre ne peut pas être effacé, le désappairage le signale (une seule
+/// alerte `unpair_erase_failed`, quel que soit le nombre d'essais) et seul l'effacement est retenté.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn desappairage_efface_le_registre_ou_echoue() {
     let env = setup().await;
@@ -1094,13 +1095,27 @@ async fn desappairage_efface_le_registre_ou_echoue() {
     std::fs::remove_file(&file).unwrap();
     std::fs::create_dir(&file).unwrap();
     std::fs::write(file.join("x"), b"x").unwrap();
-    assert!(rt.forget_org().await.is_err(), "effacement impossible : le désappairage échoue");
-    assert!(rt.state.lock().await.vault.get(USER).is_some(), "rien d'autre n'est oublié");
+    assert!(rt.forget_org().await.is_err(), "effacement impossible : l'échec est rapporté");
+    {
+        let st = rt.state.lock().await;
+        assert!(st.vault.get(USER).is_none() && st.org_id.is_none(), "la mémoire est oubliée quand même");
+        assert!(st.created_threads.is_empty() && st.repairs.is_empty());
+    }
+    // Les réessais n'inondent pas l'anneau d'alertes : une seule alerte.
+    for _ in 0..250 {
+        assert!(rt.erase_state_files().await.is_err());
+    }
+    {
+        let st = rt.state.lock().await;
+        let n = st.alerts.iter().filter(|(_, c)| *c == "unpair_erase_failed").count();
+        assert_eq!(n, 1, "une seule alerte tant que l'échec persiste");
+        assert!(has_alert(&st, "runtime_unpaired"), "les autres alertes ne sont pas chassées de l'anneau");
+    }
     std::fs::remove_dir_all(&file).unwrap();
     std::fs::write(&file, saved).unwrap();
-    rt.forget_org().await.expect("désappairage");
+    rt.erase_state_files().await.expect("effacement");
     assert!(!file.exists(), "fichier supprimé");
-    assert!(rt.state.lock().await.vault.get(USER).is_none());
+    assert!(!rt.state.lock().await.unpair_erase_alerted, "alerte ré-armée");
     synco_ai_runtime::app::shutdown(&rt).await;
 }
 

@@ -1071,8 +1071,10 @@ Rust → TS : OK ; `synco_app` et `synco_api` non modifiés.
   été livré, la règle de rétrocompatibilité ne s'applique pas ; sinon qui écrit dans `state_dir` ferait adopter un fichier nu).
 - **Constat 5** (`c66678b`) : l'écriture du registre ne tient plus le verrou d'état (photo `Snapshot` sous le verrou, écriture par
   `spawn_blocking`, comme `member_pins` ; échec : alerte `created_threads_not_saved`).
-- **Constat 7** (`c66678b`) : au désappairage, le registre et la file sont **supprimés** en premier ; si la suppression échoue,
-  `forget_org` renvoie une erreur sans rien oublier d'autre et la boucle principale retente toutes les 5 s (alerte `unpair_erase_failed`).
+- **Constat 7** (`c66678b`, revu) : au désappairage, la mémoire est oubliée **d'abord** (org, coffre, autorisations, registre et file
+  en mémoire : cela ne peut pas échouer), puis les fichiers sont effacés ; seul cet effacement est retenté toutes les 5 s
+  (`erase_state_files`). Une seule alerte `unpair_erase_failed` tant que l'échec persiste (ré-armée au succès) et un
+  `tracing::error` à débit limité (`LogGate`) : l'anneau de 100 alertes n'est pas saturé.
 - **Constat 4** : une rafale de trames est bornée (une seule file, un travailleur, quatre appels de front) ; journaux à débit limité
   (une ligne par code et par fenêtre de 10 s, avec le nombre de lignes tues : `LogGate`).
 - **Constat 8** (`4fcd10d`) : `api_code` journalisé restreint à `[a-z_]`, 48 caractères (`ApiError::loggable_code`).

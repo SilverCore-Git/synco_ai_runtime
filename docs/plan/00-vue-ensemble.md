@@ -267,6 +267,10 @@ d'enveloppe du créateur, `autonomy.allowed`) est repris tel quel dans 12.
 | PC56 | **Lien objet ← plan / action** (`X-Synco-Plan`, colonne `output`) : conservé le temps du plan, effacé à la clôture, purge bornée de rattrapage ; inscrit au catalogue RGPD | 12 §8.5 ; 07 §9, §11 |
 | PC57 | **Mode autonome** : l'absence de recontrôle API des `refs` du `thread.create` autonome est un risque accepté | 12 §8.4, §10.6, §15 |
 | PC58 | **Graphe et parallélisme, façon GitHub Actions** : `after` = `needs`, `groups` de présentation, `category.create` et `categoryId` ; actions prêtes exécutées en parallèle (concurrence 4, maximum 8, des deux côtés), `429` réessayé 3 fois ; consigne au modèle ; présentation en graphe par niveaux (repli en liste sur mobile). **Ajustement de PC44** : phases dynamiques (séances par exécutant qui peuvent se chevaucher) au lieu de phases précalculées strictement alternées | 12 §3, §4, §8.1 à §8.3, §8.7, §17 ; 04, 07, 08, 09 |
+| PC59 | `category.create` et `categoryId` sur `thread.create` validés | 12 §4 |
+| PC60 | Concurrence 4 par défaut, 8 au plus ; 3 nouveaux essais sur `429` : validés | 12 §8.7, 09 |
+| PC61 | Plan de **100 actions** au plus (était 20) ; 2 000 dépendances, clair ≤ 256 Kio, corps de `POST …/plans` ≤ 1 Mio ; au-delà, l'agent découpe en plusieurs plans (`plan_too_large`, consigne de 12 §3.1) ; groupes repliés par défaut au-delà de 30 actions | 12 §3, §5, §12.2, §14, §17 ; 04, 07, 09 |
+| PC62 | Un plan accepté qui expire relance la conversation pour un bilan : validé | 12 §7.1, 08 |
 
 ## 5 bis. Analyse des décisions (pour mémoire)
 

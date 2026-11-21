@@ -1000,8 +1000,12 @@ async fn fournisseur_non_configure_refuse() {
         ))
         .await
         .unwrap();
-        wait_until("conversation en échec", || {
-            env.api.with(|st| st.conversations[SESSION].statuses.iter().any(|s| s == "failed"))
+        // Le bail est libéré par une requête distincte, après l'écriture de l'état `failed` : attendre les deux.
+        wait_until("conversation en échec et bail libéré", || {
+            env.api.with(|st| {
+                let c = &st.conversations[SESSION];
+                c.statuses.iter().any(|s| s == "failed") && c.lease_released
+            })
         })
         .await;
         env.api.with(|st| {

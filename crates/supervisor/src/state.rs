@@ -309,6 +309,9 @@ pub struct State {
     pub vault: Vault,
     /// Épingles TOFU des utilisateurs.
     pub pins: PinStore,
+    /// Épingles TOFU des clés RSA des membres (Q25) ; en mémoire tant que `app` n'a pas ouvert le
+    /// fichier d'état.
+    pub member_pins: crate::member_pins::MemberPinStore,
     /// Tickets.
     pub tickets: TicketState,
     /// Autorisations connues.
@@ -343,6 +346,7 @@ impl State {
             org_id: None,
             vault: Vault::default(),
             pins,
+            member_pins: crate::member_pins::MemberPinStore::in_memory(),
             tickets: TicketState::default(),
             auths,
             convs: HashMap::new(),

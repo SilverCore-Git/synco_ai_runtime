@@ -67,6 +67,21 @@ impl PinError {
 #[derive(Debug, Clone)]
 pub struct TrustedKey(pub EcPublicKey);
 
+/// Chaîne de transitions servie par `GET /users/:userId/sign-key`, au format de `synco-e2ee`.
+#[must_use]
+pub fn chain_from(records: &[runtime_protocol::api::TransitionRecord]) -> Vec<IdentityTransition> {
+    records
+        .iter()
+        .map(|t| IdentityTransition {
+            seq: t.seq,
+            old_public_sign_key: t.old_public_sign_key.clone(),
+            new_public_key: t.new_public_key.clone(),
+            new_public_sign_key: t.new_public_sign_key.clone(),
+            signature: t.signature.clone(),
+        })
+        .collect()
+}
+
 /// Magasin des épingles.
 #[derive(Debug)]
 pub struct PinStore {

@@ -201,17 +201,7 @@ impl Runtime {
             exp: record.exp,
         };
         let sign_key = self.api.sign_key(&record.user_id).await.map_err(|_| DelegationFailure::Transient)?;
-        let chain: Vec<IdentityTransition> = sign_key
-            .transitions
-            .iter()
-            .map(|t| IdentityTransition {
-                seq: t.seq,
-                old_public_sign_key: t.old_public_sign_key.clone(),
-                new_public_key: t.new_public_key.clone(),
-                new_public_sign_key: t.new_public_sign_key.clone(),
-                signature: t.signature.clone(),
-            })
-            .collect();
+        let chain: Vec<IdentityTransition> = crate::pins::chain_from(&sign_key.transitions);
         let (org_id, trusted) = {
             let mut st = self.state.lock().await;
             if st.generation != generation {

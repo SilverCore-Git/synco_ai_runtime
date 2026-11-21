@@ -465,6 +465,8 @@ Passes réelles (révisé après la vague B, 2026-11-19 ; `runAiRuntimeMaintenan
    `limits.confirmationTimeoutSecs` → `failed` `confirmation_timeout` ; `awaiting_key` depuis plus de
    `limits.keyTimeoutSecs` → `failed` `key_timeout` (comparaison stricte sur `statusChangedAt`), journal
    et push `AI_FAILED` ; défaut 7 jours, abaissable par l'org (§6 ; révisé après L03c, Q14 a = A) ;
+   **sauf** une conversation dont le `pendingToolCall` est `propose_actions` d'un plan **accepté** :
+   son attente est bornée par `expiresAt` du plan, traitée par `expireActionPlans` (12 §7.1, PC55) ;
 6. `purgeConsumedInbox` : éléments consommés depuis plus de 7 jours supprimés.
 
 Ajouts de L00f (2026-11-21 ; 12 §7, §11) à cette passe, après `failTimedOutWaits` :

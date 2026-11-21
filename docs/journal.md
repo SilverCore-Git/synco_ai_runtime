@@ -1086,8 +1086,9 @@ pas non plus. Aucun mécanisme de rattrapage n'est prévu (décision de l'utilis
 à ce jour. PC35 : ce mécanisme servira au « mode autonome » ; la politique de mode viendra d'un lot ultérieur, le comportement par défaut est inchangé.
 
 **Mutations faites** : MAC non vérifié (`valid = true`) → `registre_altere_ne_fait_rien_signer` échoue ; concurrence non bornée
-(`buffer_unordered(64)`) → `rafale_de_trames_bornee` échoue. Le contrôle du registre dans `submit_repair` est redondant avec celui de
-`try_repair` (défense en profondeur : supprimé seul, le test de relecture reste vert).
+(`buffer_unordered(64)`) → `rafale_de_trames_bornee` échoue. Le contrôle du registre dans `submit_repair` n'est qu'un filtre d'entrée.
+Celui de `try_repair` est **la seule barrière** pour une file relue du disque, ou quand le registre est déclaré altéré au
+redémarrage alors que la file scellée est valide : testé par `file_valide_mais_registre_altere_ou_sans_entree_ne_signe_pas`.
 
 **Non vérifié / recette manuelle** : la relecture contre la **vraie** route L03f (forme `{ items, nextCursor }` prise du lot) ; le
 comportement de la file sur un vrai redémarrage de service systemd.

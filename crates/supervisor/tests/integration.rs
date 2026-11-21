@@ -1135,6 +1135,44 @@ async fn reparation_en_attente_survit_au_redemarrage_et_est_rejouee() {
     synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }
 
+/// PC31, garde de `try_repair` : la file scellée relue du disque (valide) contient (salon,
+/// utilisateur, d-good), mais le registre est ensuite altéré, ou l'entrée en est retirée. La file ne
+/// signe jamais seule : au redémarrage, `try_repair` refait le contrôle du registre, la clé est
+/// pourtant disponible dans l'API, et aucun appel à `repose` n'a lieu.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn file_valide_mais_registre_altere_ou_sans_entree_ne_signe_pas() {
+    for tamper in [true, false] {
+        let env = setup().await;
+        let rt = Arc::clone(&env.running.runtime);
+        wait_until_async(&rt, |st| st.vault.get(USER).is_some()).await;
+        remember_thread(&rt, THREAD_LATE, USER, "d-good").await;
+        env.api.push(reset_frame(THREAD_LATE, USER, "d-good"));
+        wait_until_async(&rt, |st| st.repairs.len() == 1).await;
+        wait_until("file écrite", || repairs_file(&env).exists()).await;
+        // La clé est servie par l'API : sans la garde, le rejeu signerait.
+        env.api.with(|st| st.entries.get_mut("d-good").unwrap().push(env.late_entry.clone()));
+        let env = restart(env, |dir| {
+            let f = dir.join(synco_ai_runtime::created_threads::CREATED_THREADS_FILE);
+            if tamper {
+                let text = std::fs::read_to_string(&f).unwrap();
+                assert!(text.contains(THREAD_LATE));
+                std::fs::write(&f, text.replace(THREAD_LATE, "cm3threadinjecte00000001")).unwrap();
+            } else {
+                // Entrée retirée : registre vide, mais valide (scellé).
+                std::fs::remove_file(&f).unwrap();
+            }
+        })
+        .await;
+        wait_until_async(&env.running.runtime, |st| st.vault.get(USER).is_some() && st.repairs.is_empty()).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(reposes(&env).is_empty(), "registre sans l'entrée (altéré : {tamper}) : rien n'est signé");
+        let st = env.running.runtime.state.lock().await;
+        assert_eq!(has_alert(&st, "created_threads_tampered"), tamper);
+        drop(st);
+        synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+    }
+}
+
 /// PC31 : la clé arrive pendant que le runtime tourne (`delegation.entries_added`) : rejeu immédiat.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn reparation_rejouee_a_l_arrivee_de_l_entree() {

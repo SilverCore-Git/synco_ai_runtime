@@ -1,0 +1,19 @@
+{
+  "description": "Réparation d'enveloppe rt1 avec délégation renouvelée (produit par le superviseur, relu par verifyRt1Envelope de synco_app).",
+  "thread": {
+    "commitment": "LgKScR1Gx+znd+htYc9NHCYKygWnXrieW9ZgPtwxezI=",
+    "creatorDelegationId": "d-creatrice",
+    "cskPublic": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "Fw0DfAXUl7GkWqjrx-6IgLk0KYCbb1isR62GftWVHDw",
+      "y": "NJh2MLboRKrz2HymBCaBTTdR-RHKlYLXa-08NriYw9g"
+    },
+    "ctx": "thread:cm3threadexample000000001",
+    "delegationId": "d-good",
+    "keyHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "signature": "eVNcAboeM8l7XsOkB/JC7albOd/7/jquRw+JI5YeAB7axo6SsVntIdZMXQOeLkpgnrHSjelyFRP7DTA5hS2j8g==",
+    "threadId": "cm3threadexample000000001",
+    "version": 1
+  }
+}

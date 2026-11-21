@@ -78,6 +78,10 @@ pub struct Runtime {
     pub history: Arc<crate::dashboard::history::History>,
     /// Flux de notifications de l'API ouvert.
     pub api_connected: std::sync::atomic::AtomicBool,
+    /// Réveil du travailleur des réparations d'enveloppe (PC31).
+    pub repair_wake: Notify,
+    /// Journaux à débit limité des réparations (rafale de trames).
+    pub(crate) repair_log: std::sync::Mutex<crate::repairs::LogGate>,
 }
 
 impl core::fmt::Debug for Runtime {
@@ -127,6 +131,8 @@ impl Runtime {
             relay_permits: Arc::new(tokio::sync::Semaphore::new(crate::state::RELAY_IN_FLIGHT_TOTAL)),
             history,
             api_connected: std::sync::atomic::AtomicBool::new(false),
+            repair_wake: Notify::new(),
+            repair_log: std::sync::Mutex::new(crate::repairs::LogGate::default()),
         })
     }
 
@@ -183,6 +189,8 @@ impl Runtime {
                 let _ = self.open_delegation(&record).await;
             }
         }
+        // Délégations (re)chargées : les réparations en attente sont rejouées.
+        self.repair_wake.notify_one();
         Ok(())
     }
 
@@ -226,6 +234,7 @@ impl Runtime {
         let result = self.open_delegation_inner(record).await;
         match result {
             Ok(()) => {
+                self.repair_wake.notify_one();
                 let _ = self.api.delegation_status(&record.delegation_id, true).await;
             }
             Err(DelegationFailure::Unusable(code)) => {
@@ -359,6 +368,10 @@ impl Runtime {
         }
         if let Some(user) = user {
             self.push_key_changes(&user, &[], &added).await;
+            if !added.is_empty() {
+                // Entrées arrivées : une réparation qui attendait sa clé peut maintenant aboutir.
+                self.repair_wake.notify_one();
+            }
             if added.iter().any(|k| k.kind == KeyKind::Conv) {
                 self.wake.notify_one();
             }
@@ -541,85 +554,12 @@ impl Runtime {
                 }
             }
             ApiEvent::ThreadEnvelopeReset { thread_id, user_id, delegation_id } => {
-                // Tâche à part : l'appel à l'API ne retarde pas les évènements suivants.
-                let rt = Arc::clone(self);
-                tokio::spawn(async move { rt.repose_envelope(&thread_id, &user_id, &delegation_id).await });
+                // PC31 : la trame ne fait que demander ; la file et son travailleur (bornés) font
+                // les vérifications et l'appel à l'API, sans retarder les évènements suivants.
+                self.submit_repair(&thread_id, &user_id, &delegation_id).await;
             }
             ApiEvent::RuntimeUnpaired => self.unpaired.notify_one(),
             ApiEvent::Ping | ApiEvent::Unknown => {}
-        }
-    }
-
-    /// Q21 : répare l'enveloppe `rt1` d'un salon réinitialisé (`thread.envelope_reset`, spec API
-    /// §14.8). Le serveur n'est pas de confiance : on ne signe qu'après avoir vérifié, localement,
-    /// (1) que ce runtime a créé ce salon pour cet utilisateur (registre), (2) que `delegation_id` est
-    /// la délégation **active** et non révoquée de cet utilisateur chez nous, (3) que nous détenons la
-    /// clé du salon (entrée de cette délégation). Le `commitment` est recalculé depuis la clé réelle.
-    /// Cas refusés : journalisés par code, sans contenu ni identifiant, jamais réessayés.
-    pub async fn repose_envelope(self: &Arc<Self>, thread_id: &str, user_id: &str, delegation_id: &str) {
-        let ctx = synco_e2ee::keys::thread_context(thread_id);
-        let body = {
-            let mut st = self.state.lock().await;
-            if st.org_id.is_none() {
-                return;
-            }
-            if !st.created_threads.get(thread_id).is_some_and(|c| c.user_id == user_id) {
-                tracing::warn!(
-                    code = "envelope_reset_foreign_thread",
-                    "réinitialisation d'un salon qui n'est pas à ce runtime"
-                );
-                return;
-            }
-            let now = now_secs();
-            let active = st.vault.get(user_id).filter(|d| {
-                d.delegation_id() == delegation_id
-                    && d.exp() > now
-                    && !st.revoked_delegations.contains_key(delegation_id)
-            });
-            let Some(delegation) = active else {
-                tracing::warn!(code = "envelope_reset_unknown_delegation", "délégation inconnue ou inactive");
-                return;
-            };
-            let Some(key) = delegation.thread_key(thread_id, 1) else {
-                // Contrainte de la spec : sans la clé, la réparation attend la prochaine synchro.
-                tracing::warn!(code = "envelope_reset_key_missing", "clé du salon non détenue");
-                return;
-            };
-            let Ok(sig) = synco_e2ee::keys::sign_rt1_envelope(self.keys.csk(), key.as_bytes(), &ctx, 1, delegation_id)
-            else {
-                tracing::warn!(code = "envelope_reset_sign_failed", "signature impossible");
-                return;
-            };
-            if !st.repose_inflight.insert(thread_id.to_owned()) {
-                return;
-            }
-            serde_json::json!({
-                "delegationId": delegation_id, "ctx": ctx, "version": 1,
-                "commitment": sig.commitment, "signature": sig.signature,
-            })
-            .to_string()
-            .into_bytes()
-        };
-        // Pannes passagères (réseau, 5xx) : jusqu'à trois essais ; tout refus de l'API est définitif
-        // (`envelope_exists`, `forbidden`… : un humain ou une autre réparation a déjà tranché).
-        let mut outcome = Err(crate::api::ApiError::Network);
-        for delay in [0u64, 1, 4] {
-            if delay > 0 {
-                tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
-            }
-            outcome = self.api.repose_envelope(thread_id, body.clone()).await;
-            let transient = matches!(&outcome, Err(crate::api::ApiError::Network))
-                || matches!(&outcome, Err(e) if e.status().is_some_and(|s| s >= 500));
-            if !transient || self.is_shutting_down() {
-                break;
-            }
-        }
-        self.state.lock().await.repose_inflight.remove(thread_id);
-        match outcome {
-            Ok(()) => tracing::info!(code = "envelope_reposed", "enveloppe rt1 reposée"),
-            Err(e) => {
-                tracing::warn!(code = "envelope_repose_refused", api_code = e.loggable_code(), "enveloppe non reposée")
-            }
         }
     }
 
@@ -838,6 +778,7 @@ impl Runtime {
         }
         let mut st = self.state.lock().await;
         st.created_threads.clear()?;
+        st.repairs.clear()?;
         st.generation = st.generation.saturating_add(1);
         st.vault.clear();
         st.auths.clear();

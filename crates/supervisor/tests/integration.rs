@@ -45,6 +45,16 @@ const DASH_PW: &str = "mot de passe du dashboard de test";
 const PASSPHRASE: &str = "phrase de passe des tests d'intégration";
 const CK: [u8; 32] = [0xdd; 32];
 const THREAD_KEY: [u8; 32] = [0xbb; 32];
+/// Salon dont la clé n'arrive que plus tard (entrée tenue à part : `Env::late_entry`).
+const THREAD_LATE: &str = "cm3threadlate000000000001";
+const LATE_KEY: [u8; 32] = [0xcc; 32];
+/// Salons de la rafale (clés détenues dès le départ).
+const BURST: usize = 12;
+const BURST_KEY: [u8; 32] = [0xdd; 32];
+
+fn burst_thread(i: usize) -> String {
+    format!("cm3threadburst{i:012}")
+}
 
 fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
@@ -63,6 +73,8 @@ struct Env {
     api: MockApi,
     running: synco_ai_runtime::app::Running,
     keys_secret: Zeroizing<Vec<u8>>,
+    /// Entrée `thread` de `THREAD_LATE`, scellée pour `d-good`, pas encore servie par l'API.
+    late_entry: Value,
     /// Configuration TOML du superviseur (pour le redémarrer à l'identique).
     config_text: String,
     /// Clé de signature d'identité de `USER` (transitions d'identité).
@@ -96,10 +108,13 @@ fn delegation_record(
         let ct = delegation::seal_entry(&dk, &ctx, kind, r, 1, &SymmetricKey::from_bytes(k), &mut OsRandom).unwrap();
         json!({ "id": id, "kind": kind.as_str(), "ref": r, "version": 1, "ciphertext": ct })
     };
-    let entries = vec![
+    let mut entries = vec![
         entry(EntryKind::Conv, SESSION, CK, "e1"),
         entry(EntryKind::Thread, "cm3threadexample000000001", THREAD_KEY, "e2"),
     ];
+    entries.extend((0..BURST).map(|i| entry(EntryKind::Thread, &burst_thread(i), BURST_KEY, &format!("b{i}"))));
+    // Toujours en dernier : l'appelant la retire pour la servir plus tard.
+    entries.push(entry(EntryKind::Thread, THREAD_LATE, LATE_KEY, "e-late"));
     // Enregistrement servi par l'API (éventuellement altéré : `exp` différent de l'AAD).
     let record = json!({
         "delegationId": delegation_id, "userId": user, "scope": "org",
@@ -184,9 +199,11 @@ async fn setup_hops(
     let bad_key = EcSigningKey::generate(&mut OsRandom).unwrap();
     let kex = keys.public().kex.clone();
     let fpr = keys.fingerprint_hex().to_owned();
-    let (mut good, good_entries) = delegation_record(&kex, &fpr, keys.runtime_id(), USER, "d-good", &user_key, 0);
+    let (mut good, mut good_entries) = delegation_record(&kex, &fpr, keys.runtime_id(), USER, "d-good", &user_key, 0);
     good["displayName"] = json!("Alice\u{7} Martin");
-    let (bad, bad_entries) = delegation_record(&kex, &fpr, keys.runtime_id(), BAD_USER, "d-bad", &bad_key, 3_600);
+    let late_entry = good_entries.pop().unwrap();
+    let (bad, mut bad_entries) = delegation_record(&kex, &fpr, keys.runtime_id(), BAD_USER, "d-bad", &bad_key, 3_600);
+    bad_entries.pop();
     api.with(|st| {
         st.slow_entries_ms = slow_entries_ms;
         st.policy = policy;
@@ -223,7 +240,7 @@ base_url = "{llm_base_url}"
     let config = Config::parse(&config_text).unwrap();
     let keys = seal::load(&state_dir, &backend()).unwrap().unwrap();
     let running = synco_ai_runtime::app::start(config, keys, launcher, BTreeMap::new()).await.unwrap();
-    Env { _dir: dir, state_dir, api, running, keys_secret, config_text, user_key }
+    Env { _dir: dir, state_dir, api, running, keys_secret, late_entry, config_text, user_key }
 }
 
 /// Arrête le superviseur, laisse `between` agir sur le répertoire d'état, puis le relance avec les
@@ -1081,6 +1098,220 @@ async fn desappairage_efface_le_registre_ou_echoue() {
     assert!(!file.exists(), "fichier supprimé");
     assert!(rt.state.lock().await.vault.get(USER).is_none());
     synco_ai_runtime::app::shutdown(&rt).await;
+}
+
+fn repairs_file(env: &Env) -> std::path::PathBuf {
+    env.state_dir.join(synco_ai_runtime::repair_queue::REPAIRS_FILE)
+}
+
+/// PC31 : une trame valide dont la clé du salon n'est pas encore là va dans la file persistante,
+/// survit à un redémarrage et est rejouée à l'arrivée de l'entrée (ici : au rechargement de la
+/// délégation), avec toutes les vérifications locales.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn reparation_en_attente_survit_au_redemarrage_et_est_rejouee() {
+    let env = setup().await;
+    let rt = Arc::clone(&env.running.runtime);
+    wait_until_async(&rt, |st| st.vault.get(USER).is_some()).await;
+    remember_thread(&rt, THREAD_LATE, USER, "d-good").await;
+    // Salon étranger : jamais dans la file.
+    env.api.push(reset_frame("cm3threadetranger00000001", USER, "d-good"));
+    env.api.push(reset_frame(THREAD_LATE, USER, "d-good"));
+    wait_until_async(&rt, |st| st.repairs.len() == 1).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(reposes(&env).is_empty(), "clé absente : rien n'est signé");
+    assert_eq!(rt.state.lock().await.repairs.len(), 1, "gardée, pas jetée ; l'étranger n'y est pas");
+    wait_until("file écrite", || repairs_file(&env).exists()).await;
+    assert!(std::fs::read_to_string(repairs_file(&env)).unwrap().contains("\"mac\""), "file scellée");
+    // La clé arrive dans l'API pendant que le runtime est arrêté ; le redémarrage relit la file.
+    env.api.with(|st| st.entries.get_mut("d-good").unwrap().push(env.late_entry.clone()));
+    let env = restart(env, |_| ()).await;
+    wait_until("réparation rejouée après redémarrage", || reposes(&env).len() == 1).await;
+    assert_eq!(reposes(&env)[0].body["ctx"], format!("thread:{THREAD_LATE}"));
+    wait_until_async(&env.running.runtime, |st| st.repairs.is_empty()).await;
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+}
+
+/// PC31 : la clé arrive pendant que le runtime tourne (`delegation.entries_added`) : rejeu immédiat.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn reparation_rejouee_a_l_arrivee_de_l_entree() {
+    let env = setup().await;
+    let rt = Arc::clone(&env.running.runtime);
+    wait_until_async(&rt, |st| st.vault.get(USER).is_some()).await;
+    remember_thread(&rt, THREAD_LATE, USER, "d-good").await;
+    env.api.push(reset_frame(THREAD_LATE, USER, "d-good"));
+    wait_until_async(&rt, |st| st.repairs.len() == 1).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(reposes(&env).is_empty());
+    env.api.with(|st| st.entries.get_mut("d-good").unwrap().push(env.late_entry.clone()));
+    env.api.push(json!({ "type": "delegation.entries_added", "delegationId": "d-good", "after": "e2" }));
+    wait_until("rejeu à l'arrivée de l'entrée", || reposes(&env).len() == 1).await;
+    wait_until_async(&rt, |st| st.repairs.is_empty()).await;
+    // Refus définitif de l'API : l'entrée est retirée, pas de boucle.
+    remember_thread(&rt, THREAD, USER, "d-good").await;
+    env.api.with(|st| st.repose_override = Some((403, "forbidden".into())));
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    wait_until("refus", || reposes(&env).len() == 2).await;
+    wait_until_async(&rt, |st| st.repairs.is_empty()).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(reposes(&env).len(), 2, "refus définitif : plus d'essai");
+    synco_ai_runtime::app::shutdown(&rt).await;
+}
+
+/// PC31 : relecture `GET …/envelope-resets` (mock : L03f en cours) à chaque reconnexion, paginée ;
+/// chaque item repasse par les vérifications locales : un salon absent du registre, ou d'un autre
+/// utilisateur, n'est **pas** signé, quoi que dise l'API.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn relecture_api_paginee_et_verifiee_localement() {
+    let env = setup().await;
+    let rt = Arc::clone(&env.running.runtime);
+    wait_until_async(&rt, |st| st.vault.get(USER).is_some()).await;
+    remember_thread(&rt, THREAD, USER, "d-good").await;
+    let item = |t: &str, u: &str, d: &str| json!({ "threadId": t, "userId": u, "delegationId": d, "resetAt": "2026-11-21T10:00:00.000Z" });
+    env.api.with(|st| {
+        st.resets_page = 1;
+        st.resets = vec![
+            item("cm3threadetranger00000001", USER, "d-good"),
+            item(THREAD, BAD_USER, "d-good"),
+            item(&burst_thread(0), USER, "d-good"),
+            item(THREAD, USER, "d-good"),
+        ];
+        st.resets_requests.clear();
+    });
+    let env = restart(env, |_| ()).await;
+    wait_until("quatre pages relues", || env.api.with(|st| st.resets_requests.len() >= 4)).await;
+    wait_until("réparation légitime", || reposes(&env).len() == 1).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let calls = reposes(&env);
+    assert_eq!(calls.len(), 1, "seul le salon du registre est signé : {calls:?}");
+    assert!(calls[0].path.contains(THREAD));
+    let requests = env.api.with(|st| st.resets_requests.clone());
+    assert!(requests[0].contains("limit=") && !requests[0].contains("cursor="), "{requests:?}");
+    assert!(
+        requests[1].contains("cursor=1") && requests[2].contains("cursor=2"),
+        "pagination par curseur : {requests:?}"
+    );
+    assert!(
+        env.running.runtime.state.lock().await.repairs.is_empty(),
+        "les items étrangers n'entrent pas dans la file"
+    );
+    // Route absente (L03f pas déployée) : la reconnexion se passe sans bruit ni signature.
+    env.api.with(|st| st.resets_fail = Some(404));
+    let env = restart(env, |_| ()).await;
+    wait_until_async(&env.running.runtime, |st| st.vault.get(USER).is_some()).await;
+    assert_eq!(reposes(&env).len(), 1);
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+}
+
+/// Revue L08b (4) : une rafale de trames ne lance pas une tâche par trame. Cent soixante trames
+/// (doublons et salons étrangers compris) : au plus `REPAIR_CONCURRENCY` appels de front, la file
+/// ne grossit que des demandes valides, et toutes les réparations valides aboutissent.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn rafale_de_trames_bornee() {
+    let env = setup().await;
+    let rt = Arc::clone(&env.running.runtime);
+    wait_until_async(&rt, |st| st.vault.get(USER).is_some()).await;
+    for i in 0..BURST {
+        remember_thread(&rt, &burst_thread(i), USER, "d-good").await;
+    }
+    env.api.with(|st| st.repose_delay_ms = 150);
+    for round in 0..10 {
+        for i in 0..BURST {
+            env.api.push(reset_frame(&burst_thread(i), USER, "d-good"));
+        }
+        for i in 0..4 {
+            env.api.push(reset_frame(&format!("cm3threadetranger{round:02}{i:06}"), USER, "d-good"));
+        }
+    }
+    wait_until("toutes les réparations valides faites", || env.api.with(|st| st.reposed.len() == BURST)).await;
+    wait_until_async(&rt, |st| st.repairs.is_empty()).await;
+    let max = env.api.with(|st| st.repose_max_in_flight);
+    assert!(max >= 1, "l'API a été appelée");
+    assert!(
+        usize::try_from(max).unwrap() <= synco_ai_runtime::repairs::REPAIR_CONCURRENCY,
+        "au plus {} appels de front, observé {max}",
+        synco_ai_runtime::repairs::REPAIR_CONCURRENCY
+    );
+    synco_ai_runtime::app::shutdown(&rt).await;
+}
+
+/// Revue L08b (2) : réparation avec une délégation **renouvelée** (`delegationId` de la trame ≠
+/// délégation du `creatorId` du salon). L'enveloppe est signée avec la délégation de la trame, la
+/// signature est déterministe (RFC 6979), et le vecteur est relu par `verifyRt1Envelope` de
+/// synco_app (`crates/worker/tests/ts/read-from-worker.ts`). Régénération :
+/// `L08C_WRITE_FIXTURES=1 cargo test -p synco-ai-runtime --test integration delegation_renouvelee`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn reparation_avec_delegation_renouvelee() {
+    let env = setup().await;
+    let rt = Arc::clone(&env.running.runtime);
+    wait_until_async(&rt, |st| st.vault.get(USER).is_some()).await;
+    // Salon créé avec l'ancienne délégation `d-creatrice` ; la délégation courante est `d-good`.
+    remember_thread(&rt, THREAD, USER, "d-creatrice").await;
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    wait_until("enveloppe reposée", || reposes(&env).len() == 1).await;
+    let body = reposes(&env)[0].body.clone();
+    let ctx = format!("thread:{THREAD}");
+    let envelope = synco_e2ee::keys::KeyEnvelopeSignature {
+        commitment: body["commitment"].as_str().unwrap().to_owned(),
+        signature: body["signature"].as_str().unwrap().to_owned(),
+    };
+    let csk = rt.keys.csk().public_key().unwrap();
+    assert_eq!(body["delegationId"], "d-good");
+    synco_e2ee::keys::verify_rt1_envelope(&csk, &THREAD_KEY, &ctx, 1, "d-good", &envelope)
+        .expect("délégation de la trame");
+    assert!(
+        synco_e2ee::keys::verify_rt1_envelope(&csk, &THREAD_KEY, &ctx, 1, "d-creatrice", &envelope).is_err(),
+        "l'enveloppe ne vaut pas pour la délégation du créateur"
+    );
+    // Signature déterministe : l'API (qui compare la signature) répond `updated: 0` à un rejeu.
+    let again = synco_e2ee::keys::sign_rt1_envelope(rt.keys.csk(), &THREAD_KEY, &ctx, 1, "d-good").unwrap();
+    assert_eq!(
+        (again.commitment.as_str(), again.signature.as_str()),
+        (envelope.commitment.as_str(), envelope.signature.as_str())
+    );
+    if std::env::var_os("L08C_WRITE_FIXTURES").is_some() {
+        let fixture = json!({
+            "description": "Réparation d'enveloppe rt1 avec délégation renouvelée (produit par le superviseur, relu par verifyRt1Envelope de synco_app).",
+            "thread": {
+                "threadId": THREAD, "ctx": ctx, "version": 1,
+                "commitment": envelope.commitment, "signature": envelope.signature,
+                "delegationId": "d-good", "creatorDelegationId": "d-creatrice",
+                "keyHex": synco_e2ee::encoding::hex(&THREAD_KEY),
+                "cskPublic": serde_json::from_str::<Value>(&csk.to_canonical()).unwrap(),
+            },
+        });
+        std::fs::write(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/repose-delegation-renouvelee.json"),
+            serde_json::to_string_pretty(&fixture).unwrap() + "\n",
+        )
+        .unwrap();
+    }
+    synco_ai_runtime::app::shutdown(&rt).await;
+}
+
+/// Le vecteur croisé (relu par le TS de synco_app) reste valide côté Rust.
+#[test]
+fn vecteur_croise_delegation_renouvelee_relu_par_rust() {
+    let f: Value = serde_json::from_str(include_str!("fixtures/repose-delegation-renouvelee.json")).unwrap();
+    let t = &f["thread"];
+    let csk = synco_e2ee::ec::EcPublicKey::from_canonical(&t["cskPublic"].to_string()).unwrap();
+    let key = synco_e2ee::encoding::from_hex(t["keyHex"].as_str().unwrap()).unwrap();
+    let envelope = synco_e2ee::keys::KeyEnvelopeSignature {
+        commitment: t["commitment"].as_str().unwrap().to_owned(),
+        signature: t["signature"].as_str().unwrap().to_owned(),
+    };
+    let ctx = t["ctx"].as_str().unwrap();
+    synco_e2ee::keys::verify_rt1_envelope(&csk, &key, ctx, 1, t["delegationId"].as_str().unwrap(), &envelope).unwrap();
+    assert!(
+        synco_e2ee::keys::verify_rt1_envelope(
+            &csk,
+            &key,
+            ctx,
+            1,
+            t["creatorDelegationId"].as_str().unwrap(),
+            &envelope
+        )
+        .is_err()
+    );
 }
 
 /// Scénario A : `delegation.revoked` arrive pendant le chargement des entrées.

@@ -60,7 +60,12 @@ pub async fn start(
         // PC33 : MAC invalide, le registre est considéré vide (rien n'est signé) ; le runtime continue.
         state.alert(crate::clock::now_secs(), "created_threads_tampered");
     }
+    state.repairs = crate::repair_queue::RepairQueue::open(&config.state_dir, &keys)?;
+    if state.repairs.take_tampered() {
+        state.alert(crate::clock::now_secs(), "envelope_repairs_tampered");
+    }
     let runtime = Runtime::new(Arc::new(config), keys, api, launcher, provider_secrets, state);
+    runtime.spawn_repair_worker();
     {
         let rt = Arc::clone(&runtime);
         tokio::spawn(async move {

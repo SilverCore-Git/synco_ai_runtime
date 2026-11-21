@@ -142,6 +142,9 @@ async fn session(rt: &Arc<Runtime>, mut socket: Socket) -> Attempt {
             if let Err(e) = rt.scan_pending().await {
                 tracing::warn!(error = %e, "conversations en attente non relues");
             }
+            // PC31 : réparations d'enveloppe en attente côté API (chaque item repasse par les
+            // vérifications locales).
+            rt.reread_envelope_resets().await;
         })
     };
     let mut presence = tokio::time::interval(Duration::from_secs(30));

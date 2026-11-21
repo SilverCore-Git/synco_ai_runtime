@@ -378,6 +378,20 @@ impl ApiClient {
         .await
     }
 
+    /// `GET /e2ee/threads/envelope-resets?limit=&cursor=` (S seule, L03f, spec API §14.8) : une page
+    /// des réinitialisations d'enveloppe en attente. Le contenu n'est pas de confiance.
+    pub async fn envelope_resets(
+        &self,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<wire::EnvelopeResetsPage, ApiError> {
+        let path = match cursor {
+            Some(c) => format!("/api/runtime/v1/e2ee/threads/envelope-resets?limit={limit}&cursor={c}"),
+            None => format!("/api/runtime/v1/e2ee/threads/envelope-resets?limit={limit}"),
+        };
+        self.json(Method::Get, &path, None, None).await
+    }
+
     /// `GET /delegations/:id/entries`.
     pub async fn entries(&self, delegation_id: &str, after: Option<&str>) -> Result<wire::EntriesPage, ApiError> {
         let path = match after {

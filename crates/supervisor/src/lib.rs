@@ -29,6 +29,8 @@ pub mod launcher;
 pub mod member_pins;
 pub mod pins;
 pub mod ratelimit;
+pub mod repair_queue;
+pub mod repairs;
 pub mod runtime;
 pub mod sandbox;
 pub mod seal;

@@ -150,6 +150,33 @@ pub struct AuthorizationsPage {
     pub next: Option<String>,
 }
 
+/// Élément de `GET /e2ee/threads/envelope-resets` (spec API §14.8, L03f) : une réinitialisation
+/// d'enveloppe `rt1` en attente de réparation. **Jamais une décision** : le runtime refait toutes
+/// ses vérifications locales (registre des salons créés, délégation, clé) avant de signer.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvelopeResetItem {
+    /// Salon.
+    pub thread_id: String,
+    /// Utilisateur propriétaire.
+    pub user_id: String,
+    /// Délégation avec laquelle réparer.
+    pub delegation_id: String,
+    /// Instant de la réinitialisation (ISO 8601) : non exploité.
+    #[serde(default)]
+    pub reset_at: Option<String>,
+}
+
+/// Page de `GET /e2ee/threads/envelope-resets?limit=&cursor=` : `next_cursor = null` marque la fin.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvelopeResetsPage {
+    /// Réinitialisations de la page.
+    pub items: Vec<EnvelopeResetItem>,
+    /// Curseur suivant.
+    pub next_cursor: Option<String>,
+}
+
 /// Élément de `GET /conversations?state=pending`.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

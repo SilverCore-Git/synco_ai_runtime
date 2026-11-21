@@ -341,6 +341,8 @@ pub struct State {
     pub display_names: HashMap<String, String>,
     /// Salons créés par ce runtime (Q21) : seuls ceux-là peuvent être réparés par `repose`.
     pub created_threads: crate::created_threads::CreatedThreadStore,
+    /// File persistante des réparations d'enveloppe en attente (PC31).
+    pub repairs: crate::repair_queue::RepairQueue,
     /// Réparations d'enveloppe en cours (un salon à la fois : un rejeu de la trame n'ouvre pas une
     /// seconde réparation).
     pub repose_inflight: std::collections::HashSet<String>,
@@ -368,6 +370,7 @@ impl State {
             revoked_delegations: HashMap::new(),
             display_names: HashMap::new(),
             created_threads: crate::created_threads::CreatedThreadStore::in_memory(),
+            repairs: crate::repair_queue::RepairQueue::in_memory(),
             repose_inflight: std::collections::HashSet::new(),
         }
     }

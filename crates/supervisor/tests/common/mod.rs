@@ -92,8 +92,22 @@ pub struct MockState {
     /// `POST /e2ee/threads/:id/key-envelope/repose` : réponse imposée (statut, code) ; sinon 200,
     /// puis `envelope_exists` si l'enveloppe est différente de la première reçue.
     pub repose_override: Option<(u16, String)>,
-    /// Première enveloppe reposée par salon (`commitment`).
-    pub reposed: BTreeMap<String, String>,
+    /// Première enveloppe reposée par salon (`commitment`, `signature`) : l'API (L03f) compare les
+    /// deux ; même enveloppe = 200 `updated: 0`, autre = 409 `envelope_exists`.
+    pub reposed: BTreeMap<String, (String, String)>,
+    /// Délai (ms) avant de répondre à `…/key-envelope/repose` (mesure de la concurrence).
+    pub repose_delay_ms: u64,
+    /// Appels `…/key-envelope/repose` en cours, et leur maximum observé.
+    pub repose_in_flight: u32,
+    pub repose_max_in_flight: u32,
+    /// `GET /e2ee/threads/envelope-resets` (L03f, en cours de développement : mock) : items servis.
+    pub resets: Vec<Value>,
+    /// Taille de page (0 = tout sur une page).
+    pub resets_page: usize,
+    /// Statut d'erreur à servir (route absente : 404).
+    pub resets_fail: Option<u16>,
+    /// Requêtes reçues (chemin + requête).
+    pub resets_requests: Vec<String>,
     /// `GET /authorizations` : taille de page (0 = tout sur une page).
     pub authorizations_page: usize,
     /// `GET /authorizations` : statut d'erreur à servir.
@@ -257,6 +271,16 @@ async fn channel(
         let delay = state.lock().unwrap().slow_sign_key_ms;
         tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
     }
+    if method == Method::POST && uri.path().ends_with("/key-envelope/repose") {
+        let delay = {
+            let mut st = state.lock().unwrap();
+            st.repose_in_flight += 1;
+            st.repose_max_in_flight = st.repose_max_in_flight.max(st.repose_in_flight);
+            st.repose_delay_ms
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+        state.lock().unwrap().repose_in_flight -= 1;
+    }
     // Route lente (tests de concurrence du relais).
     if uri.path().ends_with("/tools") {
         tokio::time::sleep(std::time::Duration::from_millis(400)).await;
@@ -309,15 +333,30 @@ async fn channel(
             if let Some((status, code)) = st.repose_override.clone() {
                 return error(status, &code);
             }
-            let commitment = json_body["commitment"].as_str().unwrap_or_default().to_owned();
+            let pair = (
+                json_body["commitment"].as_str().unwrap_or_default().to_owned(),
+                json_body["signature"].as_str().unwrap_or_default().to_owned(),
+            );
             match st.reposed.get(*tid) {
-                Some(first) if *first != commitment => error(409, "envelope_exists"),
+                Some(first) if *first != pair => error(409, "envelope_exists"),
                 Some(_) => axum::Json(json!({ "threadId": tid, "updated": 0 })).into_response(),
                 None => {
-                    st.reposed.insert((*tid).to_owned(), commitment);
+                    st.reposed.insert((*tid).to_owned(), pair);
                     axum::Json(json!({ "threadId": tid, "updated": 1 })).into_response()
                 }
             }
+        }
+        ("GET", ["e2ee", "threads", "envelope-resets"]) => {
+            st.resets_requests.push(route.to_owned());
+            if let Some(status) = st.resets_fail {
+                return error(status, "not_found");
+            }
+            let param = |k: &str| query.split('&').find_map(|p| p.strip_prefix(&format!("{k}=")).map(str::to_owned));
+            let start: usize = param("cursor").and_then(|c| c.parse().ok()).unwrap_or(0);
+            let size = if st.resets_page == 0 { st.resets.len().max(1) } else { st.resets_page };
+            let page: Vec<Value> = st.resets.iter().skip(start).take(size).cloned().collect();
+            let next = (start + page.len() < st.resets.len()).then(|| (start + page.len()).to_string());
+            axum::Json(json!({ "items": page, "nextCursor": next })).into_response()
         }
         ("GET", ["e2ee", "members", "keys"]) => axum::Json(json!({ "members": st.members })).into_response(),
         ("GET", ["users", id, "sign-key"]) => match st.sign_keys.get(*id) {

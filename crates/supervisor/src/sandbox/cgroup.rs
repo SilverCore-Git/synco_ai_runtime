@@ -178,11 +178,11 @@ impl CgroupTree {
         let cg = WorkerCgroup { path };
         let settings = [
             ("memory.max", limits.memory_max_bytes.to_string()),
-            // `memory.high` n'est PAS appliqué (écart avec 09 §2, docs/plan/10 §5) : sans espace
+            // `memory.high` n'est PAS appliqué (D6 révisée, docs/plan/10 §5) : sans espace
             // d'échange (exigé ci-dessous pour que les clés n'atteignent jamais le disque), la
             // mémoire anonyme n'est pas récupérable et `memory.high` ne fait que ralentir le
             // worker indéfiniment (mesuré : > 120 s bloqué sous 448 Mio, jamais tué) au lieu de
-            // le laisser atteindre `memory.max` et être tué. `limits.memory_high_bytes` est ignoré.
+            // le laisser atteindre `memory.max` et être tué. Valeur explicite `max`.
             ("memory.high", "max".to_owned()),
             ("memory.oom.group", "1".to_owned()),
             ("pids.max", limits.pids_max.to_string()),
@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn nom_de_cgroup_controle() {
         let tree = CgroupTree { base: PathBuf::from("/nonexistent-synco") };
-        let l = ResourceLimits { memory_max_bytes: 1, memory_high_bytes: 1, cpu_max_percent: 1, pids_max: 1 };
+        let l = ResourceLimits { memory_max_bytes: 1, cpu_max_percent: 1, pids_max: 1 };
         assert_eq!(tree.create("../x", &l).unwrap_err(), "cgroup_bad_name");
         assert_eq!(tree.create("", &l).unwrap_err(), "cgroup_bad_name");
     }

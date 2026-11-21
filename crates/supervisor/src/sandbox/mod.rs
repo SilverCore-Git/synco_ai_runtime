@@ -171,12 +171,7 @@ impl SandboxLauncher {
 
     /// Sonde : un worker vide doit franchir toutes les étapes d'isolement et sortir avec 0.
     pub async fn probe(&self) -> Result<(), SandboxError> {
-        let limits = ResourceLimits {
-            memory_max_bytes: 64 << 20,
-            memory_high_bytes: 56 << 20,
-            cpu_max_percent: 100,
-            pids_max: 16,
-        };
+        let limits = ResourceLimits { memory_max_bytes: 64 << 20, cpu_max_percent: 100, pids_max: 16 };
         let args = ChildArgs { payload: "probe".into(), ..ChildArgs::default() };
         let mut w = self.spawn_child(args, &limits, None, Vec::new()).await.map_err(|e| err(e.0))?;
         let exit = match tokio::time::timeout(PROBE_TIMEOUT, w.process.wait()).await {

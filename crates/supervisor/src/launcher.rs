@@ -29,8 +29,6 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> WorkerIo for T {}
 pub struct ResourceLimits {
     /// `memory.max` (octets).
     pub memory_max_bytes: u64,
-    /// `memory.high` (octets).
-    pub memory_high_bytes: u64,
     /// `cpu.max` en pour cent d'un cœur (100 = `100000 100000`).
     pub cpu_max_percent: u64,
     /// `pids.max`.

@@ -32,7 +32,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use zeroize::Zeroizing;
 
 fn limits() -> ResourceLimits {
-    ResourceLimits { memory_max_bytes: 512 << 20, memory_high_bytes: 448 << 20, cpu_max_percent: 100, pids_max: 64 }
+    ResourceLimits { memory_max_bytes: 512 << 20, cpu_max_percent: 100, pids_max: 64 }
 }
 
 fn settings(run: &tempfile::TempDir) -> SandboxSettings {

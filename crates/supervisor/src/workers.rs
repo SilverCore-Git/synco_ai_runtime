@@ -142,7 +142,6 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
         user_id: user_id.clone(),
         resources: ResourceLimits {
             memory_max_bytes: l.worker_memory_max_mib.saturating_mul(1024 * 1024),
-            memory_high_bytes: l.worker_memory_high_mib.saturating_mul(1024 * 1024),
             cpu_max_percent: l.worker_cpu_percent,
             pids_max: l.worker_pids_max,
         },

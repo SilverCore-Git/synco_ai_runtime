@@ -377,10 +377,12 @@ révocation a échoué) restent **documentées sans code**. Source :
 `synco_api/src/services/aiRuntime/conversationLease.ts:186-228`, `SYNCOAI_REFONTE_FEATURE.md` §13.6.
 
 **Ajouts de L00f (2026-11-21 ; 12 §9, §10.5)** : `AiChatInboxItem.kind` gagne `plan_decision` (déposé par
-l'API seule, `source = "api"`, `payload` en clair `{ planId, decision, accepted, reason? }`) et
+l'API seule, `source = "api"`, `payload` en clair `{ planId, decision, accepted?, reason? }`, `decision` ∈
+`accept`, `reject`, `stop` ; PC55) et
 `plan_result` (un par phase d'appareil, `id` = `plan:<planId>:<k>`, `payload` = `{ planId, phase, value }`,
 `value` en `gcm1:`, amendé par PC44 ; 12 §9). `AiChatSessionEvent.type` gagne
-`plan_status` (`code` = nouveau statut du plan, écrit par l'API) et `plan_action` (`actor = "runtime"`,
+`plan_status` (`code` = nouveau statut du plan, écrit par l'API), `plan_duplicate_create` (`code` =
+`<planId>.<n>`, sans identifiant d'objet, PC56) et `plan_action` (`actor = "runtime"`,
 `code` = `<planId>.<n>`, action `server.call` ou `thread.create` exécutée par le runtime).
 
 ## 6. Politique runtime de l'org
@@ -467,17 +469,20 @@ Passes réelles (révisé après la vague B, 2026-11-19 ; `runAiRuntimeMaintenan
 
 Ajouts de L00f (2026-11-21 ; 12 §7, §11) à cette passe, après `failTimedOutWaits` :
 
-7. `expireActionPlans` : plans dont `expiresAt ≤ maintenant` et qui attendent une phase d'appareil sans
-   claim valide (`proposed`, ou `accepted` / `executing` avec une phase courante d'appareil non
-   réclamée) → `expired`, actions `pending` → `skipped`, conversation `failed` `confirmation_timeout`
-   (12 §7.1 ; une phase en cours n'est jamais coupée) ;
-8. `interruptActionPlans` : plans `executing` dont `claimExpiresAt ≤ maintenant` et qui ont une action
-   `executing` exécutée par l'appareil → action `unknown_outcome`, actions `pending` de toutes les
-   phases → `skipped`, plan `interrupted` ; un claim expiré sans action en cours est seulement libéré
-   (`claimDeviceId = null`, `claimPhase = null`) ;
+7. `expireActionPlans` : plans `proposed`, `accepted` ou `executing` dont `expiresAt ≤ maintenant` →
+   actions `pending` → `skipped` (aucune ne démarre plus) ; le plan passe `expired` dès qu'aucune action
+   n'est `executing`. Conversation : plan `proposed` → `failed` `confirmation_timeout` (C1) ; plan accepté
+   qui attendait l'appareil → `queued`, le worker ferme `propose_actions` avec le bilan (12 §7.1) ;
+8. `interruptActionPlans` : claim dont `claimExpiresAt ≤ maintenant` → actions d'appareil `executing`
+   → `unknown_outcome`, leurs dépendantes transitives → `skipped` (PC54), claim libéré
+   (`claimDeviceId = null`) ; les autres actions restent disponibles ; statut du plan recalculé
+   (12 §7.1) ;
 9. `purgeFeaturePolicyEvents` (PC48) : `AiFeaturePolicyEvent` de plus de **1 an** supprimés, par lots
    bornés (au plus 1 000 lignes par passe, `deleteMany` sur les identifiants lus ; même principe que la
    purge d'`AiThreadEnvelopeEvent`, PC29).
+10. `purgeClosedPlanLinks` (PC56, rattrapage) : `AiActionPlanAction.output` non nul d'un plan en état
+    terminal → `null`, au plus 1 000 lignes par passe (`updateMany` sur les identifiants lus). L'effacement
+    normal se fait dans la transaction de clôture du plan (12 §8.5).
 
 ## 10. Plans d'action et politiques d'org (ajouté par L00f, 2026-11-21 ; 12)
 
@@ -491,28 +496,41 @@ model AiActionPlan {
   userId         String                  // propriétaire de la conversation
   orgId          String
   toolCallId     String                  // appel propose_actions
-  status         String                  // 'proposed' | 'accepted' | 'executing' | 'done' | 'failed' | 'rejected' | 'expired' | 'interrupted'
+  status         String                  // 'proposed' | 'accepted' | 'executing' | 'done' | 'failed' | 'interrupted' | 'rejected' | 'stopped' | 'expired'
   actionCount    Int                     // 1 à 20
-  actionStates   Json                    // ["pending" | "skipped" | "executing" | "done" | "failed" | "unknown_outcome", …], indexé par n - 1
-  actionExecutors Json                   // ["device" | "agent", …], indexé par n - 1 (PC44, 12 §8.1)
-  actionPhases   Json                    // [1, 1, 2, …], indexé par n - 1 ; phases de 1 à phaseCount, alternées
-  phaseCount     Int
-  currentPhase   Int      @default(0)    // 0 avant la décision, puis la phase en cours (12 §8.1)
-  actionOutputs  Json                    // { "<n>": { "id": "…", "spaceId"?: "…" } } : sorties enregistrées par l'API (12 §8.5), identifiants seulement
-  agentResults   Json                    // { "<k>": "gcm1:…" } : plan_agent_result:<k>, chiffré sous CK (12 §9)
   serverDigests  Json                    // { "<n>": "<hex SHA-256>" } de JCS({tool, args, argsRefs}) pour les seules actions server.call (PC47)
+  devicePhases   Int      @default(0)    // phases d'appareil closes (plan_result:<k>), 12 §8.1
+  agentPhases    Int      @default(0)    // phases d'agent closes (plan_agent_result:<k>)
+  agentResults   Json                    // { "<k>": "gcm1:…" } : plan_agent_result:<k>, chiffré sous CK (12 §9)
   createdAt      DateTime                // createdAt du plan (secondes Unix → DateTime)
   expiresAt      DateTime
   decidedAt      DateTime?
   claimDeviceId  String?
-  claimPhase     Int?                    // le claim vaut pour une phase (PC44)
+  claimPhase     Int?                    // numéro de la phase d'appareil réclamée
   claimExpiresAt DateTime?
   updatedAt      DateTime @updatedAt
+  actions        AiActionPlanAction[]
 
   @@index([sessionId, createdAt])
   @@index([status, expiresAt])
   @@index([status, claimExpiresAt])
   @@map("ai_action_plans")
+}
+
+model AiActionPlanAction {               // une ligne par action (PC58 : transitions concurrentes sans perte)
+  planId    String
+  plan      AiActionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  n         Int                          // 1 à 20
+  executor  String                       // 'device' | 'agent' (12 §4)
+  after     Int[]                        // dépendances (= needs), 12 §8.1 ; graphe sans contenu
+  accepted  Boolean  @default(false)
+  state     String   @default("pending") // 'pending' | 'executing' | 'done' | 'failed' | 'skipped' | 'unknown_outcome'
+  output    Json?                        // { "id": "…", "spaceId"?: "…" } : lien objet ← action, enregistré par l'API (12 §8.5) ; null à la clôture (PC56)
+  updatedAt DateTime @updatedAt
+
+  @@id([planId, n])
+  @@index([planId, state])
+  @@map("ai_action_plan_actions")
 }
 
 model AiFeaturePolicy {                  // une ligne par (org, fonctionnalité) ; absente = défaut (12 §11.1)
@@ -563,17 +581,34 @@ model AiFeaturePolicyEvent {             // journal (PC39) ; conservé 1 an, pur
 ```
 
 - `AiActionPlan` : créée par `POST /api/runtime/v1/conversations/:sessionId/plans`, dans la transaction
-  du transcript ; supprimée avec la conversation. Chaque transition d'action ou de plan est un
-  `updateMany` conditionné à l'état lu (une action n'entre qu'une fois en `executing`).
+  du transcript, avec ses lignes `AiActionPlanAction` ; supprimée avec la conversation. Chaque
+  transition d'action ou de plan est un `updateMany` conditionné à l'état lu (une action n'entre qu'une
+  fois en `executing`).
 - `serverDigests` : fuite faible assumée (C1 §2.3) : le condensat d'une action refusée reste devinable si
   ses arguments ont peu d'entropie.
-- `actionOutputs` : écrit par l'API seule, au moment où elle crée l'objet (exécution d'agent, ou route
-  de création reçue avec `X-Synco-Plan`, 12 §8.5), une fois par action (`updateMany` conditionné).
-  Fuite résiduelle assumée (PC47) : le lien entre un objet créé et l'action du plan qui l'a produit.
+- `AiActionPlanAction` : chaque transition est un `updateMany` conditionné sur `(planId, n, state)` ;
+  le statut du plan est recalculé dans la même transaction (12 §7.1, §8.7). `output` est écrit par l'API
+  seule, au moment où elle crée l'objet (exécution d'agent, ou route de création reçue avec
+  `X-Synco-Plan`, 12 §8.5), une fois par action, et effacé à la clôture du plan (PC56).
 - `agentResults` : chiffré, jamais lu par l'API ; servi tel quel dans `PlanView`.
 - Aucun `@relation` vers `Organization` ni `User` pour les politiques (même choix que les clés composées
   ci-dessus) : L03h supprime les lignes d'un membre à son départ (`revokeOrgMembership`) et celles d'une
   org avec elle.
 - `aiConfig.runtime.members` / `memberIds` : lus comme politique `runtime_mode` tant qu'aucune ligne
   n'existe, plus écrits ensuite (12 §11.5).
+
+## 11. Catalogue RGPD des données du plan d'action et des politiques (PC48, PC56)
+
+Aucun catalogue RGPD général n'existe encore dans les dépôts ; cette table recense les traitements
+introduits par 12. Responsable : l'organisation cliente ; base : exécution du service demandé par
+l'utilisateur. Aucun contenu en clair n'est stocké par l'API.
+
+| Donnée | Où | Personne concernée | Finalité | Conservation |
+|---|---|---|---|---|
+| Plan, résultats de phase (chiffrés sous `CK`) | `pendingToolCall`, boîte, `AiActionPlan.agentResults` | propriétaire de la conversation | exécuter le plan accepté | vie de la conversation (boîte consommée : 7 jours, §9) |
+| Métadonnées du plan (statut, nombre d'actions, exécutants, `after`, dates, claim, condensats) | `AiActionPlan`, `AiActionPlanAction` | propriétaire | piloter l'exécution, verrou `action_not_accepted` | vie de la conversation |
+| **Lien objet créé ← plan / action** (`output`, en-tête `X-Synco-Plan`) | `AiActionPlanAction.output` | propriétaire (objets qu'il crée) | contrôler les `refs` (PC47) | **le temps du plan** : effacé à la clôture, rattrapage borné (passe 10) (PC56) |
+| Journal des actions exécutées par le runtime (`plan_action`, `plan_duplicate_create`, sans identifiant d'objet) | `AiChatSessionEvent` | propriétaire | traçabilité | 90 jours (§5) |
+| Politiques, membres autorisés, opt-in | `AiFeaturePolicy*`, `AiFeatureOptIn` | membres de l'org | appliquer la politique d'org | tant que la politique ou l'appartenance existe |
+| Journal des politiques | `AiFeaturePolicyEvent` | administrateurs, membres concernés | exception visible et journalisée (PC39) | **1 an**, purge bornée (passe 9) (PC48) |
 

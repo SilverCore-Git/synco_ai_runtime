@@ -1080,6 +1080,37 @@ async fn ancien_registre_refuse_comme_altere() {
     synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }
 
+/// PC33, retour en arrière : un registre **valide** (MAC correct) mais scellé pour une autre org est
+/// rejeté une fois l'org connue (appairage) : alerte, registre vide, rien n'est signé. Contrôle : le
+/// même registre scellé pour l'org courante signe.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn registre_scelle_pour_une_autre_org_rejete() {
+    for org in ["org-ancienne", ORG] {
+        let env = setup().await;
+        let env = restart(env, |dir| {
+            let keys = seal::load(dir, &backend()).unwrap().unwrap();
+            let f = dir.join(synco_ai_runtime::created_threads::CREATED_THREADS_FILE);
+            let _ = std::fs::remove_file(&f);
+            let mut store = synco_ai_runtime::created_threads::CreatedThreadStore::open(dir, &keys).unwrap();
+            store.bind_org(org);
+            assert!(store.record(THREAD, USER, "d-good"));
+            store.flush().unwrap();
+        })
+        .await;
+        wait_until_async(&env.running.runtime, |st| st.vault.get(USER).is_some()).await;
+        let same = org == ORG;
+        {
+            let st = env.running.runtime.state.lock().await;
+            assert_eq!(has_alert(&st, "created_threads_tampered"), !same, "alerte seulement pour une autre org");
+            assert_eq!(st.created_threads.is_empty(), !same);
+        }
+        env.api.push(reset_frame(THREAD, USER, "d-good"));
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert_eq!(reposes(&env).len(), usize::from(same), "autre org : rien n'est signé");
+        synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+    }
+}
+
 /// Revue L08b (7) : l'oubli en mémoire (org, coffre, autorisations) se fait d'abord et ne dépend pas
 /// de l'effacement. Si le registre ne peut pas être effacé, le désappairage le signale (une seule
 /// alerte `unpair_erase_failed`, quel que soit le nombre d'essais) et seul l'effacement est retenté.

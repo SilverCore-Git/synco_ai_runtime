@@ -1062,7 +1062,9 @@ Rust → TS : OK ; `synco_app` et `synco_api` non modifiés.
   local, puis par `try_repair` : l'API ne choisit jamais seule ce qui se signe. Route absente (L03f en cours) : relecture silencieuse
   (journal `debug`). Testée avec un mock, **pas contre la vraie route L03f**.
 - **PC33, MAC** (`c66678b`, `sealed_file.rs`) : `created_threads.json` et `envelope_repairs.json` sont scellés
-  (`{ "v": 2, "body": "<JSON en texte>", "mac": "<base64url HMAC-SHA256>" }`). Clé : HKDF-SHA256 (`hkdf32` de `synco-e2ee`, sel
+  (`{ "v": 2, "org": "<org>", "body": "<JSON en texte>", "mac": "<base64url HMAC-SHA256(longueur(org) ‖ org ‖ body)>" }`).
+  Le MAC est lié à l'**org** (revue : retour en arrière) : un fichier scellé pour une autre org est rejeté (alerte, contenu vide, `.rejected`)
+  dès que l'org est connue, à l'appairage (`bind_org`) ;. Clé : HKDF-SHA256 (`hkdf32` de `synco-e2ee`, sel
   `synco-ai-runtime/state-mac/v1`, info `file:<nom>`) du matériel de `keys.sealed` (`RuntimeKeys::to_secret_bytes`) : une clé par
   fichier, jamais écrite. Aucune dépendance nouvelle (`hmac`/`hkdf` étaient déjà derrière `synco-e2ee`). MAC invalide, fichier modifié
   ou illisible : registre/file **vide**, fichier mis de côté en `.rejected`, alerte `created_threads_tampered` /

@@ -149,6 +149,15 @@ async fn wait_paired(rt: &Arc<Runtime>) -> bool {
                     let mut st = rt.state.lock().await;
                     st.org_id = Some(resp.org_id.clone());
                     st.generation = st.generation.saturating_add(1);
+                    // Fichiers scellés pour une autre org (retour en arrière) : rejetés, alerte.
+                    st.created_threads.bind_org(&resp.org_id);
+                    if st.created_threads.take_tampered() {
+                        st.alert(now_secs(), "created_threads_tampered");
+                    }
+                    st.repairs.bind_org(&resp.org_id);
+                    if st.repairs.take_tampered() {
+                        st.alert(now_secs(), "envelope_repairs_tampered");
+                    }
                     drop(st);
                     tracing::info!(code = "runtime_paired", "runtime appairé");
                     return true;

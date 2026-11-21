@@ -54,7 +54,7 @@ impl CreatedThreadStore {
     /// invalide, fichier modifié ou sans MAC (ancien format L08b, refusé) : registre vide, fichier mis de côté, [`Self::tampered`]. Une
     /// erreur d'entrée/sortie reste une erreur (jamais un registre vide silencieux).
     pub fn open(state_dir: &Path, keys: &RuntimeKeys) -> Result<Self> {
-        let file = SealedFile::new(state_dir, CREATED_THREADS_FILE, MacKey::derive(keys, CREATED_THREADS_FILE)?);
+        let mut file = SealedFile::new(state_dir, CREATED_THREADS_FILE, MacKey::derive(keys, CREATED_THREADS_FILE)?);
         let (map, tampered) = match file.load::<BTreeMap<String, CreatedThread>>()? {
             Loaded::Absent => (BTreeMap::new(), false),
             Loaded::Sealed(m) => (m, false),
@@ -64,6 +64,17 @@ impl CreatedThreadStore {
             }
         };
         Ok(Self { file: Some(file), map, tampered })
+    }
+
+    /// Lie le registre à l'org (à l'appairage) : lu pour une autre org, il est mis de côté et le
+    /// registre est vide ([`Self::take_tampered`] : alerte). Sans fichier : sans effet.
+    pub fn bind_org(&mut self, org: &str) {
+        if let Some(f) = &mut self.file
+            && !f.bind_org(org)
+        {
+            self.map.clear();
+            self.tampered = true;
+        }
     }
 
     /// Le fichier lu était altéré (MAC invalide) : à signaler une fois au dashboard.
@@ -160,6 +171,7 @@ mod tests {
     fn persiste_et_borne() {
         let (dir, k) = (tempfile::tempdir().unwrap(), keys());
         let mut s = CreatedThreadStore::open(dir.path(), &k).unwrap();
+        s.bind_org("org1");
         assert!(s.is_empty());
         assert!(s.record("t1", "u1", "d1"));
         s.flush().unwrap();
@@ -179,6 +191,7 @@ mod tests {
     fn mac_altere_registre_vide() {
         let (dir, k) = (tempfile::tempdir().unwrap(), keys());
         let mut s = CreatedThreadStore::open(dir.path(), &k).unwrap();
+        s.bind_org("org1");
         assert!(s.record("t1", "u1", "d1"));
         s.flush().unwrap();
         let path = dir.path().join(CREATED_THREADS_FILE);
@@ -187,6 +200,7 @@ mod tests {
         // Un salon ajouté à la main dans le corps, MAC inchangé.
         std::fs::write(&path, text.replace("t1", "t2")).unwrap();
         let mut bad = CreatedThreadStore::open(dir.path(), &k).unwrap();
+        bad.bind_org("org1");
         assert!(bad.is_empty() && bad.get("t2").is_none(), "registre vide");
         assert!(bad.take_tampered());
         assert!(!bad.take_tampered(), "signalé une fois");
@@ -213,10 +227,29 @@ mod tests {
         assert!(!path.exists());
     }
 
+    /// Retour en arrière : un registre scellé pour l'org A n'est pas adopté après un appairage à B.
+    #[test]
+    fn registre_d_une_autre_org_rejete() {
+        let (dir, k) = (tempfile::tempdir().unwrap(), keys());
+        let mut s = CreatedThreadStore::open(dir.path(), &k).unwrap();
+        s.bind_org("orgA");
+        assert!(s.record("t1", "u1", "d1"));
+        s.flush().unwrap();
+        let mut same = CreatedThreadStore::open(dir.path(), &k).unwrap();
+        same.bind_org("orgA");
+        assert!(same.get("t1").is_some() && !same.take_tampered(), "même org : adopté");
+        let mut other = CreatedThreadStore::open(dir.path(), &k).unwrap();
+        assert!(other.get("t1").is_some(), "lu avant que l'org soit connue");
+        other.bind_org("orgB");
+        assert!(other.is_empty() && other.take_tampered(), "autre org : vide et alerte");
+        assert!(dir.path().join("created_threads.rejected").exists());
+    }
+
     #[test]
     fn clear_efface_le_fichier() {
         let (dir, k) = (tempfile::tempdir().unwrap(), keys());
         let mut s = CreatedThreadStore::open(dir.path(), &k).unwrap();
+        s.bind_org("org1");
         s.record("t1", "u1", "d1");
         s.flush().unwrap();
         assert!(dir.path().join(CREATED_THREADS_FILE).exists());

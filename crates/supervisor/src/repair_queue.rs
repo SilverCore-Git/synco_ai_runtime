@@ -76,7 +76,7 @@ impl RepairQueue {
 
     /// Ouvre le fichier (absent : vide). MAC invalide, fichier modifié ou sans MAC : file vide, fichier mis de côté, [`Self::take_tampered`].
     pub fn open(state_dir: &Path, keys: &RuntimeKeys) -> Result<Self> {
-        let file = SealedFile::new(state_dir, REPAIRS_FILE, MacKey::derive(keys, REPAIRS_FILE)?);
+        let mut file = SealedFile::new(state_dir, REPAIRS_FILE, MacKey::derive(keys, REPAIRS_FILE)?);
         let (stored, tampered) = match file.load::<Vec<Stored>>()? {
             Loaded::Absent => (Vec::new(), false),
             Loaded::Sealed(v) => (v, false),
@@ -88,6 +88,17 @@ impl RepairQueue {
         let items =
             stored.into_iter().take(MAX_REPAIRS).map(|s| ((s.thread_id, s.user_id), (s.delegation_id, s.at))).collect();
         Ok(Self { file: Some(file), items, tampered })
+    }
+
+    /// Lie la file à l'org (à l'appairage) : lue pour une autre org, elle est mise de côté et la
+    /// file est vide ([`Self::take_tampered`] : alerte). Sans fichier : sans effet.
+    pub fn bind_org(&mut self, org: &str) {
+        if let Some(f) = &mut self.file
+            && !f.bind_org(org)
+        {
+            self.items.clear();
+            self.tampered = true;
+        }
     }
 
     /// Le fichier lu était altéré : à signaler une fois au dashboard.
@@ -221,6 +232,7 @@ mod tests {
     fn dedupe_borne_vieillit_et_survit() {
         let (dir, keys) = (tempfile::tempdir().unwrap(), crate::keys::generate().unwrap());
         let mut q = RepairQueue::open(dir.path(), &keys).unwrap();
+        q.bind_org("org1");
         assert_eq!(q.push(r("t1"), 100), Push::Added);
         assert_eq!(q.push(r("t1"), 200), Push::Known, "dédupliquée, date d'origine gardée");
         q.flush().unwrap();
@@ -253,9 +265,22 @@ mod tests {
     }
 
     #[test]
+    fn file_d_une_autre_org_rejetee() {
+        let (dir, keys) = (tempfile::tempdir().unwrap(), crate::keys::generate().unwrap());
+        let mut q = RepairQueue::open(dir.path(), &keys).unwrap();
+        q.bind_org("orgA");
+        q.push(r("t1"), 1);
+        q.flush().unwrap();
+        let mut other = RepairQueue::open(dir.path(), &keys).unwrap();
+        other.bind_org("orgB");
+        assert!(other.is_empty() && other.take_tampered());
+    }
+
+    #[test]
     fn mac_altere_file_vide() {
         let (dir, keys) = (tempfile::tempdir().unwrap(), crate::keys::generate().unwrap());
         let mut q = RepairQueue::open(dir.path(), &keys).unwrap();
+        q.bind_org("org1");
         q.push(r("t1"), 1);
         q.flush().unwrap();
         let path = dir.path().join(REPAIRS_FILE);

@@ -313,6 +313,84 @@ async fn note_created_thread(rt: &Arc<Runtime>, session: &str, epoch: u64, body:
     }
 }
 
+/// Annuaire des clés publiques des membres (04 §4.3), relu par `create_thread` avant de sceller.
+pub const MEMBER_KEYS_PATH: &str = "/api/runtime/v1/e2ee/members/keys";
+/// Code rendu au worker à la place de l'annuaire quand une clé a changé sans preuve (Q25).
+pub const MEMBER_KEY_CHANGED: &str = "member_key_changed";
+/// Vérifications de rotation (appels `sign-key`) au plus par réponse de l'annuaire.
+const MAX_ROTATION_LOOKUPS: usize = 8;
+
+/// Épinglage TOFU des clés RSA des membres (Q25, `member_pins`), appliqué par le superviseur à la
+/// réponse 2xx de [`MEMBER_KEYS_PATH`] **avant** que le worker la voie. Rend `false` si une clé au
+/// moins a changé sans chaîne d'identité valide : la réponse entière est alors remplacée par
+/// `409 member_key_changed` (refus global, aucun scellement). Un membre dont la clé est illisible
+/// ou hors bornes n'est pas épinglé : le worker l'écarte lui-même (`skippedRecipients`).
+pub(crate) async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> bool {
+    use crate::member_pins::{MemberKey, Verdict, chain_vouches};
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else { return true };
+    let listed: Vec<(String, MemberKey)> = value
+        .get("members")
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|m| {
+            let id = m.get("userId")?.as_str().filter(|id| runtime_protocol::ids::is_identifier(id))?;
+            Some((id.to_owned(), MemberKey::from_jwk(m.get("publicKey")?)?))
+        })
+        .collect();
+    let now = now_secs();
+    // (utilisateur, clé présentée, empreinte épinglée, clés de signature épinglées, ancienne → courante)
+    let (org, changed) = {
+        let mut st = rt.state.lock().await;
+        let Some(org) = st.org_id.clone() else { return false };
+        let mut changed = Vec::new();
+        for (user, key) in listed {
+            if st.member_pins.check(&org, &user, &key, now) == Verdict::Changed {
+                let from = st.member_pins.get(&org, &user).map(|p| p.fingerprint.clone()).unwrap_or_default();
+                let sign: Vec<String> = st
+                    .pins
+                    .get(&user)
+                    .map(|p| p.previous.iter().chain([&p.sign_key]).cloned().collect())
+                    .unwrap_or_default();
+                changed.push((user, key, from, sign));
+            }
+        }
+        (org, changed)
+    };
+    if changed.is_empty() {
+        return true;
+    }
+    // Rotation légitime : chaîne de transitions partant de la clé de signature épinglée (03 §4).
+    // Seuls les utilisateurs qui ont délégué à ce runtime ont une telle épingle (et une route
+    // `sign-key` qui répond) ; les autres ne peuvent être acceptés que par l'admin (dashboard).
+    let mut refused = Vec::new();
+    for (i, (user, key, from, sign)) in changed.into_iter().enumerate() {
+        let vouched = !sign.is_empty()
+            && i < MAX_ROTATION_LOOKUPS
+            && match rt.api.sign_key(&user).await {
+                Ok(r) => chain_vouches(&user, &sign, &crate::pins::chain_from(&r.transitions), &key),
+                Err(_) => false,
+            };
+        let mut st = rt.state.lock().await;
+        if st.org_id.as_deref() != Some(org.as_str()) {
+            return false;
+        }
+        if !(vouched && st.member_pins.rotate(&org, &user, &from, &key)) {
+            refused.push((user, key));
+        }
+    }
+    if refused.is_empty() {
+        return true;
+    }
+    let mut st = rt.state.lock().await;
+    for (user, key) in &refused {
+        st.member_pins.refuse(&org, user, key, now);
+    }
+    st.alert(now, "member_rsa_key_changed");
+    false
+}
+
 fn created_key_error(reference: &str, code: &str) -> pipe::CreatedKeyMsg {
     pipe::CreatedKeyMsg { reference: reference.to_owned(), envelope: None, error: Some(code.to_owned()) }
 }
@@ -658,6 +736,20 @@ async fn relay(
                     && (200..300).contains(&r.status)
                 {
                     note_created_thread(&rt, &session, epoch, &r.body).await;
+                }
+                // Q25 : annuaire des clés des membres vérifié contre les épingles AVANT le worker.
+                let member_keys = req.method == pipe::HttpMethod::Get
+                    && req.path.split('?').next() == Some(MEMBER_KEYS_PATH)
+                    && (200..300).contains(&r.status);
+                if member_keys && !member_keys_gate(&rt, &r.body).await {
+                    let headers = [("content-type".to_owned(), "application/json".to_owned())].into_iter().collect();
+                    let body = format!(r#"{{"error":"{MEMBER_KEY_CHANGED}"}}"#);
+                    for p in SignedResponse::split(&req.id, 409, &headers, body.as_bytes()) {
+                        if tx.send(ToWorker::Json(SupervisorMsg::SignedRequestResponse(p))).await.is_err() {
+                            break;
+                        }
+                    }
+                    return;
                 }
                 let headers =
                     r.content_type.map(|c| [("content-type".to_owned(), c)].into_iter().collect()).unwrap_or_default();

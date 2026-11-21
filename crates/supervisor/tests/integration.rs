@@ -63,6 +63,8 @@ struct Env {
     api: MockApi,
     running: synco_ai_runtime::app::Running,
     keys_secret: Zeroizing<Vec<u8>>,
+    /// Clé de signature d'identité de `USER` (transitions d'identité).
+    user_key: EcSigningKey,
 }
 
 /// Délégation : mandat signé par `signer`, enveloppe vers `kex`, entrées `conv` et `thread`.
@@ -218,7 +220,7 @@ base_url = "{llm_base_url}"
     .unwrap();
     let keys = seal::load(&state_dir, &backend()).unwrap().unwrap();
     let running = synco_ai_runtime::app::start(config, keys, launcher, BTreeMap::new()).await.unwrap();
-    Env { _dir: dir, state_dir, api, running, keys_secret }
+    Env { _dir: dir, state_dir, api, running, keys_secret, user_key }
 }
 
 async fn wait_until(what: &str, mut f: impl FnMut() -> bool) {
@@ -1415,4 +1417,126 @@ async fn dashboard_ignore_listen_trust_proxy_hops() {
     }
     assert_eq!(codes, [401, 401, 401, 401, 401, 429, 429, 429], "X-Forwarded-For ignoré : une seule adresse");
     synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+}
+
+// ---------------------------------------------------------------------------
+// Q25 : épinglage TOFU des clés RSA des membres, appliqué par le vrai superviseur au relais de
+// `GET /e2ee/members/keys`
+// ---------------------------------------------------------------------------
+
+const OTHER: &str = "cm3membreautre00000000001";
+
+/// JWK RSA synthétique de 2048 bits (l'épinglage ne demande pas une vraie clé).
+fn rsa_jwk(seed: u8) -> String {
+    let mut n = vec![seed; 256];
+    n[0] |= 0x80;
+    json!({ "kty": "RSA", "n": synco_e2ee::encoding::b64u(&n), "e": "AQAB" }).to_string()
+}
+
+fn spki(seed: u8) -> String {
+    synco_ai_runtime::member_pins::MemberKey::from_jwk_str(&rsa_jwk(seed)).unwrap().fingerprint
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cles_rsa_des_membres_epinglees_par_le_superviseur() {
+    use synco_ai_runtime::dashboard::routes::OverviewSource as _;
+    // Le worker scripté fait un `GET /e2ee/members/keys` à chaque ordre reçu et rend la réponse.
+    let (go_tx, go_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let (res_tx, res_rx) = tokio::sync::mpsc::channel::<(u16, Value)>(1);
+    let go_rx = Arc::new(tokio::sync::Mutex::new(Some(go_rx)));
+    let script: ScriptFn = Arc::new(move |_, io| {
+        let (go_rx, res_tx) = (Arc::clone(&go_rx), res_tx.clone());
+        Box::pin(async move {
+            let Some(mut go) = go_rx.lock().await.take() else { return };
+            let (mut rd, mut wr) = tokio::io::split(io);
+            handshake(&mut rd, &mut wr).await;
+            let mut n = 0;
+            while go.recv().await.is_some() {
+                n += 1;
+                let id = format!("m{n}");
+                for p in SignedRequest::split(&id, HttpMethod::Get, "/api/runtime/v1/e2ee/members/keys", b"", true) {
+                    wire::write_json(&mut wr, &WorkerMsg::SignedRequest(p)).await.unwrap();
+                }
+                let (status, _, body) = response(&mut rd, &id).await;
+                res_tx.send((status, serde_json::from_slice(&body).unwrap_or(Value::Null))).await.unwrap();
+            }
+            let _ = wire::write_json(&mut wr, &WorkerMsg::Done(wire::DoneMsg { reason: wire::DoneReason::Idle })).await;
+        })
+    });
+    let env = setup_with(Arc::new(ScriptedEach { script, n: Default::default() })).await;
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    authorize(&env).await;
+    let rt = Arc::clone(&env.running.runtime);
+    let members = |user: u8, other: u8| {
+        json!([
+            { "userId": USER, "publicKey": rsa_jwk(user), "publicSignKey": null },
+            { "userId": OTHER, "publicKey": rsa_jwk(other), "publicSignKey": null },
+        ])
+    };
+    let res_rx = Arc::new(tokio::sync::Mutex::new(res_rx));
+    let ask = |m: Value| {
+        env.api.with(|st| st.members = m);
+        let (go, res) = (go_tx.clone(), Arc::clone(&res_rx));
+        async move {
+            go.send(()).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(10), res.lock().await.recv()).await.unwrap().unwrap()
+        }
+    };
+    env.api.push(json!({ "type": "conversation.wake", "sessionId": SESSION, "authId": AUTH, "reason": "inbox" }));
+
+    // 1. Première vue : épinglées, réponse transmise telle quelle.
+    let (status, body) = ask(members(1, 2)).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["members"].as_array().unwrap().len(), 2);
+    // 2. Même clé : acceptée.
+    assert_eq!(ask(members(1, 2)).await.0, 200);
+    // 3. Clé substituée (membre sans délégation, donc sans chaîne vérifiable) : refus global.
+    let (status, body) = ask(members(1, 3)).await;
+    assert_eq!((status, body), (409, json!({ "error": "member_key_changed" })), "aucune clé transmise au worker");
+    {
+        let st = rt.state.lock().await;
+        assert!(st.alerts.iter().any(|(_, c)| *c == "member_rsa_key_changed"), "alerte au dashboard");
+        assert_eq!(st.member_pins.get(ORG, OTHER).unwrap().fingerprint, spki(2), "épingle inchangée");
+    }
+    let o = rt.overview().await;
+    assert_eq!(o.member_key_changes.len(), 1);
+    assert_eq!(
+        (o.member_key_changes[0].user_id.as_str(), o.member_key_changes[0].fingerprint.clone()),
+        (OTHER, spki(3))
+    );
+    assert_eq!(ask(members(1, 3)).await.0, 409, "toujours refusée");
+    // 4. Rotation légitime de USER : transition signée par sa clé de signature épinglée.
+    let k2 = EcSigningKey::generate(&mut OsRandom).unwrap();
+    let t = synco_e2ee::identity::sign_identity_transition(
+        &env.user_key,
+        USER,
+        0,
+        &rsa_jwk(4),
+        &k2.public_key().unwrap().to_canonical(),
+    )
+    .unwrap();
+    env.api.with(|st| {
+        st.transitions.insert(
+            USER.into(),
+            vec![json!({ "seq": t.seq, "oldPublicSignKey": t.old_public_sign_key, "newPublicKey": t.new_public_key,
+                "newPublicSignKey": t.new_public_sign_key, "signature": t.signature })],
+        );
+    });
+    assert_eq!(ask(members(4, 2)).await.0, 200, "rotation prouvée acceptée");
+    assert_eq!(rt.state.lock().await.member_pins.get(ORG, USER).unwrap().fingerprint, spki(4));
+    // 5. Clé substituée pour USER malgré la chaîne (qui aboutit à une autre clé) : refus.
+    assert_eq!(ask(members(5, 2)).await.0, 409);
+    // 6. Acceptation manuelle par l'admin de la clé affichée (et d'elle seule).
+    assert!(!rt.accept_member_key(OTHER.into(), spki(9)).await, "autre empreinte");
+    assert!(rt.accept_member_key(OTHER.into(), spki(3)).await);
+    assert_eq!(ask(members(4, 3)).await.0, 200, "clé acceptée par l'admin");
+    assert_eq!(rt.overview().await.member_key_changes.len(), 1, "reste USER (clé 5)");
+    drop(go_tx);
+    env.api.with(|st| assert_eq!(st.threads_created, 0));
+    synco_ai_runtime::app::shutdown(&rt).await;
+    // 7. Persistance : relu depuis le répertoire d'état (comme au redémarrage).
+    let reopened = synco_ai_runtime::member_pins::MemberPinStore::open(&env.state_dir).unwrap();
+    assert_eq!(reopened.get(ORG, USER).unwrap().fingerprint, spki(4));
+    assert_eq!(reopened.get(ORG, OTHER).unwrap().fingerprint, spki(3));
+    assert_eq!(reopened.pending(ORG).len(), 1);
 }

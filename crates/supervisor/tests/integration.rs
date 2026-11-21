@@ -1619,3 +1619,83 @@ async fn cles_rsa_charge_et_plafond() {
     assert!(rt.state.lock().await.alerts.iter().any(|(_, c)| *c == "member_pins_not_saved"));
     synco_ai_runtime::app::shutdown(&rt).await;
 }
+
+/// Revue L05b : vérifications de rotation bornées par réponse, org revérifiée après l'appel
+/// `sign-key`, deux réponses concurrentes pour un même membre jamais vu.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cles_rsa_bornes_org_et_concurrence() {
+    use synco_ai_runtime::workers::{MAX_ROTATION_LOOKUPS, member_keys_gate};
+    let env = setup().await;
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    let rt = Arc::clone(&env.running.runtime);
+    let org = rt.state.lock().await.org_id.clone().unwrap();
+    let body = |m: &[(&str, u8)]| {
+        json!({ "members": m.iter().map(|(u, k)| json!({ "userId": u, "publicKey": rsa_jwk(*k) })).collect::<Vec<_>>() })
+            .to_string()
+    };
+
+    // 1. Au plus MAX_ROTATION_LOOKUPS appels `sign-key` par réponse.
+    let users: Vec<String> = (0..MAX_ROTATION_LOOKUPS + 3).map(|i| format!("cm3rotation{i:014}")).collect();
+    for u in &users {
+        let k = EcSigningKey::generate(&mut OsRandom).unwrap().public_key().unwrap().to_canonical();
+        rt.state.lock().await.pins.check_or_pin(u, Some(&k), &[], now()).unwrap();
+        env.api.with(|st| st.sign_keys.insert(u.clone(), k.clone()));
+    }
+    let first: Vec<(&str, u8)> = users.iter().map(|u| (u.as_str(), 1)).collect();
+    assert_eq!(member_keys_gate(&rt, body(&first).as_bytes()).await, Ok(()));
+    let changed: Vec<(&str, u8)> = users.iter().map(|u| (u.as_str(), 2)).collect();
+    let lookups = || env.api.with(|st| st.seen.iter().filter(|r| r.path.contains("cm3rotation")).count());
+    let before = lookups();
+    assert_eq!(member_keys_gate(&rt, body(&changed).as_bytes()).await, Err("member_key_changed"));
+    assert_eq!(lookups() - before, MAX_ROTATION_LOOKUPS, "vérifications de rotation bornées");
+
+    // 2. Rotation valide de USER, mais désappairage pendant l'appel `sign-key` : rien d'installé.
+    assert_eq!(member_keys_gate(&rt, body(&[(USER, 1)]).as_bytes()).await, Ok(()));
+    let k2 = EcSigningKey::generate(&mut OsRandom).unwrap();
+    let t = synco_e2ee::identity::sign_identity_transition(
+        &env.user_key,
+        USER,
+        0,
+        &rsa_jwk(4),
+        &k2.public_key().unwrap().to_canonical(),
+    )
+    .unwrap();
+    env.api.with(|st| {
+        st.slow_sign_key_ms = 400;
+        st.transitions.insert(
+            USER.into(),
+            vec![json!({ "seq": t.seq, "oldPublicSignKey": t.old_public_sign_key, "newPublicKey": t.new_public_key,
+                "newPublicSignKey": t.new_public_sign_key, "signature": t.signature })],
+        );
+    });
+    let gate = {
+        let (rt, b) = (Arc::clone(&rt), body(&[(USER, 4)]));
+        tokio::spawn(async move { member_keys_gate(&rt, b.as_bytes()).await })
+    };
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    rt.state.lock().await.org_id = None;
+    let result = gate.await.unwrap();
+    rt.state.lock().await.org_id = Some(org.clone());
+    assert_eq!(result, Err("member_pins_unavailable"));
+    assert_eq!(
+        rt.state.lock().await.member_pins.get(&org, USER).unwrap().fingerprint,
+        spki(1),
+        "org revérifiée après l'appel réseau : rotation non installée"
+    );
+    // Même rotation, org stable : acceptée.
+    env.api.with(|st| st.slow_sign_key_ms = 0);
+    assert_eq!(member_keys_gate(&rt, body(&[(USER, 4)]).as_bytes()).await, Ok(()));
+    assert_eq!(rt.state.lock().await.member_pins.get(&org, USER).unwrap().fingerprint, spki(4));
+
+    // 3. Deux réponses concurrentes pour un membre jamais vu, avec deux clés différentes : une seule
+    //    est épinglée, l'autre refusée.
+    let (a, b) = (body(&[("cm3concurrent0000000000001", 5)]), body(&[("cm3concurrent0000000000001", 6)]));
+    let (ra, rb) = tokio::join!(member_keys_gate(&rt, a.as_bytes()), member_keys_gate(&rt, b.as_bytes()));
+    let pinned = rt.state.lock().await.member_pins.get(&org, "cm3concurrent0000000000001").unwrap().fingerprint.clone();
+    match (ra, rb) {
+        (Ok(()), Err("member_key_changed")) => assert_eq!(pinned, spki(5)),
+        (Err("member_key_changed"), Ok(())) => assert_eq!(pinned, spki(6)),
+        other => panic!("une seule clé doit gagner : {other:?}"),
+    }
+    synco_ai_runtime::app::shutdown(&rt).await;
+}

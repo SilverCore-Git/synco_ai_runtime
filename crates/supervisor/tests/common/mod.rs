@@ -75,6 +75,8 @@ pub struct MockState {
     pub transitions: BTreeMap<String, Vec<Value>>,
     /// `GET /e2ee/members/keys` : `members`.
     pub members: Value,
+    /// Délai de `GET /users/:userId/sign-key` (ms).
+    pub slow_sign_key_ms: u64,
     pub pending: Vec<Value>,
     pub conversations: BTreeMap<String, Conversation>,
     pub stream_hellos: u32,
@@ -238,6 +240,10 @@ async fn channel(
             st.entries_requested += 1;
             st.slow_entries_ms
         };
+        tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+    }
+    if uri.path().ends_with("/sign-key") {
+        let delay = state.lock().unwrap().slow_sign_key_ms;
         tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
     }
     // Route lente (tests de concurrence du relais).

@@ -527,6 +527,9 @@ mod tests {
         assert!(MemberKey::from_jwk_str(&jwk(1, 8200)).is_none());
         assert!(MemberKey::from_jwk_str(&jwk(1, 8192)).is_some());
         assert!(MemberKey::from_jwk_str(&jwk(1, 2048).replace("AQAB", "AQAA")).is_none());
+        assert!(MemberKey::from_jwk_str(&jwk(1, 2048).replace("AQAB", "AQ")).is_none(), "e = 1");
+        assert!(MemberKey::from_jwk_str(&jwk(1, 2048).replace("AQAB", "AAAB")).is_none(), "e = 1 (zéros de tête)");
+        assert!(MemberKey::from_jwk_str(&jwk(1, 2048).replace("AQAB", "Aw")).is_some(), "e = 3");
         assert!(MemberKey::from_jwk_str(r#"{"kty":"EC","n":"AQAB","e":"AQAB"}"#).is_none());
     }
 

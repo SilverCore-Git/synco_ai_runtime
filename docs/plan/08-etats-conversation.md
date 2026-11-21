@@ -51,8 +51,16 @@ Le régime `client` n'utilise pas ces états (la boucle tourne dans le navigateu
 | `running` | outil `interactive` | `awaiting_user` | worker | runtime |
 | `running` | clé manquante et indispensable | `awaiting_key` | worker | runtime |
 | `awaiting_confirmation` | `confirm` | `queued` | utilisateur | API, au dépôt |
+| `running` | outil `propose_actions` (plan d'action, L00f) : `POST …/plans` | `awaiting_confirmation` (`pendingToolCall` = `propose_actions`) | worker | runtime |
+| `awaiting_confirmation` (plan) | `plan_decision` `reject` (route de décision) | `queued` ; `propose_actions` clos par `{"error":"plan_rejected"}` | utilisateur | API, à la décision |
+| `awaiting_confirmation` (plan) | `plan_decision` `accept` | `queued` s'il existe une action d'agent prête, sinon inchangé (l'appareil exécute) (PC44, PC58) | utilisateur | API |
+| `awaiting_confirmation` (plan accepté) | `plan_result:<k>` (fin d'une phase d'appareil) | `queued` si une action d'agent est devenue prête ou si le plan est fini ; sinon inchangé (12 §8.2) | appareil | API, au dépôt |
+| `running` (plan accepté) | `POST …/plans/:planId/agent-result` (plus aucune action d'agent prête, plan non fini) | `awaiting_confirmation` (même `pendingToolCall`), push si des actions d'appareil attendent (12 §8.3) | worker | API |
+| `awaiting_confirmation`, `running` (plan accepté) | `message` (PC55) | **inchangé** : le message attend dans la boîte et sera traité au tour qui suit la clôture du plan (12 §8.6) | utilisateur | API |
+| `awaiting_confirmation` (plan accepté) | `plan_decision` `stop` (route « Arrêter le plan », PC55) | `queued` ; le worker ferme `propose_actions` avec le bilan (`stopped`), puis traite les messages en attente | utilisateur | API, à l'arrêt |
+| `awaiting_confirmation` (plan accepté) | `expiresAt` (12 §7.1) | `queued` ; le worker ferme `propose_actions` avec le bilan | — | API (tâche périodique) |
 | `awaiting_user` | `answer` ou `upload` | `queued` | utilisateur | API, au dépôt |
-| `awaiting_confirmation`, `awaiting_user` | `message` | `queued` ; l'outil en attente est clos par le worker avec le résultat `{"error":"superseded_by_user_message"}` | utilisateur | API puis runtime |
+| `awaiting_confirmation` (hors plan accepté), `awaiting_user` | `message` | `queued` ; l'outil en attente est clos par le worker avec le résultat `{"error":"superseded_by_user_message"}` | utilisateur | API puis runtime |
 | `awaiting_key` | entrée ajoutée pour `awaitingKey` (03 §11) | `queued` | client (P11) | API, à l'ajout de l'entrée |
 | `awaiting_key` | `message` | `queued` ; l'outil est clos par `{"error":"key_unavailable"}` | utilisateur | API puis runtime |
 | `running` | erreur non récupérable (§6) | `failed` | worker | runtime |
@@ -115,6 +123,36 @@ Règles communes :
   correspondant.
 - **Socket** : chaque transition écrite par l'API ou par le worker émet `ai:session-status` vers le
   propriétaire.
+
+### 2.2 Plan d'action (ajouté par L00f, 2026-11-21 ; 12)
+
+- Le plan **généralise** `awaiting_confirmation` : même état, même push `AI_AWAITING_CONFIRMATION`, même
+  délai `confirmationTimeoutSecs` (expiration : 12 §7.1). L'état du
+  plan lui-même (`proposed` … `done`) vit dans `AiActionPlan` (12 §7) et s'affiche dans la carte (L12).
+- Un `message` **avant la décision** (plan `proposed`) : `queued`, `propose_actions` clos par
+  `{"error":"superseded_by_user_message"}`, plan `rejected`. **Après l'acceptation** (PC55) : le message
+  n'arrête pas le plan ; il est traité au tour qui suit la clôture de `propose_actions` (le `tool_result`
+  doit précéder tout nouveau message de l'utilisateur), pas à la phase d'agent suivante. Seule la route
+  « Arrêter le plan » arrête un plan accepté (plan `stopped`, 12 §8.6).
+- **Graphe et phases dynamiques (PC44, PC58 ; 12 §8.1)** : chaque exécutant exécute en parallèle les
+  actions prêtes qui lui reviennent ; l'appareil et l'agent peuvent avancer en même temps sur des
+  branches indépendantes. La conversation est `queued` / `running` tant que l'agent a du travail, sinon
+  `awaiting_confirmation` (l'app doit être ouverte pour les actions d'appareil ; sans appareil, elles
+  attendent jusqu'à `expiresAt`). L'appareil peut exécuter pendant que la conversation est `running`.
+- Reprise du worker (12 §8.3) : il lit les `plan_result:<k>` reçus, exécute les actions d'agent prêtes,
+  puis soit rend la main (`agent-result`, `awaiting_confirmation`), soit, quand le plan est fini, arrêté
+  ou expiré, ferme `propose_actions` par un `tool_result` portant les états et les sorties ; le tour
+  continue (`running`) et traite les messages arrivés pendant le plan.
+- Échec (PC54) : une action en échec n'ignore que ses dépendantes ; le plan continue.
+- Expiration (12 §7.1) : elle vaut pour le plan entier, aucune action ne démarre après `expiresAt`. Plan
+  jamais décidé : `failed` `confirmation_timeout` (C1). Plan accepté : `queued`, clôture avec le bilan.
+- Une action exécutée par l'agent suit §5 : `executing` jamais relancé, `unknown_outcome`.
+- Au plus 3 plans consécutifs par tour, sinon `failed` `plan_limit`.
+- **Retrait du mode autonome** (PC40, 12 §11.4) : les conversations restent en régime `runtime`, en
+  pause, et reprennent en mode plan au prochain dépôt de délégation ; mécanique (PC45) : autorisations
+  de session conservées, `queued` / `running` → `awaiting_key`, `awaitingKey = "delegation:<runtimeId>"`, sortie vers `queued`
+  au dépôt, `key_timeout` au-delà de `keyTimeoutSecs`. C'est la seule révocation qui ne fait pas sortir
+  du régime `runtime` (ligne « tout état `runtime` » ci-dessus).
 
 ## 3. Sortie du mode runtime
 
@@ -200,6 +238,7 @@ constate et l'écrit.
 | `confirmation_timeout` | `failed` | Décision attendue trop longtemps (09 §3) |
 | `key_timeout` | `failed` | Clé attendue trop longtemps (09 §3) |
 | `worker_crash_loop` | `failed` | §5.5 |
+| `plan_limit` | `failed` | Plus de 3 plans d'action consécutifs dans un tour (L00f, 12 §7.3) |
 | `tool_failed` | (pas de changement) | Un outil a échoué ; son résultat d'erreur est donné au modèle |
 | `revoked` | régime `client` | Délégation, autorisation ou runtime révoqués |
 | `internal` | `failed` | Erreur interne |
@@ -211,6 +250,7 @@ constate et l'écrit.
 | `queued` | « En attente » (et « runtime injoignable » si le runtime est hors ligne) |
 | `running` | « En cours » + flux direct |
 | `awaiting_confirmation` | « Confirmation demandée » + `PendingActionBar` |
+| `awaiting_confirmation` avec `propose_actions` | « N actions à valider » + carte du plan (L12, L13 ; C1 §3) ; « en cours sur votre autre appareil » si un autre appareil a le claim |
 | `awaiting_user` | « Réponse attendue » |
 | `awaiting_key` | « Ouvrez Synco pour donner accès » |
 | `idle` | « Terminé » |

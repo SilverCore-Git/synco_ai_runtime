@@ -1,6 +1,6 @@
-# Vecteurs de test à produire (L01, L02)
+# Vecteurs de test à produire (L01, L02) et vecteurs figés par L00f
 
-Ce dossier ne contient **pas** de vecteurs : il liste ceux que L01 et L02 doivent produire, sur le
+Ce dossier liste les vecteurs que L01 et L02 doivent produire (§1 à §3), sur le
 modèle de `synco_cdn/tests/vectors/` (`generate.mjs` + `tickets.json` : un générateur TypeScript ou
 JavaScript, le fichier JSON commité, la même suite rejouée des deux côtés).
 
@@ -8,6 +8,10 @@ Les exemples de [../exemples/](../exemples/) illustrent la spec avec `node:crypt
 remplacent pas ces vecteurs, qui doivent être produits **avec le code réel** (fonctions de
 `synco_app/src/assets/utils/` pour les formats E2EE, `synco_api/src` pour les tickets et la signature
 interne).
+
+**Exception (L00f, 2026-11-21)** : `mandate-v2.json` et `action-plan.json` sont des vecteurs **figés
+par la spécification**, avant tout code (§4). Ils sont commités ici, et les lots L01c, L03g, L08d et
+L10 les rejouent sans les modifier.
 
 ## 1. Règles communes
 
@@ -181,3 +185,83 @@ certificat d'appareil, enveloppes FC4 `synco-key-envelope-v1`, commitments, tran
 avec leurs particularités d'encodage, notamment l'ordre `{"kty","crv","x","y"}` de
 `canonicalJwk` (`e2eeV4.ts:322-327`) dans `createDeviceEnvelope` et `deviceCertBytes`, différent de
 l'ordre RFC 7638 des nouveaux formats (00 §3.1).
+
+## 4. L00f — vecteurs figés (mandat v2, plan d'action)
+
+Produits par du code jetable hors du dépôt (supprimé après usage) : les signatures et les chiffrés
+viennent de la crate `synco-e2ee` (signature ECDSA déterministe RFC 6979, `primitives::seal` avec une
+source d'aléa figée) ; le texte des octets signés et le JSON canonique viennent d'un script TypeScript
+qui importe `mandateBytes`, `verifyMandateOfflineFromWrapHash` (`runtimeDelegation.ts`) et
+`decryptAiField` (`crypto.ts`) de `synco_app`. Contrôle croisé fait à la génération :
+
+- **TS** : chaque signature v2 vérifiée en WebCrypto ; le mandat v1 livré vérifié par
+  `verifyMandateOfflineFromWrapHash` (et `mandateBytes` v1 de l'app identique au vecteur livré) ; plan et
+  `plan_result` déchiffrés par `decryptAiField` ; chaque cas de chiffrement rejoué ; condensat recalculé ;
+  cas de validation, de cascade et d'échec rejoués par un validateur de référence jetable (règles de 12 §5
+  à §7).
+- **Rust** : le fichier final relu ; chaque cas de mandat rejoué (v1 par
+  `verify_mandate_offline_from_wrap_hash`, v2 par `EcPublicKey::verify` sur les octets de 03 §4.1) ;
+  chaque cas de chiffrement rejoué par `session::decrypt_field` ; condensats recalculés ;
+  `serde_json::to_string` (clés triées, forme compacte) identique au JSON canonique du TS.
+
+Toutes les clés sont des **clés de test** créées pour ces vecteurs (scalaires `0x44` × 32 et `0x45` × 32,
+`CK` = `0x5c` × 32, deux clés RSA-2048 publiques dont seule la SPKI est gardée) ; le contexte, `wrap`,
+`wrapHash` et le mandat v1 viennent de `crates/synco-e2ee/tests/vectors/delegation.json`.
+
+### 4.1 `mandate-v2.json` (03 §4.1)
+
+- `mandateBytesPlan` / `signaturePlan`, `mandateBytesAuto` / `signatureAuto` : octets exacts du mandat v2,
+  signature à **vérifier** (ECDSA non déterministe en WebCrypto : ne pas comparer une signature recalculée
+  en TS ; la crate, déterministe, la retrouve à l'octet près).
+- `mandateCases` : entrées d'un cas = `context`, `fprHex`, `wrapHash`, `userSignKey`, `signature`, et les
+  champs servis `mandateVersion` (absent = 1), `mode`, `ownerRsaSpkiHex` ; `expect` = `ok` (avec
+  `expectMode`) ou `delegation_unusable`. Couvre : v2 `plan` et `auto`, **v1 livré relu comme `plan`**
+  (version 1 ou absente, `mode: "auto"` servi ignoré), confusions v1/v2, mode échangé, empreinte RSA
+  remplacée ou mal formée, mode inconnu, version 3, autre clé, autre runtime, autre enveloppe, `exp`
+  prolongé.
+- `rt1Policy` : règle d'acceptation d'une enveloppe `rt1` par un client à jour (12 §10.2) : `verified`,
+  `rejected` ou `tofu_warning` selon la version et le mode du mandat vérifié.
+
+Rejoués par L01c (`synco-e2ee` et fonctions pures TS), puis par L10 et L08d (superviseur).
+
+### 4.2 `action-plan.json` (12 §3 à §9 ; amendé le 2026-11-21 par PC44, PC47, PC54 et PC58)
+
+- `plan`, `planCanonical` (RFC 8785, entiers seulement), `aadPlan`, `ivPlanHex`, `planValue` : plan de
+  référence et sa valeur `gcm1:` exacte sous `CK` ; `planExecutors` et `planLevels` : exécutant et niveau
+  de chaque action (12 §8.1) ; `pendingToolCall` : forme stockée (12 §3.4).
+- `planResult`, `planResultCanonical`, `aadPlanResult`, `planResultValue` : `plan_result` **partiel** de
+  la phase d'appareil 1 (AAD `sessionId:planId:plan_result:1`, 12 §9).
+- `mixedPlan` : plan appareil / agent avec ses niveaux et ses valeurs chiffrées : le plan,
+  `plan_result:1`, `plan_agent_result:1` et `plan_result:2` (phases numérotées **par exécutant**).
+- `categoryPlan` : cas de l'utilisateur (PC58) : 3 `category.create` puis 9 `thread.create` (3 par
+  catégorie, `categoryId` par `argsRefs`, `groups`), chiffré ; `expectLevels`, `wavesUnbounded`
+  (parallélisme maximal), `scheduleConcurrency4` (ordre d'exécution valide avec 4 actions en cours au
+  plus) et `failureOfCategory2` (seuls ses 3 salons sont ignorés, PC54).
+- `toolManifest` : extrait du manifeste utilisé par la validation (outils `server` et `mutating`).
+- `serverDigests` : SHA-256 (`hex`) de `JCS({tool, args, argsRefs})`, `argsRefs` omis s'il est absent
+  (PC47). `executeCases` : verrou de 12 §8.4 (condensat de l'appel, puis `refs` contre les sorties
+  **enregistrées par l'API**) ; `expect` = `ok` (avec `effectiveArgs`) ou `action_not_accepted`.
+- `encryptionCases` : mêmes champs que `conversation-fields.json` et mêmes codes d'erreur ; couvrent
+  l'échange de phase, l'absence de numéro de phase, le rejeu sur un autre plan et la confusion
+  `plan_result` / `plan_agent_result`.
+- `validationCases` : `plan` → `ok` ou `plan_invalid` (worker L08d, appareil L10, et pour la forme vue
+  par l'API, L03g) ; groupes, `category.create`, `categoryId` ; bornes de PC61 : 100 actions (passe), 101
+  (échoue), 2 000 dépendances (passe), 2 001 (échoue), clair de 65 Kio (passe), > 256 Kio (échoue) ;
+  `detail: "plan_too_large"` indique le motif rendu au modèle.
+- `levelCases` : graphe → niveaux ; `cascadeCases` : actions décochées → `skipped` (PC37) ;
+  `failureCases` : échec → seules les dépendantes transitives `skipped` (PC54) ; `runCases` : simulation
+  par pas unitaires (chaque exécutant démarre ses actions prêtes, plus petite `n` d'abord, dans la limite
+  de `concurrency` ; toutes finissent en fin de pas ; échec → dépendantes `skipped` ; aucune action ne
+  démarre à partir de `expiresBeforeTick`) → `expectTicks` (`{ device, agent }` démarrées à chaque pas),
+  états, statut. C'est **un** ordre valide parmi d'autres : les implémentations ne doivent pas en
+  dépendre au pas près, mais respecter dépendances, concurrence et règle d'échec.
+
+Revérification après le second amendement (code jetable sous `~/.cache`, supprimé) : chiffrés produits
+par `primitives::seal` de la crate avec un IV figé ; **Rust** : le fichier final relu, 66 vérifications
+(`session::decrypt_field`, `serde_json::to_string` = JCS, condensats, verrou et `refs`, niveaux,
+cascade, simulation) ; **TS** : 104 vérifications (`decryptAiField` de `synco_app`, WebCrypto pour les
+condensats, validateur de référence pour validation, niveaux, cascade, échec et simulation).
+
+Revérification après PC61 (code jetable sous `~/.cache`, supprimé) : **Rust** 71 vérifications (dont la
+taille JCS et les bornes des cas PC61), **TS** 107 vérifications (validateur de référence à 100 actions,
+2 000 dépendances, 256 Kio).

@@ -1191,3 +1191,109 @@ comportement de la file sur un vrai redémarrage de service systemd.
 - **Relecture API** : plafond sur les items entrés dans la file (pas les refusés), borne de 1 000 pages ; page vide suivie.
 - **Limite connue** : une trame à délégation inventée reçue en dernier remplace la vraie dans la file ; la relecture API à la
   reconnexion la redonne.
+
+## 2026-11-21 — L00f : spec figée du plan d'action, du mandat v2, du mode autonome et des politiques d'org
+
+Source : conception C1 (validée par l'utilisateur) et PC34 à PC43. Documentation et vecteurs seulement ; aucun code dans
+`crates/`, aucune dépendance. Code lu pour ancrer routes et modèles : `synco_api` (`aiRuntimeDelegations.ts`,
+`runtimeInternal/e2ee.ts`, `threadEnvelopeReset.ts`, `conversationTools.ts`, `runtimePolicy.ts`, `toolRegistry.ts`,
+`validators/index.ts`, `schema.prisma`), `synco_app` (`runtimeDelegation.ts`, `crypto.ts`, `OrgAI.vue`, `fileActions.ts`),
+`crates/worker/src/tools/mod.rs`.
+
+- **Nouveau document** `docs/plan/12-plan-action.md` : format du plan (JCS, `gcm1:` sous `CK`, AAD `sessionId:planId:plan`,
+  stockage dans `pendingToolCall`), types d'action v1 (`thread.create`, `folder.create`, `file.create_text`, `server.call`)
+  avec `args` stricts et exécutant par mode, validation (`plan_invalid`), cascade (PC37), états et délais, exécution par
+  l'appareil puis par l'agent, verrou `action_not_accepted` (PC38), éléments `plan_decision` / `plan_result`, conditions
+  `auto`, politiques v1 (PC39, PC40, PC42), routes utilisateur, du canal et des politiques, codes, répartition par lot.
+- **Mis à jour** : 00 (décisions PC34 à PC43, glossaire), 03 (§4.1 mandat v2 et lecture du v1, mandat servi, raison
+  `autonomy_withdrawn`), 04 (routes des plans, verrou, conditions `auto`, route `envelope-resets` de L03f désormais
+  documentée), 07 (champs du mandat v2, `AiActionPlan`, `AiFeaturePolicy*`, `AiFeatureOptIn`, `AiFeaturePolicyEvent`,
+  passes de maintenance), 08 (transitions du plan, pause au retrait, `plan_limit`), 09 (limites), `vectors/README.md` (§4).
+- **Vecteurs** `docs/plan/vectors/mandate-v2.json` (21 cas de mandat, 6 cas `rt1Policy`) et `action-plan.json` (10 cas de
+  chiffrement, 29 de validation, 6 de cascade, 2 d'échec, 1 condensat). Code jetable hors du dépôt (`~/.cache`, supprimé) :
+  signatures (RFC 6979) et chiffrés produits par la crate `synco-e2ee` ; octets signés et JSON canonique écrits en TS.
+  **Revérifiés des deux côtés** : TS (WebCrypto, `verifyMandateOfflineFromWrapHash`, `decryptAiField` de `synco_app`,
+  validateur de référence pour validation, cascade et échec) et Rust (relecture du fichier final : 23 et 13 vérifications,
+  `verify_mandate_offline_from_wrap_hash`, `EcPublicKey::verify`, `decrypt_field`, `serde_json` = JCS). Clés de test
+  générées pour l'occasion ; hook `check-secrets` passé.
+- **Lecture de C1** : ses propositions marquées « on propose » (fusion du mode dans le mandat v2, route d'enveloppe du
+  créateur, `autonomy.allowed`) sont prises comme validées avec C1, comme l'indique le lot.
+- **Questions ouvertes** (12 §15) : QP1 ordre d'exécution d'un plan mixte appareil / agent ; QP2 condensat `serverDigests`
+  et `argsRefs` ; QP3 mécanique de la pause au retrait (PC40) ; QP4 écart entre la clé RSA servie du propriétaire et
+  `ownerRsaSpkiHex` ; QP5 détails fixés par analogie (JCS entiers, AAD de `plan_result`, sens d'« activé » par
+  fonctionnalité, actions sensibles avant L14, journal sans purge…). Le texte qui en dépend est marqué « provisoire ».
+- **Non vérifié** : aucun code n'implémente encore ces formats ; les cas de validation, de cascade et d'échec ne sont
+  contrôlés que par un validateur jetable. Lots débloqués après validation par l'utilisateur : L01c, L03g, L03h (en
+  parallèle), puis L08d.
+
+## 2026-11-21 — L00f, amendement : questions QP1 à QP5 tranchées (PC44 à PC48)
+
+Décisions de l'utilisateur prises après la livraison de L00f. Documentation et vecteurs seulement ; aucun code dans
+`crates/`, aucune dépendance. À la suite de `3968a8d`.
+
+- **PC44 (QP1) : ordre libre**, contraire de la recommandation « appareil d'abord ». 12 §8.1 : phases calculées de façon
+  déterministe (phases impaires d'appareil, paires d'agent ; une action se place dans la première phase de son exécutant
+  qui suit toutes ses dépendances ; à égalité l'appareil commence ; renumérotation si aucune action n'est en phase 1),
+  sur le plan entier avant décision ; phase vide sautée. Phase d'appareil : claim `{ deviceId, phase }` (un seul
+  appareil), `plan_result:<k>` partiel (id `plan:<planId>:<k>`, AAD `sessionId:planId:plan_result:<k>`). Phase d'agent :
+  le worker exécute puis dépose `plan_agent_result:<k>` (AAD `…:plan_agent_result:<k>`) par la nouvelle route
+  `POST …/plans/:planId/agent-result` ; la conversation repasse `awaiting_confirmation` avec push. Expiration du plan
+  entier : aucune phase ne démarre après `expiresAt`. Échec ou `unknown_outcome` : toute la suite `skipped`, toutes
+  phases. Nouveaux codes `plan_phase_mismatch`, `action_output_missing`. `PlanView` porte exécutant, phase, état et
+  sortie par action, `currentPhase` et `agentResults`.
+- **PC47 (QP2)** : condensat de `JCS({tool, args, argsRefs})`, `argsRefs` omis s'il est absent ; appel avec `args` non
+  résolus, `argsRefs` et `refs`. **Références vers l'appareil** (12 §8.5) : l'API enregistre elle-même la sortie
+  (`id`, `spaceId`) quand sa route de création reçoit `X-Synco-Plan: <planId>/<n>` pour une action en cours sous claim ;
+  `progress done` l'exige. Rien de chiffré n'est lu ; fuite résiduelle assumée : le lien objet ↔ action de plan.
+  Double contrôle : le worker et l'appareil comparent les résultats de phase déchiffrés aux sorties enregistrées.
+- **PC45 (QP3)**, **PC46 (QP4)** : recommandations adoptées (12 §11.4, §10.3 ; 03, 07, 08). **PC48 (QP5)** : détails
+  ratifiés, sauf `AiFeaturePolicyEvent` conservé 1 an avec purge bornée (07 §9, passe `purgeFeaturePolicyEvents`).
+- **Mis à jour** : 12 (§1, §4 à §9, §10.3, §11, §12, §14 à §16 ; marques « provisoire » retirées), 00 (PC44 à PC48,
+  glossaire), 03, 04, 07, 08, 09, `vectors/README.md`.
+- **Vecteurs** `action-plan.json` complétés : `plan_result` partiel de phase 1, `mixedPlan` (deux phases d'appareil,
+  deux d'agent, avec `plan_result:1`, `plan_agent_result:2`, `plan_result:3`), condensats PC47, `executeCases` (10),
+  `phaseCases` (9), `runCases` (7), 18 cas de chiffrement, 31 de validation. Code jetable (`~/.cache`, supprimé) :
+  chiffrés par `primitives::seal` de `synco-e2ee` (IV figé). **Revérifiés** : Rust, fichier final relu, 47 vérifications
+  (`session::decrypt_field`, `serde_json` = JCS, condensats, phases, verrou) ; TS, 94 vérifications (`decryptAiField` de
+  `synco_app`, WebCrypto, validateur de référence pour validation, phases, cascade, échec, déroulé). CK de test.
+- **Choix d'interprétation à confirmer** : « un échec propage la cascade » est lu comme l'arrêt de toute la suite (règle
+  existante du §7.3, plus strict que les seules dépendantes) ; un message de l'utilisateur entre deux phases clôt le plan
+  (`rejected`, ce qui est fait reste fait) ; un plan expiré en attente d'appareil donne `confirmation_timeout`.
+- **Reste ouvert** (12 §15) : `thread.create` du runtime en mode autonome n'a pas de condensat (C1), ses références ne
+  sont donc pas recontrôlées par l'API.
+
+## 2026-11-21 — L00f, second amendement : graphe, parallélisme, échec limité, arrêt du plan (PC54 à PC58)
+
+Documentation et vecteurs seulement ; aucun code dans `crates/`, aucune dépendance. À la suite de `9867ebc`.
+
+- **PC54** : un échec (ou `unknown_outcome`) n'ignore que les dépendantes transitives (`after`, qui couvre `argsRefs`) ;
+  le reste continue, sur les deux exécutants. Statut final calculé : `failed`, sinon `interrupted`, sinon `done`.
+- **PC55** : après l'acceptation, un message ne change pas l'état de la conversation et il est traité au tour qui suit
+  la clôture de `propose_actions`, pas à la phase d'agent suivante (le `tool_result` doit précéder le nouveau message).
+  Arrêt : `POST …/plans/:planId/stop`, statut `stopped`, élément `plan_decision` `stop`. Expiration d'un plan accepté :
+  `queued` et clôture avec le bilan ; `failTimedOutWaits` ne s'en charge plus.
+- **PC56** : `AiActionPlanAction.output` (lien objet ← action) effacé dans la transaction de clôture, passe de
+  rattrapage `purgeClosedPlanLinks` ; doublon journalisé sans identifiant d'objet ; catalogue RGPD en 07 §11 (aucun
+  catalogue général n'existait).
+- **PC57** : risque accepté, 12 §10.6 et §15.
+- **PC58** : `after` = `needs` (nom gardé), `groups` / `group`, `category.create` et `categoryId` pour le cas de
+  l'utilisateur ; niveaux ; actions prêtes en parallèle (concurrence 4, maximum 8, des deux côtés), plus petite `n`
+  d'abord ; `progress` rejouable ; `429` : 3 nouveaux essais, concurrence divisée par 2 ; une ligne
+  `AiActionPlanAction` par action (transitions concurrentes sans perte) ; consigne de l'outil `propose_actions` (12 §3.1) ;
+  présentation en graphe pour L12 (12 §17). **Ajustement signalé de PC44** : les phases précalculées alternées
+  sérialisaient des branches indépendantes ; elles deviennent dynamiques (une séance par exécutant, numérotée par
+  exécutant, qui peut chevaucher celle de l'autre). L'API reçoit `executor` et `after` (graphe sans contenu).
+- **Vecteurs** : `categoryPlan` (3 catégories puis 9 salons : niveaux, vagues, ordre valide avec concurrence 4, échec de
+  la catégorie 2 → ses 3 salons seuls ignorés), `levelCases`, `runCases` simulés, `failureCases` selon PC54, résultats de
+  phase renumérotés par exécutant, 7 cas de validation. Code jetable supprimé ; revérifiés en Rust (66, dont
+  `session::decrypt_field`) et en TS (104, dont `decryptAiField` de `synco_app`).
+- **À valider par l'utilisateur** : le nouveau `kind` `category.create` (non listé jusqu'ici, nécessaire au cas
+  demandé) ; les valeurs de concurrence et de nouveaux essais.
+
+## 2026-11-21 — L00f, dernier ajustement (PC59 à PC62)
+
+PC59 (`category.create`, `categoryId`), PC60 (concurrence 4 / 8, 3 nouveaux essais sur `429`) et PC62 (bilan à
+l'expiration d'un plan accepté) validés tels quels. **PC61** : plan de 100 actions au plus (était 20), 2 000 entrées
+d'`after`, clair ≤ 256 Kio, corps de `POST …/plans` ≤ 1 Mio, `plan_too_large` rendu au modèle qui découpe (consigne de
+12 §3.1), groupes 1 à 50 repliés par défaut au-delà de 30 actions (12 §17). Vecteurs : cas à 100 / 101 actions,
+2 000 / 2 001 dépendances, 65 Kio / > 256 Kio ; revérifiés en Rust (71) et en TS (107), code jetable supprimé.

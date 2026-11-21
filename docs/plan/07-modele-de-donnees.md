@@ -499,7 +499,7 @@ model AiActionPlan {
   orgId          String
   toolCallId     String                  // appel propose_actions
   status         String                  // 'proposed' | 'accepted' | 'executing' | 'done' | 'failed' | 'interrupted' | 'rejected' | 'stopped' | 'expired'
-  actionCount    Int                     // 1 à 20
+  actionCount    Int                     // 1 à 100 (PC61)
   serverDigests  Json                    // { "<n>": "<hex SHA-256>" } de JCS({tool, args, argsRefs}) pour les seules actions server.call (PC47)
   devicePhases   Int      @default(0)    // phases d'appareil closes (plan_result:<k>), 12 §8.1
   agentPhases    Int      @default(0)    // phases d'agent closes (plan_agent_result:<k>)
@@ -522,9 +522,9 @@ model AiActionPlan {
 model AiActionPlanAction {               // une ligne par action (PC58 : transitions concurrentes sans perte)
   planId    String
   plan      AiActionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
-  n         Int                          // 1 à 20
+  n         Int                          // 1 à 100 (PC61) ; jusqu'à 100 lignes par plan, créées par un seul createMany
   executor  String                       // 'device' | 'agent' (12 §4)
-  after     Int[]                        // dépendances (= needs), 12 §8.1 ; graphe sans contenu
+  after     Int[]                        // dépendances (= needs), 12 §8.1 ; graphe sans contenu ; 2 000 entrées au plus pour le plan (PC61)
   accepted  Boolean  @default(false)
   state     String   @default("pending") // 'pending' | 'executing' | 'done' | 'failed' | 'skipped' | 'unknown_outcome'
   output    Json?                        // { "id": "…", "spaceId"?: "…" } : lien objet ← action, enregistré par l'API (12 §8.5) ; null à la clôture (PC56)

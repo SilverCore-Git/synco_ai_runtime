@@ -1096,3 +1096,19 @@ redémarrage alors que la file scellée est valide : testé par `file_valide_mai
 
 **Non vérifié / recette manuelle** : la relecture contre la **vraie** route L03f (forme `{ items, nextCursor }` prise du lot) ; le
 comportement de la file sur un vrai redémarrage de service systemd.
+
+## 2026-11-21 — L08c bis : corrections de la revue de sécurité de L08c
+
+À la suite de `0899667`. `fmt`, `clippy -D warnings` et `cargo test --workspace` avant chaque commit.
+
+- **PC43** : plus aucune lecture de l'ancien format non scellé de `created_threads.json` (`Loaded::Legacy` retiré, paramètre `legacy`
+  de `load` supprimé) ; un fichier sans MAC est rejeté comme altéré (alerte, registre vide, aucune signature). L08b n'ayant jamais été
+  livré, la rétrocompatibilité ne s'applique pas. Le test de migration est remplacé.
+- **Garde de `try_repair`** : seule barrière pour une file relue du disque ; testée (file valide, registre altéré ou sans l'entrée).
+- **File non saturable** : dédupliquée sur (salon, utilisateur), dernière délégation reçue ; une délégation différente de celle du
+  coffre pour cet utilisateur est abandonnée.
+- **Désappairage** : mémoire oubliée d'abord, seul l'effacement des fichiers est retenté ; une alerte `unpair_erase_failed`, journal limité.
+- **MAC lié à l'org** : l'org est dans le fichier et couverte par le MAC ; rejet à l'appairage si elle diffère.
+- **Relecture API** : plafond sur les items entrés dans la file (pas les refusés), borne de 1 000 pages ; page vide suivie.
+- **Limite connue** : une trame à délégation inventée reçue en dernier remplace la vraie dans la file ; la relecture API à la
+  reconnexion la redonne.

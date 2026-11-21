@@ -33,7 +33,7 @@ pub const PUBLIC: [(&str, &str); 4] =
     [("GET", "/login"), ("GET", "/assets/login.js"), ("GET", "/assets/style.css"), ("POST", "/api/login")];
 
 /// Toutes les routes déclarées (méthode, chemin ; `{id}` = paramètre), pour le test d'énumération.
-pub const ROUTES: [(&str, &str); 12] = [
+pub const ROUTES: [(&str, &str); 13] = [
     ("GET", "/"),
     ("GET", "/login"),
     ("GET", "/assets/login.js"),
@@ -46,6 +46,7 @@ pub const ROUTES: [(&str, &str); 12] = [
     ("GET", "/api/sessions"),
     ("GET", "/api/totals"),
     ("POST", "/api/member-keys/accept"),
+    ("GET", "/api/names"),
 ];
 /// Route paramétrée supplémentaire : `GET /api/sessions/{id}`.
 pub const DETAIL_ROUTE: &str = "/api/sessions/";
@@ -102,6 +103,12 @@ pub struct MemberKeyChange {
 pub trait OverviewSource: Send + Sync + 'static {
     /// État courant.
     fn overview(&self) -> BoxFuture<'_, OverviewData>;
+
+    /// Noms d'affichage des délégants (PC17) : identifiant → nom. Vide si inconnus ; le dashboard
+    /// garde alors l'identifiant.
+    fn display_names(&self) -> BoxFuture<'_, std::collections::BTreeMap<String, String>> {
+        Box::pin(async { std::collections::BTreeMap::new() })
+    }
 
     /// Acceptation par l'admin du runtime de la clé RSA **en attente** d'un membre, identifiée par
     /// son empreinte SPKI (Q25). Vrai si acceptée.
@@ -367,6 +374,11 @@ async fn overview(State(state): State<Shared>) -> Response {
     Json(o).into_response()
 }
 
+/// `GET /api/names` : noms d'affichage des délégants, `{ "names": { "<userId>": "<nom>" } }`.
+async fn names(State(state): State<Shared>) -> Response {
+    Json(serde_json::json!({ "names": state.source.display_names().await })).into_response()
+}
+
 async fn sessions(
     State(state): State<Shared>,
     filter: Result<Query<Filter>, axum::extract::rejection::QueryRejection>,
@@ -446,6 +458,7 @@ pub fn router(state: Shared) -> Router {
         .route("/api/sessions/{id}", get(session_detail))
         .route("/api/totals", get(totals))
         .route("/api/member-keys/accept", post(accept_member_key))
+        .route("/api/names", get(names))
         .fallback(fallback)
         .layer(DefaultBodyLimit::max(MAX_BODY))
         .layer(middleware::from_fn_with_state(Arc::clone(&state), guard))

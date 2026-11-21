@@ -113,6 +113,16 @@ pub enum ApiEvent {
         /// Raison.
         reason: String,
     },
+    /// Enveloppe `rt1` d'un salon réinitialisée par un utilisateur (Q21, spec API §14.8) : le
+    /// runtime créateur la repose, signée pour `delegation_id` (délégation active du délégant).
+    ThreadEnvelopeReset {
+        /// Salon.
+        thread_id: String,
+        /// Délégant.
+        user_id: String,
+        /// Délégation active avec laquelle signer.
+        delegation_id: String,
+    },
     /// Révocation des tickets d'un utilisateur émis avant `until` (02 §8).
     UserRevoked {
         /// Utilisateur.
@@ -141,6 +151,7 @@ struct Fields {
     after: Option<String>,
     entries: Option<Vec<RemovedEntry>>,
     until: Option<u64>,
+    thread_id: Option<String>,
 }
 
 /// Raison de refus d'une trame du flux.
@@ -194,6 +205,11 @@ pub fn parse_api_event(text: &str) -> Result<ApiEvent, InvalidApiFrame> {
             delegation_id: id(f.delegation_id)?,
             entries: f.entries.ok_or(InvalidApiFrame)?,
         },
+        "thread.envelope_reset" => ApiEvent::ThreadEnvelopeReset {
+            thread_id: id(f.thread_id)?,
+            user_id: id(f.user_id)?,
+            delegation_id: id(f.delegation_id)?,
+        },
         "delegation.revoked" => ApiEvent::DelegationRevoked {
             user_id: id(f.user_id)?,
             delegation_id: id(f.delegation_id)?,
@@ -231,6 +247,23 @@ mod tests {
         assert_eq!(parse_api_event(r#"{"v":1,"type":"ping"}"#), Ok(ApiEvent::Ping));
         assert_eq!(parse_api_event(r#"{"v":1,"type":"nouveau"}"#), Ok(ApiEvent::Unknown));
         assert!(parse_api_event(r#"{"v":2,"type":"ping"}"#).is_err());
+        assert_eq!(
+            parse_api_event(
+                r#"{"v":1,"type":"thread.envelope_reset","threadId":"t1","userId":"u1","delegationId":"d1"}"#
+            ),
+            Ok(ApiEvent::ThreadEnvelopeReset {
+                thread_id: "t1".into(),
+                user_id: "u1".into(),
+                delegation_id: "d1".into()
+            })
+        );
+        for bad in [
+            r#"{"v":1,"type":"thread.envelope_reset","userId":"u1","delegationId":"d1"}"#,
+            r#"{"v":1,"type":"thread.envelope_reset","threadId":"a|b","userId":"u1","delegationId":"d1"}"#,
+            r#"{"v":1,"type":"thread.envelope_reset","threadId":"t1","userId":"u1"}"#,
+        ] {
+            assert!(parse_api_event(bad).is_err(), "{bad}");
+        }
         assert!(parse_api_event(r#"{"v":1,"type":"conversation.revoked","sessionId":"a|b","reason":"x"}"#).is_err());
         assert_eq!(
             parse_api_event(

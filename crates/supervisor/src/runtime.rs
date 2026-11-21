@@ -34,6 +34,20 @@ const REVOCATION_TTL_SECS: u64 =
 const CRASH_WINDOW_SECS: u64 = 600;
 const CRASH_LIMIT: usize = 3;
 
+/// Longueur maximale (en caractères) d'un nom d'affichage conservé.
+const DISPLAY_NAME_MAX_CHARS: usize = 128;
+
+/// Nettoie un nom d'affichage venu de l'API (PC17) : l'API borne déjà la valeur, mais le serveur
+/// n'est pas de confiance pour l'affichage. Caractères de contrôle remplacés par une espace,
+/// 128 caractères au plus, bords retirés ; vide → `None` (le dashboard montre l'identifiant).
+#[must_use]
+pub fn clean_display_name(raw: &str) -> Option<String> {
+    let cleaned: String =
+        raw.chars().map(|c| if c.is_control() { ' ' } else { c }).take(DISPLAY_NAME_MAX_CHARS).collect();
+    let trimmed = cleaned.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_owned())
+}
+
 /// Attend que l'arrêt soit demandé (sans garder d'emprunt du canal au travers d'un `await`).
 pub async fn stopped(rx: &mut watch::Receiver<bool>) {
     let _ = rx.wait_for(|v| *v).await.map(|_| ());
@@ -64,6 +78,10 @@ pub struct Runtime {
     pub history: Arc<crate::dashboard::history::History>,
     /// Flux de notifications de l'API ouvert.
     pub api_connected: std::sync::atomic::AtomicBool,
+    /// Réveil du travailleur des réparations d'enveloppe (PC31).
+    pub repair_wake: Notify,
+    /// Journaux à débit limité des réparations (rafale de trames).
+    pub(crate) repair_log: std::sync::Mutex<crate::repairs::LogGate>,
 }
 
 impl core::fmt::Debug for Runtime {
@@ -113,6 +131,8 @@ impl Runtime {
             relay_permits: Arc::new(tokio::sync::Semaphore::new(crate::state::RELAY_IN_FLIGHT_TOTAL)),
             history,
             api_connected: std::sync::atomic::AtomicBool::new(false),
+            repair_wake: Notify::new(),
+            repair_log: std::sync::Mutex::new(crate::repairs::LogGate::default()),
         })
     }
 
@@ -136,6 +156,14 @@ impl Runtime {
     pub async fn load_delegations(self: &Arc<Self>) -> Result<(), crate::api::ApiError> {
         let records = self.api.delegations().await?;
         let listed: BTreeSet<String> = records.iter().map(|r| r.delegation_id.clone()).collect();
+        {
+            // Les noms suivent la liste : un délégant qui n'y figure plus disparaît de la table.
+            let names = records
+                .iter()
+                .filter_map(|r| Some((r.user_id.clone(), clean_display_name(r.display_name.as_deref()?)?)))
+                .collect();
+            self.state.lock().await.display_names = names;
+        }
         let stale: Vec<String> = {
             let st = self.state.lock().await;
             st.vault
@@ -161,6 +189,8 @@ impl Runtime {
                 let _ = self.open_delegation(&record).await;
             }
         }
+        // Délégations (re)chargées : les réparations en attente sont rejouées.
+        self.repair_wake.notify_one();
         Ok(())
     }
 
@@ -183,12 +213,28 @@ impl Runtime {
         saved
     }
 
+    /// Écrit une photo du registre des salons créés **hors** du verrou d'état. Échec : alerte
+    /// `created_threads_not_saved`, la prochaine photo réécrira tout.
+    pub async fn save_created_threads(&self, snapshot: crate::error::Result<Option<crate::sealed_file::Snapshot>>) {
+        let saved = match snapshot {
+            Ok(None) => return,
+            Ok(Some(snap)) => matches!(tokio::task::spawn_blocking(move || snap.write()).await, Ok(Ok(()))),
+            Err(_) => false,
+        };
+        if !saved {
+            let mut st = self.state.lock().await;
+            st.created_threads.mark_unsaved();
+            st.alert(now_secs(), "created_threads_not_saved");
+        }
+    }
+
     /// Ouvre une délégation : mandat (clé épinglée TOFU, 03 §4) → enveloppe de tête (03 §3), par
     /// `accept_delegation` uniquement → entrées (03 §5). Puis `status` à l'API (sans cause).
     pub async fn open_delegation(self: &Arc<Self>, record: &DelegationRecord) -> Result<(), DelegationFailure> {
         let result = self.open_delegation_inner(record).await;
         match result {
             Ok(()) => {
+                self.repair_wake.notify_one();
                 let _ = self.api.delegation_status(&record.delegation_id, true).await;
             }
             Err(DelegationFailure::Unusable(code)) => {
@@ -322,6 +368,10 @@ impl Runtime {
         }
         if let Some(user) = user {
             self.push_key_changes(&user, &[], &added).await;
+            if !added.is_empty() {
+                // Entrées arrivées : une réparation qui attendait sa clé peut maintenant aboutir.
+                self.repair_wake.notify_one();
+            }
             if added.iter().any(|k| k.kind == KeyKind::Conv) {
                 self.wake.notify_one();
             }
@@ -436,6 +486,13 @@ impl Runtime {
                 if let Ok(records) = self.api.delegations().await
                     && let Some(r) = records.iter().find(|r| r.delegation_id == delegation_id)
                 {
+                    {
+                        let mut st = self.state.lock().await;
+                        match r.display_name.as_deref().and_then(clean_display_name) {
+                            Some(n) => st.display_names.insert(r.user_id.clone(), n),
+                            None => st.display_names.remove(&r.user_id),
+                        };
+                    }
                     let _ = self.open_delegation(r).await;
                 }
             }
@@ -496,6 +553,11 @@ impl Runtime {
                     }
                 }
             }
+            ApiEvent::ThreadEnvelopeReset { thread_id, user_id, delegation_id } => {
+                // PC31 : la trame ne fait que demander ; la file et son travailleur (bornés) font
+                // les vérifications et l'appel à l'API, sans retarder les évènements suivants.
+                let _ = self.submit_repair(&thread_id, &user_id, &delegation_id).await;
+            }
             ApiEvent::RuntimeUnpaired => self.unpaired.notify_one(),
             ApiEvent::Ping | ApiEvent::Unknown => {}
         }
@@ -512,35 +574,35 @@ impl Runtime {
         }
     }
 
-    /// Réconcilie les autorisations persistées avec l'API (démarrage, reconnexion du flux) : aucune
-    /// route ne liste les autorisations actives de l'org ; la plus proche est
-    /// `GET /conversations/:sessionId` (S+A), qui refuse une autorisation révoquée, expirée ou d'une
-    /// délégation inactive. Une erreur réseau garde l'entrée.
+    /// Réconcilie les autorisations persistées avec l'API (démarrage, reconnexion du flux, Q18) : un
+    /// seul appel `GET /authorizations?state=active` (spec API §14.1) ; une autorisation connue et
+    /// absente de la réponse est révoquée, expirée ou d'une délégation inactive : elle est retirée.
+    /// Une erreur ou une liste incomplète garde tout. Seules les autorisations connues **avant**
+    /// l'appel sont candidates : une autorisation notifiée pendant l'appel n'est jamais retirée.
     pub async fn reconcile_authorizations(self: &Arc<Self>) {
         let entries = self.state.lock().await.auths.entries();
+        if entries.is_empty() {
+            return;
+        }
+        let active = match self.api.active_authorizations().await {
+            Ok(Some(list)) => list,
+            Ok(None) => {
+                tracing::warn!(code = "authorizations_incomplete", "liste des autorisations incomplète");
+                return;
+            }
+            Err(e) => {
+                tracing::warn!(code = "authorizations_unavailable", error = %e, "autorisations non relues");
+                return;
+            }
+        };
+        let live: BTreeSet<(&str, &str)> = active.iter().map(|a| (a.session_id.as_str(), a.auth_id.as_str())).collect();
         for (session, auth) in entries {
-            let gone = match self.api.conversation_head(&session, &auth.auth_id).await {
-                Ok(_) => false,
-                Err(e) => {
-                    e.status() == Some(404)
-                        || matches!(
-                            e.code(),
-                            Some(
-                                "auth_invalid"
-                                    | "auth_revoked"
-                                    | "auth_expired"
-                                    | "delegation_expired"
-                                    | "delegation_revoked"
-                                    | "out_of_scope"
-                            )
-                        )
-                }
-            };
-            if gone {
-                let mut st = self.state.lock().await;
-                if st.auths.get(&session).is_some_and(|a| a.auth_id == auth.auth_id) {
-                    st.auths.remove(&session);
-                }
+            if live.contains(&(session.as_str(), auth.auth_id.as_str())) {
+                continue;
+            }
+            let mut st = self.state.lock().await;
+            if st.auths.get(&session).is_some_and(|a| a.auth_id == auth.auth_id) {
+                st.auths.remove(&session);
             }
         }
     }
@@ -705,22 +767,56 @@ impl Runtime {
         tracing::info!(code = "conversation_stopped", "conversation arrêtée");
     }
 
-    /// Désappairage (01 §9) : arrêt des workers sans attendre, effacement des clés déléguées,
-    /// oubli de l'org et des autorisations. Les clés du runtime sont conservées.
-    pub async fn forget_org(self: &Arc<Self>) {
+    /// Désappairage (01 §9) : arrêt des workers sans attendre, puis **oubli en mémoire** (qui ne peut
+    /// pas échouer : org, coffre des clés déléguées, autorisations, registre et file en mémoire), puis
+    /// effacement des fichiers d'état. Les clés du runtime sont conservées. Seul l'effacement des
+    /// fichiers peut échouer : l'appelant le retente avec [`Self::erase_state_files`], sans refaire
+    /// l'oubli.
+    pub async fn forget_org(self: &Arc<Self>) -> crate::error::Result<()> {
         let sessions: Vec<String> = self.state.lock().await.convs.keys().cloned().collect();
         for s in sessions {
             self.stop_conversation(&s, ShutdownReason::Unpaired, "revoked").await;
         }
+        {
+            let mut st = self.state.lock().await;
+            st.created_threads.forget();
+            st.repairs.forget();
+            st.generation = st.generation.saturating_add(1);
+            st.vault.clear();
+            st.auths.clear();
+            st.policy = None;
+            st.org_id = None;
+            st.tickets.revoked_users.clear();
+            st.tickets.revoked_conversations.clear();
+            st.alert(now_secs(), "runtime_unpaired");
+        }
+        self.erase_state_files().await
+    }
+
+    /// Efface le registre des salons créés et la file de réparations (les deux sont essayés). Échec :
+    /// une **seule** alerte `unpair_erase_failed` tant qu'il persiste (l'anneau d'alertes n'est pas
+    /// saturé par les réessais) et un journal à débit limité ; l'alerte est ré-armée au succès.
+    pub async fn erase_state_files(&self) -> crate::error::Result<()> {
         let mut st = self.state.lock().await;
-        st.generation = st.generation.saturating_add(1);
-        st.vault.clear();
-        st.auths.clear();
-        st.policy = None;
-        st.org_id = None;
-        st.tickets.revoked_users.clear();
-        st.tickets.revoked_conversations.clear();
-        st.alert(now_secs(), "runtime_unpaired");
+        let threads = st.created_threads.clear();
+        let repairs = st.repairs.clear();
+        let result = threads.and(repairs);
+        match &result {
+            Ok(()) => st.unpair_erase_alerted = false,
+            Err(_) => {
+                if !std::mem::replace(&mut st.unpair_erase_alerted, true) {
+                    st.alert(now_secs(), "unpair_erase_failed");
+                }
+            }
+        }
+        drop(st);
+        if result.is_err() {
+            self.error_limited(
+                "unpair_erase_failed",
+                "désappairage incomplet : effacement des fichiers d'état impossible",
+            );
+        }
+        result
     }
 
     /// Diffuse une trame à tous les clients d'une conversation ; un client trop lent est coupé.

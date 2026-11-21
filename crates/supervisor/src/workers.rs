@@ -122,12 +122,13 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
         Err(code) => {
             if code != "init_unavailable" {
                 // Fournisseur LLM non configuré dans le runtime (ou URL de passerelle refusée) : la
-                // conversation échoue clairement au lieu d'être relancée en boucle. Code de l'API
-                // le plus proche (08 §6) ; la cause exacte est dans le journal du runtime.
+                // conversation échoue clairement au lieu d'être relancée en boucle, avec
+                // `provider_not_configured` (Q30, spec API §14.3), distinct de `provider_error` ; la
+                // cause exacte est dans le journal du runtime.
                 tracing::warn!(code, "conversation refusée : fournisseur LLM non utilisable");
                 let _ = rt
                     .api
-                    .write_status(session_id, &auth_id, lease.lease_epoch, "failed", Some("provider_error"))
+                    .write_status(session_id, &auth_id, lease.lease_epoch, "failed", Some("provider_not_configured"))
                     .await;
             }
             let _ = rt.api.release_lease(session_id, &auth_id, lease.lease_epoch).await;
@@ -141,7 +142,6 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
         user_id: user_id.clone(),
         resources: ResourceLimits {
             memory_max_bytes: l.worker_memory_max_mib.saturating_mul(1024 * 1024),
-            memory_high_bytes: l.worker_memory_high_mib.saturating_mul(1024 * 1024),
             cpu_max_percent: l.worker_cpu_percent,
             pids_max: l.worker_pids_max,
         },
@@ -279,16 +279,26 @@ pub(crate) async fn created_key(
     let signed = synco_e2ee::keys::sign_rt1_envelope(rt.keys.csk(), key.as_bytes(), &ctx, 1, &delegation_id);
     let sealed = delegation.seal_created_thread_entry(&reference, &key);
     match (signed, sealed) {
-        (Ok(sig), Ok(ciphertext)) => pipe::CreatedKeyMsg {
-            reference,
-            envelope: Some(pipe::CreatedKeyEnvelope {
-                delegation_id,
-                commitment: sig.commitment,
-                signature: sig.signature,
-                ciphertext,
-            }),
-            error: None,
-        },
+        (Ok(sig), Ok(ciphertext)) => {
+            // Q21 : registre des salons créés ici (seuls réparables par `thread.envelope_reset`).
+            if !st.created_threads.record(&reference, user_id, &delegation_id) {
+                st.alert(now_secs(), "created_threads_full");
+            }
+            // Écriture du registre hors du verrou d'état (pas de `fsync` sous le verrou).
+            let snapshot = st.created_threads.snapshot();
+            drop(st);
+            rt.save_created_threads(snapshot).await;
+            pipe::CreatedKeyMsg {
+                reference,
+                envelope: Some(pipe::CreatedKeyEnvelope {
+                    delegation_id,
+                    commitment: sig.commitment,
+                    signature: sig.signature,
+                    ciphertext,
+                }),
+                error: None,
+            }
+        }
         _ => created_key_error(&reference, "created_key_failed"),
     }
 }

@@ -38,8 +38,9 @@ const STATUSES: [&str; 9] = [
     "cancelled",
 ];
 /// Codes d'erreur admis (08 §6) ; tout autre est enregistré `other`.
-const REASONS: [&str; 11] = [
+const REASONS: [&str; 12] = [
     "provider_error",
+    "provider_not_configured",
     "provider_auth",
     "budget_exceeded",
     "step_limit",
@@ -743,6 +744,13 @@ fn load_dir(dir: &Path) -> HashMap<String, Run> {
 #[cfg(test)]
 #[allow(clippy::arithmetic_side_effects, reason = "tests")]
 mod tests {
+    #[test]
+    fn provider_not_configured_garde_son_code() {
+        assert_eq!(clean_reason("provider_not_configured"), "provider_not_configured");
+        assert_eq!(clean_reason("provider_error"), "provider_error");
+        assert_eq!(clean_reason("inconnu"), "other");
+    }
+
     use std::time::Duration;
 
     use super::*;

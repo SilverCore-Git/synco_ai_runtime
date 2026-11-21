@@ -48,6 +48,16 @@ impl ApiError {
         }
     }
 
+    /// Code machine **sûr à journaliser** : seulement `[a-z_]`, 48 caractères au plus ; autre chose
+    /// (majuscules, chiffres, ponctuation, contrôles : texte libre d'un serveur qui n'est pas de
+    /// confiance) devient `-`.
+    #[must_use]
+    pub fn loggable_code(&self) -> &str {
+        self.code()
+            .filter(|c| !c.is_empty() && c.len() <= 48 && c.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'))
+            .unwrap_or("-")
+    }
+
     /// Statut HTTP, s'il y en a un.
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
@@ -332,6 +342,56 @@ impl ApiClient {
         self.json(Method::Get, "/api/runtime/v1/delegations", None, None).await
     }
 
+    /// `GET /authorizations?state=active` (Q18), toutes les pages. `Ok(None)` si la liste est
+    /// incomplète ou incohérente (curseur qui ne progresse pas, trop de pages) : l'appelant ne doit
+    /// alors rien conclure d'une absence.
+    pub async fn active_authorizations(&self) -> Result<Option<Vec<wire::ActiveAuthorization>>, ApiError> {
+        /// Garde-fou : 500 par page, donc 100 000 autorisations au plus.
+        const MAX_PAGES: usize = 200;
+        let mut all = Vec::new();
+        let mut after: Option<String> = None;
+        for _ in 0..MAX_PAGES {
+            let path = match &after {
+                Some(a) => format!("/api/runtime/v1/authorizations?state=active&after={a}&limit=500"),
+                None => "/api/runtime/v1/authorizations?state=active&limit=500".to_owned(),
+            };
+            let page: wire::AuthorizationsPage = self.json(Method::Get, &path, None, None).await?;
+            all.extend(page.authorizations);
+            match page.next {
+                None => return Ok(Some(all)),
+                Some(next) if Some(&next) != after.as_ref() => after = Some(next),
+                Some(_) => return Ok(None),
+            }
+        }
+        Ok(None)
+    }
+
+    /// `POST /e2ee/threads/:threadId/key-envelope/repose` (S seule, Q21, spec API §14.8) : nouvelle
+    /// pose de l'enveloppe `rt1` d'un salon réinitialisé. `body` est le corps JSON strict.
+    pub async fn repose_envelope(&self, thread_id: &str, body: Vec<u8>) -> Result<(), ApiError> {
+        self.no_content(
+            Method::Post,
+            &format!("/api/runtime/v1/e2ee/threads/{thread_id}/key-envelope/repose"),
+            Some(body),
+            None,
+        )
+        .await
+    }
+
+    /// `GET /e2ee/threads/envelope-resets?limit=&cursor=` (S seule, L03f, spec API §14.8) : une page
+    /// des réinitialisations d'enveloppe en attente. Le contenu n'est pas de confiance.
+    pub async fn envelope_resets(
+        &self,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<wire::EnvelopeResetsPage, ApiError> {
+        let path = match cursor {
+            Some(c) => format!("/api/runtime/v1/e2ee/threads/envelope-resets?limit={limit}&cursor={c}"),
+            None => format!("/api/runtime/v1/e2ee/threads/envelope-resets?limit={limit}"),
+        };
+        self.json(Method::Get, &path, None, None).await
+    }
+
     /// `GET /delegations/:id/entries`.
     pub async fn entries(&self, delegation_id: &str, after: Option<&str>) -> Result<wire::EntriesPage, ApiError> {
         let path = match after {
@@ -434,6 +494,16 @@ impl ApiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn code_journalise_restreint() {
+        let status = |c: &str| ApiError::Status { status: 409, code: Some(c.to_owned()) };
+        assert_eq!(status("envelope_exists").loggable_code(), "envelope_exists");
+        for bad in ["Envelope", "a1", "a b", "a\nb", "<script>", "", &"a".repeat(49)] {
+            assert_eq!(status(bad).loggable_code(), "-", "{bad:?}");
+        }
+        assert_eq!(ApiError::Network.loggable_code(), "-");
+    }
 
     #[test]
     fn chemins() {

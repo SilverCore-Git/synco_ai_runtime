@@ -199,6 +199,8 @@ struct Agent {
     conv_tokens: u64,
     counters: Counters,
     ticket: Option<(String, Instant)>,
+    /// Le dernier ticket a été refusé : fournisseur non configuré (Q30).
+    not_configured: bool,
     live: Option<Live>,
     shutdown: Option<ShutdownMsg>,
     lease_lost: Arc<AtomicBool>,
@@ -242,6 +244,7 @@ impl Agent {
             conv_tokens: 0,
             counters: Counters::default(),
             ticket: None,
+            not_configured: false,
             live: None,
             shutdown: None,
             lease_lost: Arc::new(AtomicBool::new(false)),
@@ -964,6 +967,7 @@ impl Agent {
                         LlmError::CallBudget => self.end_turn(Some("step_limit")).await?,
                         LlmError::TokenBudget => self.fail("budget_exceeded").await?,
                         LlmError::Auth => self.fail("provider_auth").await?,
+                        LlmError::NotConfigured => self.fail("provider_not_configured").await?,
                         _ => self.fail("provider_error").await?,
                     };
                 }
@@ -1063,6 +1067,8 @@ impl Agent {
             return Ok(Some(t.clone()));
         }
         let r = self.api.call(HttpMethod::Post, &format!("{PREFIX}/tickets/llm"), Some(&json!({}))).await?;
+        // Q30 : l'API refuse le ticket parce que la passerelle n'est pas configurée.
+        self.not_configured = matches!(r.code(), Some("gateway_not_configured" | "provider_not_configured"));
         let t = r.body.get("ticket").and_then(Value::as_str).filter(|_| r.ok()).map(str::to_owned);
         self.ticket = t.clone().map(|t| (t, Instant::now()));
         Ok(t)
@@ -1077,6 +1083,9 @@ impl Agent {
         let mut auth_retry = false;
         loop {
             let bearer = self.gateway_ticket(auth_retry).await?;
+            if self.not_configured {
+                return Ok(Step { tokens: 0, end: StepEnd::Error(LlmError::NotConfigured) });
+            }
             let req = ChatRequest {
                 model: self.init.llm.model.clone(),
                 system: crate::prompt::system_prompt(self.init.llm.reasoning_effort),

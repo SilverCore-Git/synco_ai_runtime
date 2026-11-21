@@ -55,9 +55,6 @@ pub struct Config {
     /// Développement uniquement : accepte une `public_url` en `http://localhost|127.0.0.1`.
     #[serde(default)]
     pub dev_allow_http_public_url: bool,
-    /// `limits.worker_memory_high_mib` écrit dans le fichier (ignoré, `--check-config` avertit).
-    #[serde(skip)]
-    pub memory_high_set: bool,
 }
 
 fn default_log_level() -> String {
@@ -200,8 +197,10 @@ pub struct Limits {
     pub max_workers: usize,
     /// RAM par worker, `memory.max` (Mio) — appliqué par le bac à sable (L06).
     pub worker_memory_max_mib: u64,
-    /// `memory.high` (Mio).
-    pub worker_memory_high_mib: u64,
+    /// **Ignorée** (D6 révisée, PC12) : `memory.high` n'est pas appliqué aux workers. La clé reste
+    /// acceptée pour qu'un ancien fichier de configuration soit lu sans erreur (formats
+    /// rétrocompatibles) ; `--check-config` avertit qu'elle est sans effet. Plus validée.
+    pub worker_memory_high_mib: Option<u64>,
     /// CPU par worker en pour cent d'un cœur (`cpu.max`).
     pub worker_cpu_percent: u64,
     /// `pids.max`.
@@ -231,7 +230,7 @@ impl Default for Limits {
             max_workers_per_user: 3,
             max_workers: 8,
             worker_memory_max_mib: 512,
-            worker_memory_high_mib: 448,
+            worker_memory_high_mib: None,
             worker_cpu_percent: 100,
             worker_pids_max: 64,
             replay_buffer_events: 2_000,
@@ -324,10 +323,7 @@ impl Config {
 
     /// Lit et valide un texte TOML.
     pub fn parse(text: &str) -> Result<Self> {
-        let mut config: Self = toml::from_str(text).map_err(|e| invalid(format!("TOML invalide : {e}")))?;
-        config.memory_high_set = toml::from_str::<toml::Table>(text).ok().is_some_and(|t| {
-            t.get("limits").and_then(toml::Value::as_table).is_some_and(|l| l.contains_key("worker_memory_high_mib"))
-        });
+        let config: Self = toml::from_str(text).map_err(|e| invalid(format!("TOML invalide : {e}")))?;
         config.validate()?;
         Ok(config)
     }
@@ -444,7 +440,7 @@ impl Config {
     #[must_use]
     pub fn warnings(&self) -> Vec<String> {
         let mut out = Vec::new();
-        if self.memory_high_set {
+        if self.limits.worker_memory_high_mib.is_some() {
             out.push(
                 "limits.worker_memory_high_mib est ignoré : memory.high n'est pas appliqué aux workers (sans espace \
                  d'échange, il les ralentit au lieu de les laisser être tués à memory.max ; docs/plan/10 §5, décision en attente)"
@@ -513,7 +509,6 @@ impl Limits {
             ("max_tool_result_bytes", self.max_tool_result_bytes),
             ("idle_shutdown_secs", self.idle_shutdown_secs),
             ("worker_memory_max_mib", self.worker_memory_max_mib),
-            ("worker_memory_high_mib", self.worker_memory_high_mib),
             ("worker_cpu_percent", self.worker_cpu_percent),
             ("worker_pids_max", self.worker_pids_max),
         ];
@@ -524,9 +519,6 @@ impl Limits {
         }
         if self.max_workers == 0 || self.max_workers_per_user == 0 {
             return Err(invalid("limits.max_workers et max_workers_per_user : ≥ 1"));
-        }
-        if self.worker_memory_high_mib > self.worker_memory_max_mib {
-            return Err(invalid("limits.worker_memory_high_mib ≤ worker_memory_max_mib"));
         }
         if self.replay_buffer_events == 0
             || self.replay_buffer_bytes < runtime_protocol::client::MAX_RUNTIME_FRAME_BYTES
@@ -592,9 +584,16 @@ allowed_origins = ["https://app.example.com"]
         assert!(Config::parse(&format!("{MIN}\n[llm.providers.openai]\napi_key_env = \"X\"\n")).is_err());
         assert!(Config::parse(&format!("{MIN}\n[llm.providers.custom]\n")).is_err());
         assert!(Config::parse(&format!("{MIN}\n[llm.providers.gateway]\n")).is_ok());
-        // `worker_memory_high_mib` présent → avertissement.
-        let c = Config::parse(&format!("{MIN}\n[limits]\nworker_memory_high_mib = 448\n")).unwrap();
-        assert!(c.warnings().iter().any(|w| w.contains("worker_memory_high_mib")));
+        // `worker_memory_high_mib` présent → avertissement. Rétrocompatibilité : un ancien fichier
+        // (même avec une valeur qui ne passait pas l'ancienne validation) reste lu sans erreur.
+        for v in ["448", "0", "9999"] {
+            let c = Config::parse(&format!("{MIN}\n[limits]\nworker_memory_high_mib = {v}\n")).unwrap();
+            assert!(c.warnings().iter().any(|w| w.contains("worker_memory_high_mib")), "{v}");
+            assert_eq!(c.limits.worker_memory_max_mib, 512, "le reste des limites est inchangé");
+        }
+        let c = Config::parse(&format!("{MIN}\n[limits]\nworker_memory_max_mib = 256\nworker_memory_high_mib = 448\n"))
+            .unwrap();
+        assert_eq!(c.limits.worker_memory_max_mib, 256, "high > max n'est plus une erreur : la valeur est ignorée");
         assert!(!Config::parse(MIN).unwrap().warnings().iter().any(|w| w.contains("worker_memory_high_mib")));
         let open = "[listen]\npublic = \"0.0.0.0:8790\"\ndashboard = \"127.0.0.1:8791\"\ntrust_proxy_hops = 1\n";
         assert!(Config::parse(&format!("{MIN}\n{open}")).is_err(), "écoute non locale refusée");

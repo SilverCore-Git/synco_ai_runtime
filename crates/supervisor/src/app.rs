@@ -55,7 +55,17 @@ pub async fn start(
     let public_addr = listener.local_addr().map_err(|e| Error::Io(format!("adresse d'écoute : {}", e.kind())))?;
     let mut state = State::new(pins, auths);
     state.member_pins = crate::member_pins::MemberPinStore::open(&config.state_dir)?;
+    state.created_threads = crate::created_threads::CreatedThreadStore::open(&config.state_dir, &keys)?;
+    if state.created_threads.take_tampered() {
+        // PC33 : MAC invalide, le registre est considéré vide (rien n'est signé) ; le runtime continue.
+        state.alert(crate::clock::now_secs(), "created_threads_tampered");
+    }
+    state.repairs = crate::repair_queue::RepairQueue::open(&config.state_dir, &keys)?;
+    if state.repairs.take_tampered() {
+        state.alert(crate::clock::now_secs(), "envelope_repairs_tampered");
+    }
     let runtime = Runtime::new(Arc::new(config), keys, api, launcher, provider_secrets, state);
+    runtime.spawn_repair_worker();
     {
         let rt = Arc::clone(&runtime);
         tokio::spawn(async move {
@@ -91,7 +101,20 @@ async fn main_loop(rt: Arc<Runtime>) {
             StreamEnd::Shutdown => break,
             StreamEnd::Unpaired => {
                 tracing::warn!(code = "runtime_unpaired", "désappairé : effacement des clés déléguées");
-                rt.forget_org().await;
+                // L'oubli en mémoire est fait ; seul l'effacement des fichiers d'état peut échouer :
+                // on le retente (une seule alerte, journal à débit limité, voir `erase_state_files`).
+                if rt.forget_org().await.is_err() {
+                    let mut shutdown = rt.shutdown.subscribe();
+                    loop {
+                        tokio::select! {
+                            () = tokio::time::sleep(Duration::from_secs(5)) => {}
+                            () = crate::runtime::stopped(&mut shutdown) => break,
+                        }
+                        if rt.erase_state_files().await.is_ok() {
+                            break;
+                        }
+                    }
+                }
             }
         }
     }
@@ -126,6 +149,15 @@ async fn wait_paired(rt: &Arc<Runtime>) -> bool {
                     let mut st = rt.state.lock().await;
                     st.org_id = Some(resp.org_id.clone());
                     st.generation = st.generation.saturating_add(1);
+                    // Fichiers scellés pour une autre org (retour en arrière) : rejetés, alerte.
+                    st.created_threads.bind_org(&resp.org_id);
+                    if st.created_threads.take_tampered() {
+                        st.alert(now_secs(), "created_threads_tampered");
+                    }
+                    st.repairs.bind_org(&resp.org_id);
+                    if st.repairs.take_tampered() {
+                        st.alert(now_secs(), "envelope_repairs_tampered");
+                    }
                     drop(st);
                     tracing::info!(code = "runtime_paired", "runtime appairé");
                     return true;

@@ -93,6 +93,30 @@ try {
 }
 check(forged, 'enveloppe refusée pour une autre délégation');
 
+// 4. Réparation d'enveloppe avec une délégation renouvelée (L08c, revue L08b constat 2) : le superviseur
+//    signe avec la délégation de la trame (`delegationId`), pas celle du créateur du salon.
+//    Fixture : crates/supervisor/tests/fixtures/repose-delegation-renouvelee.json (régénérée par
+//    `L08C_WRITE_FIXTURES=1 cargo test -p synco-ai-runtime --test integration delegation_renouvelee`).
+const repose = JSON.parse(readFileSync(join(here, '../../../supervisor/tests/fixtures/repose-delegation-renouvelee.json'), 'utf8')).thread;
+const reposeKey = hexToBytes(repose.keyHex).buffer as ArrayBuffer;
+const reposeEnvelope = { ctx: repose.ctx, version: repose.version, commitment: repose.commitment, signature: repose.signature };
+check(repose.delegationId !== repose.creatorDelegationId, 'vecteur : délégation de la trame ≠ délégation du créateur');
+let reposeOk = true;
+try {
+    await rd.verifyRt1Envelope(repose.cskPublic, reposeKey, reposeEnvelope, repose.delegationId);
+} catch (e) {
+    reposeOk = false;
+    console.error(e);
+}
+check(reposeOk, 'enveloppe reposée vérifiée avec la délégation renouvelée (verifyRt1Envelope)');
+let reposeForged = false;
+try {
+    await rd.verifyRt1Envelope(repose.cskPublic, reposeKey, reposeEnvelope, repose.creatorDelegationId);
+} catch {
+    reposeForged = true;
+}
+check(reposeForged, 'enveloppe reposée refusée pour la délégation du créateur');
+
 if (failures > 0) {
     console.error(`${failures} échec(s)`);
     process.exit(1);

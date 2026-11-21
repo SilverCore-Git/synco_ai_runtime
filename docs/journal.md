@@ -1070,3 +1070,124 @@ documentation seule.
 ### 2026-11-21 — L00e, suite : PC28 à PC30, Q24 et Q29, limite d'ajout d'entrées
 
 PC28 (épingles RSA hybrides : 50 000 par org réglable, archivage compact après 180 j, éviction de la plus ancienne archive, alerte à 80 % ; décidé, implémentation au lot L05c, le code applique encore 2 000) en 03 §10.1, 06 §4.3, 00 Q25 ; PC29 (`AiThreadEnvelopeEvent` 1 an, purge L03e en cours) en 07 §3.1, 03, 00 ; PC30 (1 000 membres par org) en 00 Q25 seulement ; PC7 (Q24) et PC13 à PC15 (Q29) en 00 §6 et 11 §7 ; 09 §4 : ajout d'entrées 3 req/15 s. Ni nettoyage `memory.high` ni adoption runtime (lot L08b). Le point (c) de Q29 reste non tranché.
+## 2026-11-21 — L08b : consommation des compléments API de L03d
+
+Forme des routes et trames : spec API §14 (lecture seule). Un commit par point ; `fmt`, `clippy -D warnings` et
+`cargo test --workspace` (22 suites) avant chacun.
+
+- **PC17** (`b8a4e83`) : `DelegationRecord.display_name` (optionnel) ; le superviseur garde `userId → nom` (`State.display_names`,
+  remplacé à chaque relecture de `GET /delegations`, nettoyé : contrôles → espace, 128 caractères, bords retirés). Nouvelle
+  route `GET /api/names` du dashboard ; le JS (`userCell`, `who`) insère le nom par `textContent` (info-bulle = identifiant),
+  repli sur l'identifiant. Sessions, détail, totaux par utilisateur, clés de membres refusées.
+- **Q18** (`443cb47`) : `reconcile_authorizations` fait un seul `GET /authorizations?state=active` paginé (curseur `after`, `limit=500`)
+  au lieu d'un `GET /conversations/:id` par conversation. Absente de la réponse = retirée. Erreur, curseur qui ne progresse pas
+  ou plus de 200 pages : tout est gardé. Seules les autorisations connues **avant** l'appel sont candidates (une autorisation
+  notifiée pendant l'appel n'est jamais retirée).
+- **Q23** (`a1fed02`) : `create_thread` valide les arguments, puis lit les annuaires **avant toute création** (accueil :
+  `members/keys` ; espace : `members/keys?spaceId=`) ; un espace refusé ou une clé changée ne laisse créer aucun salon. Le relais
+  applique déjà `member_keys_gate` à tout `…/members/keys?…` (test ajouté pour `?spaceId=`) : aucun contournement. Destinataires
+  d'un espace = ses membres (le refus provisoire « propriétaire seul » est retiré). `categoryId` reste facultatif ;
+  `no_default_category` (409) devient une erreur claire avec `note` pour l'agent.
+- **Q30** (`95a7b3d`) : `provider_not_configured` écrit par le superviseur quand le fournisseur n'est pas utilisable (avant :
+  `provider_error`) ; reconnu par le worker (`LlmError::NotConfigured`, code `provider_not_configured` ou `gateway_not_configured`
+  dans une réponse, ou ticket `gateway_not_configured` refusé), sans nouvel essai ; conservé par l'historique du dashboard
+  (liste fermée) et affiché distinctement.
+- **Q21** (`e9f9bc6`) : trame `thread.envelope_reset` (`ApiEvent::ThreadEnvelopeReset`) et `Runtime::repose_envelope`. **Vérifications
+  locales avant de signer** : (1) le salon est dans le **registre des salons créés par ce runtime** (nouveau,
+  `created_threads.json`, rempli par `created_key`, borné à 10 000, vidé au désappairage) et pour **ce `userId`** ;
+  (2) `delegationId` de la trame = délégation ouverte, non expirée, non révoquée de cet utilisateur ; (3) la clé du salon
+  (entrée `thread`, version 1) est dans cette délégation. `commitment` recalculé depuis la clé, signature `rt1` par `csk`,
+  `POST …/key-envelope/repose` (S seule, corps strict). Un salon à la fois (`repose_inflight`) ; trois essais seulement sur
+  panne réseau/5xx ; tout refus de l'API (`envelope_exists`, `forbidden`…) est définitif. Journalisation par code seulement.
+- **PC12** (`24eed3f`) : `memory_high_bytes` retiré de `ResourceLimits` (launcher, cli, workers, sandbox) ; `limits.worker_memory_high_mib`
+  devient `Option<u64>` ignoré, plus validé (un ancien fichier avec 0 ou une valeur > max reste lu), `--check-config` avertit
+  toujours. `cgroup.rs` écrit toujours `memory.high = max` (explicite).
+
+**Écarts et limites à reporter (docs/plan, géré par L00e)** :
+1. La spec (§14.8) et le lot parlent d'un « registre local des salons créés » ; il n'existait pas (seul un ensemble transitoire par
+   worker). Créé ici. Les salons créés **avant** L08b ne sont pas dans le registre : leur réinitialisation est ignorée (journal
+   `envelope_reset_foreign_thread`). Aucun déploiement ne les concerne à ce jour.
+2. Le lot décrit le contrôle comme « ThreadKey `rt1:<délégation>` de ce runtime et de ce `userId` ». Le runtime ne reçoit pas le
+   `creatorId` (trame sans lui, aucune route pour le lire) : le contrôle repose sur le registre + la délégation de la trame.
+3. Contrainte de §14.8 : si la clé n'est plus dans le coffre (délégation renouvelée sans l'entrée, redémarrage avant
+   synchro), la trame est ignorée (`envelope_reset_key_missing`). *Reprise automatique ajoutée par L08c (PC31), voir plus bas.*
+4. L'API compare « même enveloppe » (200 `updated: 0`). *Correction L08c : la signature ECDSA `rt1` du runtime est
+   **déterministe** (RFC 6979), pas aléatoire ; un rejeu avec la même délégation envoie donc exactement la même signature et
+   reçoit 200 `updated: 0`. Seule une délégation différente change la signature (elle est dans les octets signés) et reçoit
+   `envelope_exists`, géré sans boucle. Le mock compare désormais aussi la signature.*
+5. `GET /authorizations` renvoie aussi `displayName` : non exploité (PC17 s'appuie sur `GET /delegations`).
+
+**Mutations faites** : registre ignoré → `enveloppe_rt1_reposee_apres_reinitialisation` échoue ; utilisateur du registre non
+comparé → échoue ; `delegationId` de la trame non comparé → échoue. La vérification `revoked_delegations` du coffre est
+redondante avec l'effacement du coffre à la révocation (défense en profondeur, non couverte seule).
+
+**Vérifié à la fin** : hôte, `sandbox-host.sh` vert (11 tests) puis `aller_retour_avec_bac_a_sable ... ok` ; test croisé
+Rust → TS : OK ; `synco_app` et `synco_api` non modifiés.
+
+## 2026-11-21 — L08c : suites de la revue L08b (PC31 à PC33, constats mineurs)
+
+À la suite de `77e98ce`. `fmt`, `clippy -D warnings` et `cargo test --workspace` avant chaque commit.
+
+- **PC31, file persistante** (`be09900`, `repair_queue.rs`, `repairs.rs`) : `thread.envelope_reset` ne lance plus une tâche par trame.
+  La trame est contrôlée tout de suite contre le registre (salon étranger : jamais dans la file) puis rangée dans
+  `envelope_repairs.json` (salon, utilisateur, délégation ; 10 000 au plus, dédupliquée sur (salon, utilisateur) avec la dernière délégation reçue, abandonnée après 30 jours). Un
+  travailleur unique la rejoue, quatre réparations de front au plus (`REPAIR_CONCURRENCY`), à l'arrivée d'entrées, à l'ouverture
+  d'une délégation, au rechargement des délégations et à chaque reconnexion. **Chaque essai refait toutes les vérifications locales**
+  (`Runtime::try_repair` : registre + utilisateur, délégation ouverte non expirée non révoquée, clé détenue) ; une délégation
+  pas encore chargée ou une clé absente laisse l'entrée en file, une panne réseau aussi (rejeu à la reconnexion), un refus
+  définitif de l'API (`envelope_exists`, `forbidden`, `not_found`…) la retire.
+- **PC31, relecture API** : à chaque reconnexion, `GET /api/runtime/v1/e2ee/threads/envelope-resets?limit=&cursor=` (S seule,
+  100 par page, 100 pages au plus, curseur qui ne progresse pas = arrêt). Chaque item passe par `submit_repair`, donc par le registre
+  local, puis par `try_repair` : l'API ne choisit jamais seule ce qui se signe. Route absente (L03f en cours) : relecture silencieuse
+  (journal `debug`). Testée avec un mock, **pas contre la vraie route L03f**.
+- **PC33, MAC** (`c66678b`, `sealed_file.rs`) : `created_threads.json` et `envelope_repairs.json` sont scellés
+  (`{ "v": 2, "org": "<org>", "body": "<JSON en texte>", "mac": "<base64url HMAC-SHA256(longueur(org) ‖ org ‖ body)>" }`).
+  Le MAC est lié à l'**org** (revue : retour en arrière) : un fichier scellé pour une autre org est rejeté (alerte, contenu vide, `.rejected`)
+  dès que l'org est connue, à l'appairage (`bind_org`) ;. Clé : HKDF-SHA256 (`hkdf32` de `synco-e2ee`, sel
+  `synco-ai-runtime/state-mac/v1`, info `file:<nom>`) du matériel de `keys.sealed` (`RuntimeKeys::to_secret_bytes`) : une clé par
+  fichier, jamais écrite. Aucune dépendance nouvelle (`hmac`/`hkdf` étaient déjà derrière `synco-e2ee`). MAC invalide, fichier modifié
+  ou illisible : registre/file **vide**, fichier mis de côté en `.rejected`, alerte `created_threads_tampered` /
+  `envelope_repairs_tampered`, le runtime continue. Fichier sans MAC (ancien
+  format de L08b) : refusé comme altéré, **pas de lecture de l'ancien format** (PC43, décision de l'utilisateur : L08b n'a jamais
+  été livré, la règle de rétrocompatibilité ne s'applique pas ; sinon qui écrit dans `state_dir` ferait adopter un fichier nu).
+- **Constat 5** (`c66678b`) : l'écriture du registre ne tient plus le verrou d'état (photo `Snapshot` sous le verrou, écriture par
+  `spawn_blocking`, comme `member_pins` ; échec : alerte `created_threads_not_saved`).
+- **Constat 7** (`c66678b`, revu) : au désappairage, la mémoire est oubliée **d'abord** (org, coffre, autorisations, registre et file
+  en mémoire : cela ne peut pas échouer), puis les fichiers sont effacés ; seul cet effacement est retenté toutes les 5 s
+  (`erase_state_files`). Une seule alerte `unpair_erase_failed` tant que l'échec persiste (ré-armée au succès) et un
+  `tracing::error` à débit limité (`LogGate`) : l'anneau de 100 alertes n'est pas saturé.
+- **Constat 4** : une rafale de trames est bornée (une seule file, un travailleur, quatre appels de front) ; journaux à débit limité
+  (une ligne par code et par fenêtre de 10 s, avec le nombre de lignes tues : `LogGate`).
+- **Constat 8** (`4fcd10d`) : `api_code` journalisé restreint à `[a-z_]`, 48 caractères (`ApiError::loggable_code`).
+- **Constats 2 et 3** (`d9182d9`) : vecteur « repose avec délégation renouvelée » (`crates/supervisor/tests/fixtures/repose-delegation-renouvelee.json`),
+  relu par `verifyRt1Envelope` de synco_app (section 4 de `read-from-worker.ts`) et par un test Rust ; le mock de l'API compare la signature.
+- **Constat (c)** : commentaire du journal L08b corrigé (écart 4 ci-dessus).
+
+**PC32 — salons créés avant L08b : non réparables, à ne pas corriger.** Le registre n'existe que depuis L08b : un salon créé par
+ce runtime avant L08b n'y figure pas, et sa réinitialisation est ignorée (`envelope_reset_foreign_thread`) ; la file ne les accepte
+pas non plus. Aucun mécanisme de rattrapage n'est prévu (décision de l'utilisateur, 2026-11-21) ; aucun déploiement n'est concerné
+à ce jour. PC35 : ce mécanisme servira au « mode autonome » ; la politique de mode viendra d'un lot ultérieur, le comportement par défaut est inchangé.
+
+**Mutations faites** : MAC non vérifié (`valid = true`) → `registre_altere_ne_fait_rien_signer` échoue ; concurrence non bornée
+(`buffer_unordered(64)`) → `rafale_de_trames_bornee` échoue. Le contrôle du registre dans `submit_repair` n'est qu'un filtre d'entrée.
+Celui de `try_repair` est **la seule barrière** pour une file relue du disque, ou quand le registre est déclaré altéré au
+redémarrage alors que la file scellée est valide : testé par `file_valide_mais_registre_altere_ou_sans_entree_ne_signe_pas`.
+
+**Non vérifié / recette manuelle** : la relecture contre la **vraie** route L03f (forme `{ items, nextCursor }` prise du lot) ; le
+comportement de la file sur un vrai redémarrage de service systemd.
+
+## 2026-11-21 — L08c bis : corrections de la revue de sécurité de L08c
+
+À la suite de `0899667`. `fmt`, `clippy -D warnings` et `cargo test --workspace` avant chaque commit.
+
+- **PC43** : plus aucune lecture de l'ancien format non scellé de `created_threads.json` (`Loaded::Legacy` retiré, paramètre `legacy`
+  de `load` supprimé) ; un fichier sans MAC est rejeté comme altéré (alerte, registre vide, aucune signature). L08b n'ayant jamais été
+  livré, la rétrocompatibilité ne s'applique pas. Le test de migration est remplacé.
+- **Garde de `try_repair`** : seule barrière pour une file relue du disque ; testée (file valide, registre altéré ou sans l'entrée).
+- **File non saturable** : dédupliquée sur (salon, utilisateur), dernière délégation reçue ; une délégation différente de celle du
+  coffre pour cet utilisateur est abandonnée.
+- **Désappairage** : mémoire oubliée d'abord, seul l'effacement des fichiers est retenté ; une alerte `unpair_erase_failed`, journal limité.
+- **MAC lié à l'org** : l'org est dans le fichier et couverte par le MAC ; rejet à l'appairage si elle diffère.
+- **Relecture API** : plafond sur les items entrés dans la file (pas les refusés), borne de 1 000 pages ; page vide suivie.
+- **Limite connue** : une trame à délégation inventée reçue en dernier remplace la vraie dans la file ; la relecture API à la
+  reconnexion la redonne.

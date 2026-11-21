@@ -89,6 +89,33 @@ pub struct MockState {
     pub presences: u32,
     /// Salons créés par `POST /e2ee/threads`.
     pub threads_created: u32,
+    /// `POST /e2ee/threads/:id/key-envelope/repose` : réponse imposée (statut, code) ; sinon 200,
+    /// puis `envelope_exists` si l'enveloppe est différente de la première reçue.
+    pub repose_override: Option<(u16, String)>,
+    /// Première enveloppe reposée par salon (`commitment`, `signature`) : l'API (L03f) compare les
+    /// deux ; même enveloppe = 200 `updated: 0`, autre = 409 `envelope_exists`.
+    pub reposed: BTreeMap<String, (String, String)>,
+    /// Délai (ms) avant de répondre à `…/key-envelope/repose` (mesure de la concurrence).
+    pub repose_delay_ms: u64,
+    /// Appels `…/key-envelope/repose` en cours, et leur maximum observé.
+    pub repose_in_flight: u32,
+    pub repose_max_in_flight: u32,
+    /// `GET /e2ee/threads/envelope-resets` (L03f, en cours de développement : mock) : items servis.
+    pub resets: Vec<Value>,
+    /// Taille de page (0 = tout sur une page).
+    pub resets_page: usize,
+    /// Nombre de pages vides (avec un `nextCursor` non nul) servies avant les vrais items.
+    pub resets_empty: usize,
+    /// Statut d'erreur à servir (route absente : 404).
+    pub resets_fail: Option<u16>,
+    /// Requêtes reçues (chemin + requête).
+    pub resets_requests: Vec<String>,
+    /// `GET /authorizations` : taille de page (0 = tout sur une page).
+    pub authorizations_page: usize,
+    /// `GET /authorizations` : statut d'erreur à servir.
+    pub authorizations_fail: Option<u16>,
+    /// `GET /authorizations` : conversations dont l'autorisation est omise (révoquée).
+    pub authorizations_omitted: Vec<String>,
     /// `GET /llm-policy` remplacé (défaut : `openai`, `gpt-test`).
     pub policy: Option<Value>,
 }
@@ -246,6 +273,16 @@ async fn channel(
         let delay = state.lock().unwrap().slow_sign_key_ms;
         tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
     }
+    if method == Method::POST && uri.path().ends_with("/key-envelope/repose") {
+        let delay = {
+            let mut st = state.lock().unwrap();
+            st.repose_in_flight += 1;
+            st.repose_max_in_flight = st.repose_max_in_flight.max(st.repose_in_flight);
+            st.repose_delay_ms
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+        state.lock().unwrap().repose_in_flight -= 1;
+    }
     // Route lente (tests de concurrence du relais).
     if uri.path().ends_with("/tools") {
         tokio::time::sleep(std::time::Duration::from_millis(400)).await;
@@ -259,7 +296,7 @@ async fn channel(
         if body.is_empty() { Value::Null } else { serde_json::from_slice(&body).unwrap_or(Value::Null) };
     st.seen.push(Seen { method: method.to_string(), path: path.clone(), auth: auth.clone(), body: json_body.clone() });
     let route = path.trim_start_matches("/api/runtime/v1");
-    let (route_path, _query) = route.split_once('?').unwrap_or((route, ""));
+    let (route_path, query) = route.split_once('?').unwrap_or((route, ""));
     let segs: Vec<&str> = route_path.trim_start_matches('/').split('/').collect();
     match (method.as_str(), segs.as_slice()) {
         ("POST", ["register"]) => {
@@ -294,6 +331,45 @@ async fn channel(
             st.delegation_status.insert((*id).to_owned(), s);
             StatusCode::NO_CONTENT.into_response()
         }
+        ("POST", ["e2ee", "threads", tid, "key-envelope", "repose"]) => {
+            if let Some((status, code)) = st.repose_override.clone() {
+                return error(status, &code);
+            }
+            let pair = (
+                json_body["commitment"].as_str().unwrap_or_default().to_owned(),
+                json_body["signature"].as_str().unwrap_or_default().to_owned(),
+            );
+            match st.reposed.get(*tid) {
+                Some(first) if *first != pair => error(409, "envelope_exists"),
+                Some(_) => axum::Json(json!({ "threadId": tid, "updated": 0 })).into_response(),
+                None => {
+                    st.reposed.insert((*tid).to_owned(), pair);
+                    axum::Json(json!({ "threadId": tid, "updated": 1 })).into_response()
+                }
+            }
+        }
+        ("GET", ["e2ee", "threads", "envelope-resets"]) => {
+            st.resets_requests.push(route.to_owned());
+            if let Some(status) = st.resets_fail {
+                return error(status, "not_found");
+            }
+            let param = |k: &str| query.split('&').find_map(|p| p.strip_prefix(&format!("{k}=")).map(str::to_owned));
+            let raw = param("cursor");
+            if st.resets_empty > 0 {
+                let k = match raw.as_deref() {
+                    None => 0,
+                    Some(c) => c.strip_prefix('e').and_then(|n| n.parse().ok()).unwrap_or(usize::MAX),
+                };
+                if k < st.resets_empty {
+                    return axum::Json(json!({ "items": [], "nextCursor": format!("e{}", k + 1) })).into_response();
+                }
+            }
+            let start: usize = raw.and_then(|c| c.parse().ok()).unwrap_or(0);
+            let size = if st.resets_page == 0 { st.resets.len().max(1) } else { st.resets_page };
+            let page: Vec<Value> = st.resets.iter().skip(start).take(size).cloned().collect();
+            let next = (start + page.len() < st.resets.len()).then(|| (start + page.len()).to_string());
+            axum::Json(json!({ "items": page, "nextCursor": next })).into_response()
+        }
         ("GET", ["e2ee", "members", "keys"]) => axum::Json(json!({ "members": st.members })).into_response(),
         ("GET", ["users", id, "sign-key"]) => match st.sign_keys.get(*id) {
             Some(k) => {
@@ -302,6 +378,36 @@ async fn channel(
             }
             None => error(404, "not_found"),
         },
+        ("GET", ["authorizations"]) => {
+            if let Some(status) = st.authorizations_fail {
+                return error(status, "internal");
+            }
+            if !query.contains("state=active") {
+                return error(400, "invalid_body");
+            }
+            let after = query.split('&').find_map(|p| p.strip_prefix("after=")).map(str::to_owned);
+            let all: Vec<(String, String)> = st
+                .conversations
+                .iter()
+                .filter(|(sid, _)| !st.authorizations_omitted.contains(sid))
+                .map(|(sid, c)| (sid.clone(), c.auth_id.clone()))
+                .collect();
+            let start = match &after {
+                Some(a) => all.iter().position(|(_, auth)| auth == a).map_or(all.len(), |i| i + 1),
+                None => 0,
+            };
+            let size = if st.authorizations_page == 0 { all.len().max(1) } else { st.authorizations_page };
+            let page: Vec<&(String, String)> = all.iter().skip(start).take(size).collect();
+            let next = (start + page.len() < all.len()).then(|| page.last().map(|(_, a)| a.clone())).flatten();
+            let items: Vec<Value> = page
+                .iter()
+                .map(|(sid, auth)| {
+                    json!({ "authId": auth, "sessionId": sid, "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+                        "delegationId": "d-good", "exp": 4_000_000_000_u64, "displayName": null })
+                })
+                .collect();
+            axum::Json(json!({ "authorizations": items, "next": next })).into_response()
+        }
         ("GET", ["conversations"]) => axum::Json(Value::Array(st.pending.clone())).into_response(),
         (m, ["conversations", sid, rest @ ..]) => {
             let sid = (*sid).to_owned();

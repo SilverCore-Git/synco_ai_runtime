@@ -10,6 +10,11 @@
   var STATES = { idle: "Terminé", running: "En cours", queued: "En attente", awaiting_confirmation: "Confirmation demandée",
     awaiting_user: "Réponse attendue", awaiting_key: "Clé attendue", awaiting_client_tool: "Outil client", failed: "Échec",
     cancelled: "Annulé", other: "Autre" };
+  /* Codes d'échec (08 §6) : provider_not_configured (non activé, sans clé, passerelle refusée) est
+     distinct de provider_error (fournisseur configuré qui échoue). Inconnu -> code brut. */
+  var REASONS = { provider_not_configured: "Fournisseur non configuré", provider_error: "Erreur du fournisseur",
+    provider_auth: "Clé ou ticket refusé" };
+  function reasonLabel(r) { return Object.prototype.hasOwnProperty.call(REASONS, r) ? REASONS[r] + " [" + r + "]" : r; }
 
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
@@ -43,6 +48,17 @@
   function when(t) { return t ? new Date(t * 1000).toLocaleString("fr-FR") : "—"; }
   function stateLabel(s) { return STATES[s] || s; }
   function group4(h) { return (String(h || "").match(/.{1,4}/g) || []).join(" "); }
+
+  /* Noms d'affichage des délégants (PC17) : identifiant -> nom. Insérés par textContent seulement ;
+     l'identifiant reste le repli et l'info-bulle. */
+  var names = {};
+  function who(id) { return Object.prototype.hasOwnProperty.call(names, id) && names[id] ? names[id] : id; }
+  function userCell(id) {
+    return who(id) !== id ? el("td", { title: id, text: who(id) }) : el("td", { class: "mono", text: id });
+  }
+  function loadNames() {
+    return api("/api/names").then(function (r) { names = (r && r.names) || {}; }).catch(function (e) { if (e.message === "401") throw e; });
+  }
 
   function api(path, opts) {
     return fetch(path, Object.assign({ credentials: "same-origin" }, opts || {})).then(function (res) {
@@ -129,7 +145,7 @@
         });
         cell.appendChild(ask);
         return el("tr", {}, [
-          el("td", { class: "mono", text: c.userId }),
+          userCell(c.userId),
           el("td", { class: "mono", text: group4(c.pinned) }),
           el("td", { class: "mono", text: group4(c.presented) }),
           el("td", { text: when(c.seen) }),
@@ -167,7 +183,7 @@
     var res = s.measured ? bytes(s.memPeak) + " / " + bytes(s.memAvg) : "non mesuré";
     var cpu = s.measured ? pm(s.cpuAvgPm) + " / " + pm(s.cpuPeakPm) : "non mesuré";
     return el("tr", {}, [
-      el("td", {}, [link]), el("td", { class: "mono", text: s.userId }), el("td", { text: s.provider + " · " + s.model }),
+      el("td", {}, [link]), userCell(s.userId), el("td", { text: s.provider + " · " + s.model }),
       el("td", { class: cls, text: s.active ? "En cours" : stateLabel(s.status) }), el("td", { class: "num", text: dur(s.durationSecs) }),
       el("td", { class: "num", text: nf(s.steps) }), el("td", { class: "num", text: nf(s.toolCalls) }),
       el("td", { class: "num", text: nf(s.promptTokens) + " / " + nf(s.completionTokens) + " / " + nf(s.reasoningTokens) }),
@@ -231,7 +247,7 @@
   function entryRow(e) {
     var t = when(e.t), kind = "", info = "";
     if (e.k === "start") { kind = "Lancement"; }
-    else if (e.k === "status") { kind = "État"; info = stateLabel(e.status) + (e.reason ? " (" + e.reason + ")" : ""); }
+    else if (e.k === "status") { kind = "État"; info = stateLabel(e.status) + (e.reason ? " (" + reasonLabel(e.reason) + ")" : ""); }
     else if (e.k === "metrics") {
       kind = "Mesure";
       info = "tour " + e.turn + " : +" + e.steps + " étape(s), +" + e.toolCalls + " outil(s)" + (e.toolErrors ? " dont " + e.toolErrors + " en erreur" : "") +
@@ -246,7 +262,7 @@
     var kids = [el("p", {}, [el("a", { href: "#/sessions", text: "← Sessions" })]),
       el("h2", { text: "Session " + s.sessionId })];
     kids.push(el("div", { class: "grid" }, [
-      card("Utilisateur", s.userId), card("Fournisseur", s.provider + " · " + s.model), card("État", s.active ? "En cours" : stateLabel(s.status)),
+      card("Utilisateur", who(s.userId)), card("Fournisseur", s.provider + " · " + s.model), card("État", s.active ? "En cours" : stateLabel(s.status)),
       card("Durée", dur(s.durationSecs)), card("Exécutions", nf(s.runs)), card("Étapes / outils", nf(s.steps) + " / " + nf(s.toolCalls)),
       card("Tokens e/s/r", nf(s.promptTokens) + " / " + nf(s.completionTokens) + " / " + nf(s.reasoningTokens)), card("Coût estimé", eur(s.costMicro)),
       card("RAM pic / moyenne", s.measured ? bytes(s.memPeak) + " / " + bytes(s.memAvg) : "non mesuré"),
@@ -273,7 +289,7 @@
       return el("label", {}, [label, sel]);
     }
     var body = rows.length ? rows.map(function (r) {
-      return el("tr", {}, [el("td", { class: "mono", text: r.key }), el("td", { class: "num", text: nf(r.sessions) }),
+      return el("tr", {}, [t.by === "user" ? userCell(r.key) : el("td", { class: "mono", text: r.key }), el("td", { class: "num", text: nf(r.sessions) }),
         el("td", { class: "num", text: nf(r.promptTokens) + " / " + nf(r.completionTokens) + " / " + nf(r.reasoningTokens) }),
         el("td", { class: "num", text: nf(r.toolCalls) }), el("td", { class: "num", text: nf(r.errors) }), el("td", { class: "num", text: eur(r.costMicro) })]);
     }) : [el("tr", {}, [el("td", { colspan: "6", class: "muted", text: "Aucune donnée." })])];
@@ -308,10 +324,10 @@
       if (active) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
     var p;
-    if (r.view === "overview") p = api("/api/overview").then(renderOverview);
-    else if (r.view === "sessions") p = api("/api/sessions" + sessionsQuery()).then(renderSessions);
-    else if (r.view === "totals") p = api("/api/totals" + qs({ by: totalsState.by, from: periodFrom(totalsState.period) })).then(renderTotals);
-    else p = api("/api/sessions/" + encodeURIComponent(r.id)).then(renderDetail);
+    if (r.view === "overview") p = loadNames().then(function () { return api("/api/overview"); }).then(renderOverview);
+    else if (r.view === "sessions") p = loadNames().then(function () { return api("/api/sessions" + sessionsQuery()); }).then(renderSessions);
+    else if (r.view === "totals") p = loadNames().then(function () { return api("/api/totals" + qs({ by: totalsState.by, from: periodFrom(totalsState.period) })); }).then(renderTotals);
+    else p = loadNames().then(function () { return api("/api/sessions/" + encodeURIComponent(r.id)); }).then(renderDetail);
     return p.then(function () {
       document.getElementById("updated").textContent = "Mis à jour à " + new Date().toLocaleTimeString("fr-FR");
     }).catch(function (e) { if (e.message !== "401") fail(e); });

@@ -64,6 +64,10 @@ pub struct DelegationRecord {
     pub wrap: String,
     /// Signature du mandat (jamais journalisée).
     pub mandate_signature: String,
+    /// Nom d'affichage du délégant (PC17, spec API §14.2) : absent ou `null` → le dashboard montre
+    /// l'identifiant. Donnée du serveur : jamais une preuve d'identité.
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 /// Entrée de délégation.
@@ -115,6 +119,62 @@ pub struct SignKeyResponse {
     pub public_sign_key: Option<String>,
     /// Chaîne de transitions.
     pub transitions: Vec<TransitionRecord>,
+}
+
+/// Élément de `GET /authorizations?state=active` (spec API §14.1).
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveAuthorization {
+    /// Autorisation.
+    pub auth_id: String,
+    /// Conversation.
+    pub session_id: String,
+    /// Propriétaire.
+    pub user_id: String,
+    /// Délégation.
+    pub delegation_id: String,
+    /// Expiration (s Unix).
+    pub exp: u64,
+    /// Nom d'affichage du délégant, s'il en a un.
+    #[serde(default)]
+    pub display_name: Option<String>,
+}
+
+/// Page de `GET /authorizations?state=active` : `next = null` marque la fin (une page peut avoir
+/// moins d'éléments que `limit`).
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct AuthorizationsPage {
+    /// Autorisations de la page.
+    pub authorizations: Vec<ActiveAuthorization>,
+    /// Curseur suivant.
+    pub next: Option<String>,
+}
+
+/// Élément de `GET /e2ee/threads/envelope-resets` (spec API §14.8, L03f) : une réinitialisation
+/// d'enveloppe `rt1` en attente de réparation. **Jamais une décision** : le runtime refait toutes
+/// ses vérifications locales (registre des salons créés, délégation, clé) avant de signer.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvelopeResetItem {
+    /// Salon.
+    pub thread_id: String,
+    /// Utilisateur propriétaire.
+    pub user_id: String,
+    /// Délégation avec laquelle réparer.
+    pub delegation_id: String,
+    /// Instant de la réinitialisation (ISO 8601) : non exploité.
+    #[serde(default)]
+    pub reset_at: Option<String>,
+}
+
+/// Page de `GET /e2ee/threads/envelope-resets?limit=&cursor=` : `next_cursor = null` marque la fin.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvelopeResetsPage {
+    /// Réinitialisations de la page.
+    pub items: Vec<EnvelopeResetItem>,
+    /// Curseur suivant.
+    pub next_cursor: Option<String>,
 }
 
 /// Élément de `GET /conversations?state=pending`.

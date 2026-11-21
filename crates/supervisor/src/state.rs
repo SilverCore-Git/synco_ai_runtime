@@ -336,6 +336,18 @@ pub struct State {
     /// Délégations révoquées (identifiant → expiration de l'entrée, s) : jamais réinstallées, même
     /// par un chargement commencé avant la révocation.
     pub revoked_delegations: HashMap<String, u64>,
+    /// Noms d'affichage des délégants (PC17) : identifiant → nom, tels que listés par l'API à la
+    /// dernière relecture. Affichage seulement, jamais une décision.
+    pub display_names: HashMap<String, String>,
+    /// Salons créés par ce runtime (Q21) : seuls ceux-là peuvent être réparés par `repose`.
+    pub created_threads: crate::created_threads::CreatedThreadStore,
+    /// File persistante des réparations d'enveloppe en attente (PC31).
+    pub repairs: crate::repair_queue::RepairQueue,
+    /// Réparations d'enveloppe en cours (un salon à la fois : un rejeu de la trame n'ouvre pas une
+    /// seconde réparation).
+    pub repose_inflight: std::collections::HashSet<String>,
+    /// L'alerte `unpair_erase_failed` est levée (une seule tant que l'échec persiste).
+    pub unpair_erase_alerted: bool,
 }
 
 impl State {
@@ -358,6 +370,11 @@ impl State {
             queued_seen: 0,
             generation: 0,
             revoked_delegations: HashMap::new(),
+            display_names: HashMap::new(),
+            created_threads: crate::created_threads::CreatedThreadStore::in_memory(),
+            repairs: crate::repair_queue::RepairQueue::in_memory(),
+            repose_inflight: std::collections::HashSet::new(),
+            unpair_erase_alerted: false,
         }
     }
 

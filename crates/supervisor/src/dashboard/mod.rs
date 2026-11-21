@@ -70,6 +70,12 @@ impl OverviewSource for Runtime {
         })
     }
 
+    fn display_names(&self) -> BoxFuture<'_, std::collections::BTreeMap<String, String>> {
+        Box::pin(
+            async move { self.state.lock().await.display_names.iter().map(|(k, v)| (k.clone(), v.clone())).collect() },
+        )
+    }
+
     fn accept_member_key(&self, user_id: String, fingerprint: String) -> BoxFuture<'_, bool> {
         Box::pin(async move {
             let (accepted, snapshot) = {

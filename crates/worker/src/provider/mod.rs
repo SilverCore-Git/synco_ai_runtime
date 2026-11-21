@@ -223,6 +223,10 @@ pub enum LlmError {
     },
     /// Flux illisible ou erreur annoncée dans le flux.
     BadStream,
+    /// Fournisseur non configuré (Q30) : non activé pour l'org, sans clé, ou passerelle refusée
+    /// (`provider_not_configured`, `gateway_not_configured`). Pas de nouvel essai : ce n'est pas une
+    /// panne du fournisseur, la conversation échoue en `provider_not_configured`.
+    NotConfigured,
     /// Réponse au-delà des bornes du worker (texte ou arguments d'outil cumulés) : pas de nouvel
     /// essai, la conversation échoue en `provider_error`.
     TooLarge,
@@ -251,6 +255,7 @@ impl LlmError {
             Self::Rejected { .. } => "llm_rejected",
             Self::Provider { .. } => "llm_provider",
             Self::BadStream => "llm_bad_stream",
+            Self::NotConfigured => "llm_not_configured",
             Self::TooLarge => "llm_too_large",
         }
     }
@@ -294,6 +299,8 @@ pub fn classify_http_error(status: u16, retry_after_secs: Option<u64>, body: &[u
         .and_then(|v| v.get("error").and_then(Value::as_str).map(str::to_owned))
         .unwrap_or_default();
     match code.as_str() {
+        // Q30 : jamais réessayé, distinct d'une panne du fournisseur.
+        "provider_not_configured" | "gateway_not_configured" => return LlmError::NotConfigured,
         "proxy_call_budget" => return LlmError::CallBudget,
         "proxy_token_budget" => return LlmError::TokenBudget,
         "proxy_rate_limited" | "proxy_runtime_rate_limited" | "proxy_runtime_token_budget" | "proxy_busy" => {

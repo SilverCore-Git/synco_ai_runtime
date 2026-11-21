@@ -180,6 +180,7 @@ ajouter une (L14/L15) = modifier ce document. Colonne « Auth » : **S** = signa
 | `GET /conversations?state=pending` | S | Conversations de l'org en régime runtime sur ce runtime qui demandent un worker : `queued`, `running` à bail expiré, `awaiting_key` dont la clé est désormais déléguée, **et `idle` avec un élément `message` non consommé** (filet contre la course dépôt / fin de tour, révisé après la vague B ; `conversationLease.ts:383-431`). `{ sessionId, userId, authId, status }[]`, seulement les conversations qui ont une autorisation active. Autre valeur de `state` → `400 invalid_body` | L03 |
 | `GET /authorizations?state=active&after=<authId>&limit=<1 à 500>` | S | **Ajoutée par L03d (Q18, PC18).** Autorisations de session actives de l'org **et** de ce runtime : `{ "authorizations": [{ authId, sessionId, userId, delegationId, exp, displayName }], "next": "<authId>" \| null }` (`exp` en secondes Unix). `state=active` obligatoire ; tout autre paramètre ou valeur, ou curseur hors liste (autre runtime, autre org) → `400 invalid_body`. Pour le superviseur : un appel par (re)connexion du flux au lieu d'un `GET /conversations/:sessionId` par conversation connue (03 §9) | L03d |
 | `POST /metrics` | S | État du runtime sans contenu pour l'écran de Synco : corps `{ workers, queued, version? }` (entiers 0 à 1 000 000) → `{ ok: true }` ; ≤ 1 / min, sinon `429 rt_rate_limited` | L02 |
+| `GET /e2ee/threads/envelope-resets?limit=<1 à 500>&cursor=` | S | **Livrée par L03f (PC31), reportée ici par L00f.** Réinitialisations `rt1` en attente de nouvelle pose pour ce runtime : `{ "items": [{ threadId, userId, delegationId, resetAt }], "nextCursor": "<opaque>" \| null }` (100 par défaut ; curseur opaque, inconnu → `400 invalid_body`). Mêmes règles que la repose (salon de l'org, délégant non banni et ayant accès, délégation active vers ce runtime : `activeReposers`, `synco_api/src/services/aiRuntime/threadEnvelopeReset.ts:59`, `:197`). **Ajout L00f** : seulement les délégants dont la délégation active est `mode = auto` et autorisée (12 §10.4) | L03f, L03g |
 
 **Compléments de L03d (2026-11-21 ; porte C ; `synco_api/vibe/features/SYNCOAI_REFONTE_FEATURE.md` §14.1 et §14.2)** :
 
@@ -201,6 +202,10 @@ ajouter une (L14/L15) = modifier ce document. Colonne « Auth » : **S** = signa
   l'adoption par le runtime et le dashboard (11 §5) reste à faire. Lot : **ouvert** (non planifié dans ce
   report).
 
+**Compléments de L00f (2026-11-21 ; 12 §12.2)** : `GET /delegations` ajoute `mandateVersion` (`1` ou `2`),
+`mode` (`plan` | `auto` ; `plan` pour un v1) et `ownerRsaSpkiHex` (`null` pour un v1). Le runtime
+reconstruit le mandat selon 03 §4.1 et se fie au mode **vérifié**.
+
 ### 4.2 Au nom d'un utilisateur (conversation) (révisé après L03c, 2026-11-20)
 
 `:sessionId` est toujours la conversation de l'autorisation.
@@ -218,6 +223,8 @@ ajouter une (L14/L15) = modifier ce document. Colonne « Auth » : **S** = signa
 | `POST /conversations/:sessionId/tools/:name/execute` | S+A | Outil `server` (§5), corps **`{ leaseEpoch, args? }`** | L03 |
 | `POST /conversations/:sessionId/push` | S+A | `{ type }` ∈ `AI_TURN_DONE`, `AI_AWAITING_CONFIRMATION`, `AI_AWAITING_KEY`, `AI_AWAITING_USER`, `AI_FAILED` ; titre et corps construits par l'API, **sans contenu** ; **une notification par entrée dans l'état annoncé**, plafond de sécurité 6 / min par conversation (`429 rt_rate_limited`) → `202 { sent: true \| false }` (voir « Notifications » ci-dessous ; révisé par L03d, Q19) | L03, L03d |
 | `POST /tickets/llm` | S+A | Ticket `sgt1` pour l'utilisateur de l'autorisation, `rt` renseigné (02 §4) → `{ ticket, expiresAt, url }` ; `409 gateway_not_configured` | L02 |
+| `POST /conversations/:sessionId/plans` | S+A | **Ajoutée par L00f (12 §12.2).** Écrit le transcript (statut `awaiting_confirmation`, `pendingToolCall` `propose_actions`, 12 §3.4) **et** crée la ligne `AiActionPlan` dans une transaction : `{ leaseEpoch, baseRev, messages, title?, pendingToolCall, consumedInbox, events?, plan: { planId, toolCallId, actionCount, createdAt, expiresAt, serverDigests: [{ n, sha256Hex }] } }` → `201 { rev, planId }` ; `400 invalid_body`, `409 plan_exists`, `rev_conflict`, `lease_conflict` | L03g |
+| `GET /conversations/:sessionId/plans/:planId` | S+A | **Ajoutée par L00f.** `PlanView` (12 §12.1), sans contenu | L03g |
 
 Contraintes des écritures du worker (révisé après la vague B, 2026-11-19 ;
 `synco_api/src/services/aiRuntime/conversationLease.ts:172-207`, `conversationValidation.ts:44-68`) :
@@ -414,6 +421,15 @@ corps de 256 Kio limite `POST /e2ee/threads` à environ 300 destinataires de cl�
   que prendra le runtime (superviseur ou worker). Lot d'adoption (PC23 : « runtime lot ultérieur ») :
   **ouvert**, non planifié dans ce report.
 
+**Compléments de L00f (2026-11-21 ; 12 §10.4, §8.3)** : `POST /e2ee/threads` (créateur `rt1:`),
+`POST /e2ee/threads/:threadId/key-envelope` et `POST /e2ee/threads/:threadId/key-envelope/repose` exigent
+en plus une délégation `mode = auto` (celle de l'autorisation, ou le `delegationId` du corps pour la
+repose ; sinon `403 autonomy_required`) et `isFeatureAllowed(autonomous_mode)` (sinon
+`403 feature_not_allowed`), contrôlés après les contrôles existants et avant toute écriture.
+`POST /e2ee/threads` accepte `plan?: { planId, n }` et applique le verrou de 12 §8.3 quand la politique
+effective de `create_thread` est `ask` (`403 action_not_accepted`, `409 action_state_conflict`). En mode
+plan, le runtime ne crée aucun salon : c'est l'appareil (12 §4).
+
 Extensions prévues (à spécifier ici par L14/L15 avant d'être codées) : lecture de fichiers (ticket
 `down`), envoi de message dans un salon, documentation.
 
@@ -436,6 +452,15 @@ ressort du worker, l'API ne voit pas la décision de l'utilisateur) ; le worker 
 membre de l'org (`403 forbidden`), outil connu de catégorie `server` avec `execute` (sinon
 `404 not_found`). Réponse `200` : `{ "ok": true, "data": … }`, ou `{ "ok": false, "status": <n>,
 "message": "…" }` pour une erreur métier destinée au modèle.
+
+**Verrou des actions `ask` (L00f, PC38 ; 12 §8.3).** Corps étendu : **`{ leaseEpoch, args?, plan?: { planId, n } }`**.
+Après `checkToolGate`, si la politique effective de l'outil est `ask` (`toolPolicy[name]`, sinon `ask`
+pour un outil `mutating` : même règle que le worker), `plan` est obligatoire et vérifié (ligne de cette
+conversation et de cet utilisateur, statut `accepted` ou `executing`, action `n` acceptée et `pending`,
+`serverDigests[n]` = SHA-256 de `JCS({ tool: name, args })`) ; sinon **`403 action_not_accepted`**, sans
+exécution. L'action passe `executing` (`updateMany` conditionné, sinon `409 action_state_conflict`), puis
+`done` (`ok: true`) ou `failed` (`ok: false`) dans la même requête ; `AiChatSessionEvent`
+`type: "plan_action"`, `actor: "runtime"`, `code: "<planId>.<n>"`. Auparavant l'API n'appliquait que `deny`.
 
 Route de bascule (côté utilisateur, L03), rappelée ici car elle crée l'autorisation :
 
@@ -501,6 +526,9 @@ laisser un humain décider (plutôt qu'un remplacement automatique) tient à ce 
 client a épinglé, et qu'un runtime fautif pourrait remplacer en boucle ; la sécurité ne dépend pas de l'API :
 la nouvelle enveloppe reste signée par la `csk` du runtime certifié et les clients vérifient `commitment` ;
 un serveur malveillant peut seulement réinitialiser (déni de service), jamais forger.
+
+**Compléments de L00f** : `conversation.wake.reason = "decision"` couvre aussi `plan_decision` (refus) et
+`plan_result` (12 §9) ; `delegation.revoked.reason` peut valoir `autonomy_withdrawn` (12 §11.4).
 
 - **Runtime → API** : uniquement `{ "v": 1, "type": "pong" }` et `{ "v": 1, "type": "presence", "workers": <n> }` (≤ 1 / 30 s).
 - Présence : le runtime est « en ligne » tant que la connexion est ouverte (`AiRuntime.lastSeenAt`
@@ -585,3 +613,8 @@ et `conversationResult.ts` (L03).
 | `inbox_full` | 429 | 100 éléments non consommés dans la boîte |
 | `rate_limited` | 429 | Refus de débit d'un service HTTP partagé (création de salon, envoi CDN) |
 | `upgrade_required` | 426 | `GET /stream` sans mise à niveau WebSocket |
+| `action_not_accepted` | 403 | Outil `ask` (ou `create_thread` `ask`) appelé sans action acceptée par l'utilisateur, ou condensat différent (L00f, 12 §8.3) |
+| `action_state_conflict` | 409 | Action déjà exécutée ou non `pending` (12 §7.2) |
+| `autonomy_required` | 403 | Route `rt1` sous une délégation qui n'est pas `mode = auto` (12 §10.4) |
+| `feature_not_allowed` | 403 | Politique d'org `autonomous_mode` (12 §11) |
+| `plan_exists` | 409 | `POST …/plans` avec un `planId` déjà utilisé |

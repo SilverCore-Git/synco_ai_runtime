@@ -378,7 +378,8 @@ révocation a échoué) restent **documentées sans code**. Source :
 
 **Ajouts de L00f (2026-11-21 ; 12 §9, §10.5)** : `AiChatInboxItem.kind` gagne `plan_decision` (déposé par
 l'API seule, `source = "api"`, `payload` en clair `{ planId, decision, accepted, reason? }`) et
-`plan_result` (`payload` = `{ planId, value }`, `value` en `gcm1:`). `AiChatSessionEvent.type` gagne
+`plan_result` (un par phase d'appareil, `id` = `plan:<planId>:<k>`, `payload` = `{ planId, phase, value }`,
+`value` en `gcm1:`, amendé par PC44 ; 12 §9). `AiChatSessionEvent.type` gagne
 `plan_status` (`code` = nouveau statut du plan, écrit par l'API) et `plan_action` (`actor = "runtime"`,
 `code` = `<planId>.<n>`, action `server.call` ou `thread.create` exécutée par le runtime).
 
@@ -455,6 +456,9 @@ Passes réelles (révisé après la vague B, 2026-11-19 ; `runAiRuntimeMaintenan
    Q17 = C) ;
 4. `sweepOrphanAuthorizations` : autorisations actives dont la délégation n'est plus active ou a
    expiré (révocation interrompue, course bascule / révocation) → conversations repassées en local ;
+   **exception (PC45, 12 §11.4)** : une autorisation dont la délégation a été révoquée avec la raison
+   `autonomy_withdrawn` est conservée (conversations en pause, `awaiting_key`) jusqu'au dépôt suivant ou
+   à `key_timeout` ;
 5. `failTimedOutWaits` : `awaiting_confirmation` / `awaiting_user` depuis plus de
    `limits.confirmationTimeoutSecs` → `failed` `confirmation_timeout` ; `awaiting_key` depuis plus de
    `limits.keyTimeoutSecs` → `failed` `key_timeout` (comparaison stricte sur `statusChangedAt`), journal
@@ -463,11 +467,17 @@ Passes réelles (révisé après la vague B, 2026-11-19 ; `runAiRuntimeMaintenan
 
 Ajouts de L00f (2026-11-21 ; 12 §7, §11) à cette passe, après `failTimedOutWaits` :
 
-7. `expireActionPlans` : plans `proposed` ou `accepted` sans claim dont `expiresAt ≤ maintenant` →
-   `expired` (la conversation suit `failTimedOutWaits`) ;
+7. `expireActionPlans` : plans dont `expiresAt ≤ maintenant` et qui attendent une phase d'appareil sans
+   claim valide (`proposed`, ou `accepted` / `executing` avec une phase courante d'appareil non
+   réclamée) → `expired`, actions `pending` → `skipped`, conversation `failed` `confirmation_timeout`
+   (12 §7.1 ; une phase en cours n'est jamais coupée) ;
 8. `interruptActionPlans` : plans `executing` dont `claimExpiresAt ≤ maintenant` et qui ont une action
-   `executing` exécutée par l'appareil → action `unknown_outcome`, actions `pending` → `skipped`, plan
-   `interrupted` ; un claim expiré sans action en cours est seulement libéré (`claimDeviceId = null`).
+   `executing` exécutée par l'appareil → action `unknown_outcome`, actions `pending` de toutes les
+   phases → `skipped`, plan `interrupted` ; un claim expiré sans action en cours est seulement libéré
+   (`claimDeviceId = null`, `claimPhase = null`) ;
+9. `purgeFeaturePolicyEvents` (PC48) : `AiFeaturePolicyEvent` de plus de **1 an** supprimés, par lots
+   bornés (au plus 1 000 lignes par passe, `deleteMany` sur les identifiants lus ; même principe que la
+   purge d'`AiThreadEnvelopeEvent`, PC29).
 
 ## 10. Plans d'action et politiques d'org (ajouté par L00f, 2026-11-21 ; 12)
 
@@ -484,11 +494,18 @@ model AiActionPlan {
   status         String                  // 'proposed' | 'accepted' | 'executing' | 'done' | 'failed' | 'rejected' | 'expired' | 'interrupted'
   actionCount    Int                     // 1 à 20
   actionStates   Json                    // ["pending" | "skipped" | "executing" | "done" | "failed" | "unknown_outcome", …], indexé par n - 1
-  serverDigests  Json                    // { "<n>": "<hex SHA-256>" } pour les seules actions server.call
+  actionExecutors Json                   // ["device" | "agent", …], indexé par n - 1 (PC44, 12 §8.1)
+  actionPhases   Json                    // [1, 1, 2, …], indexé par n - 1 ; phases de 1 à phaseCount, alternées
+  phaseCount     Int
+  currentPhase   Int      @default(0)    // 0 avant la décision, puis la phase en cours (12 §8.1)
+  actionOutputs  Json                    // { "<n>": { "id": "…", "spaceId"?: "…" } } : sorties enregistrées par l'API (12 §8.5), identifiants seulement
+  agentResults   Json                    // { "<k>": "gcm1:…" } : plan_agent_result:<k>, chiffré sous CK (12 §9)
+  serverDigests  Json                    // { "<n>": "<hex SHA-256>" } de JCS({tool, args, argsRefs}) pour les seules actions server.call (PC47)
   createdAt      DateTime                // createdAt du plan (secondes Unix → DateTime)
   expiresAt      DateTime
   decidedAt      DateTime?
   claimDeviceId  String?
+  claimPhase     Int?                    // le claim vaut pour une phase (PC44)
   claimExpiresAt DateTime?
   updatedAt      DateTime @updatedAt
 
@@ -529,7 +546,7 @@ model AiFeatureOptIn {                   // activation par l'utilisateur lui-mê
   @@map("ai_feature_opt_ins")
 }
 
-model AiFeaturePolicyEvent {             // journal (PC39) ; pas de purge en v1 (12 §15, QP5)
+model AiFeaturePolicyEvent {             // journal (PC39) ; conservé 1 an, purge bornée (PC48, RGPD ; §9)
   id        String   @id @default(cuid())
   orgId     String
   feature   String
@@ -540,6 +557,7 @@ model AiFeaturePolicyEvent {             // journal (PC39) ; pas de purge en v1 
   toMode    String?
   createdAt DateTime @default(now())
   @@index([orgId, feature, createdAt])
+  @@index([createdAt])                   // purge à 1 an (PC48)
   @@map("ai_feature_policy_events")
 }
 ```
@@ -549,6 +567,10 @@ model AiFeaturePolicyEvent {             // journal (PC39) ; pas de purge en v1 
   `updateMany` conditionné à l'état lu (une action n'entre qu'une fois en `executing`).
 - `serverDigests` : fuite faible assumée (C1 §2.3) : le condensat d'une action refusée reste devinable si
   ses arguments ont peu d'entropie.
+- `actionOutputs` : écrit par l'API seule, au moment où elle crée l'objet (exécution d'agent, ou route
+  de création reçue avec `X-Synco-Plan`, 12 §8.5), une fois par action (`updateMany` conditionné).
+  Fuite résiduelle assumée (PC47) : le lien entre un objet créé et l'action du plan qui l'a produit.
+- `agentResults` : chiffré, jamais lu par l'API ; servi tel quel dans `PlanView`.
 - Aucun `@relation` vers `Organization` ni `User` pour les politiques (même choix que les clés composées
   ci-dessus) : L03h supprime les lignes d'un membre à son départ (`revokeOrgMembership`) et celles d'une
   org avec elle.

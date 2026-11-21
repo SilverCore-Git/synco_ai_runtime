@@ -860,3 +860,18 @@ rien n'a été diffusé, 1 essai + 3 nouveaux essais) suffit.
 
 Aucun appel réel aux fournisseurs. Recette manuelle : un flux coupé réel (coupure réseau en cours de réponse) ;
 `reasoning_effort: high` accepté par `mistral-small-2603` et `mistral-medium-3-5`.
+
+## 2026-11-21 — L09b : rustls 0.23.46, rustix 1.1.6, audit CI sans `--ignore`
+
+- `Cargo.toml` : les pins exacts (`=0.23.44`, `=1.1.5`) empêchaient `cargo update --precise` ; ils passent à `=0.23.46` et
+  `=1.1.6` (modification indispensable). Dates crates.io vérifiées par l'API : rustls 0.23.46 publiée le 2026-10-14,
+  rustix 1.1.6 le 2026-10-27, aucune retirée.
+- `Cargo.lock` : seules ces deux crates changent, plus le rattachement de dépendances Windows de `windows-sys` 0.61.2 vers
+  0.52.0 (version déjà présente dans le fichier, aucune nouvelle version).
+- `.github/workflows/ci.yml` : les six `--ignore` (RUSTSEC-2026-0285, -0346, -0347, -0348, -0349, -0486) et leur commentaire
+  sont retirés ; `cargo audit --deny yanked --deny unsound` (cargo-audit 0.22.2) sort en code 0.
+- Vérifié : fmt, clippy `-D warnings`, `cargo test --workspace` (21 suites), `sandbox-host.sh` sur l'hôte (11/11 et
+  `aller_retour_avec_bac_a_sable`), `podman build` de l'image.
+- Test intermittent observé une fois : `fournisseur_non_configure_refuse` (`crates/supervisor/tests/integration.rs:1011`,
+  `assertion failed: c.lease_released`) ; 5 relances isolées puis la suite complète passent. À investiguer (course de temps
+  probable), non masqué.

@@ -22,14 +22,14 @@ axum = { version = "=0.8.9", default-features = false, features = ["tokio", "htt
 reqwest = { version = "=0.13.4", default-features = false, features = ["rustls"] }
 tokio-tungstenite = { version = "=0.29.0", default-features = false, features = ["handshake"] }
 tokio-rustls = { version = "=0.26.5", default-features = false }
-rustls = { version = "=0.23.44", default-features = false }
+rustls = { version = "=0.23.46", default-features = false }
 rustls-platform-verifier = { version = "=0.7.0" }
 futures-util = { version = "=0.3.34", default-features = false, features = ["sink", "std"] }
 toml = { version = "=1.1.6", default-features = false, features = ["parse", "serde", "std"] }
 tracing = { version = "=0.1.44" }
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["fmt", "env-filter", "ansi", "std"] }
 argon2 = { version = "=0.6.0", default-features = false, features = ["alloc", "zeroize"] }
-rustix = { version = "=1.1.5", default-features = false, features = ["std", "termios", "process"] }
+rustix = { version = "=1.1.6", default-features = false, features = ["std", "termios", "process"] }
 tempfile = { version = "=3.27.0" }
 # Bac à sable des workers (L06) ; dates crates.io dans docs/journal.md.
 landlock = { version = "=0.4.7" }

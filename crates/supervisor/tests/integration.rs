@@ -1560,6 +1560,10 @@ async fn cles_rsa_charge_et_plafond() {
     let env = setup().await;
     wait_until("appairé", || env.api.with(|st| st.delegation_status.len() == 2)).await;
     let rt = Arc::clone(&env.running.runtime);
+    // Revue M3 : corps illisible → échec fermé.
+    for bad in [&b"pas du json"[..], br#"{"members":{}}"#, br#"{"autre":[]}"#] {
+        assert_eq!(member_keys_gate(&rt, bad).await, Err("member_keys_unreadable"));
+    }
     let members: Vec<Value> = (0..MAX_PINS_PER_ORG)
         .map(|i| json!({ "userId": format!("cm3charge{i:016}"), "publicKey": rsa_jwk(u8::try_from(i % 200).unwrap() + 1) }))
         .collect();

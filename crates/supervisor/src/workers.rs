@@ -335,6 +335,8 @@ pub fn member_keys_variant(path: &str) -> bool {
     format!("/{}", segments.join("/")) == MEMBER_KEYS_PATH
 }
 
+/// Annuaire illisible (JSON invalide, `members` absent ou pas une liste) : refus fermé (502).
+pub const MEMBER_KEYS_UNREADABLE: &str = "member_keys_unreadable";
 /// Plafond d'épingles RSA atteint pour l'org : refus fermé.
 pub const MEMBER_PINS_LIMIT: &str = "member_pins_limit";
 /// Épingles RSA non enregistrées (ou runtime désappairé) : refus fermé.
@@ -342,7 +344,8 @@ pub const MEMBER_PINS_UNAVAILABLE: &str = "member_pins_unavailable";
 
 /// Épinglage TOFU des clés RSA des membres (Q25, `member_pins`), appliqué par le superviseur à la
 /// réponse 2xx de [`MEMBER_KEYS_PATH`] **avant** que le worker la voie. `Err(code)` : la réponse
-/// entière est remplacée par une erreur (refus global, aucun scellement) — [`MEMBER_KEY_CHANGED`]
+/// entière est remplacée par une erreur (refus global, aucun scellement) — [`MEMBER_KEYS_UNREADABLE`]
+/// (502), [`MEMBER_KEY_CHANGED`]
 /// (une clé a changé sans chaîne d'identité valide), [`MEMBER_PINS_LIMIT`],
 /// [`MEMBER_PINS_UNAVAILABLE`]. Un membre dont la clé est illisible ou hors bornes n'est pas
 /// épinglé : le worker l'écarte lui-même (`skippedRecipients`).
@@ -352,12 +355,12 @@ pub const MEMBER_PINS_UNAVAILABLE: &str = "member_pins_unavailable";
 /// soit rendue (sinon refus fermé).
 pub async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> Result<(), &'static str> {
     use crate::member_pins::{MemberKey, SignHistory, Verdict, chain_vouches};
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else { return Ok(()) };
-    let listed: Vec<(String, MemberKey)> = value
-        .get("members")
-        .and_then(serde_json::Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default()
+    // Revue M3 : un corps illisible n'est jamais transmis tel quel (échec fermé).
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else { return Err(MEMBER_KEYS_UNREADABLE) };
+    let Some(members) = value.get("members").and_then(serde_json::Value::as_array) else {
+        return Err(MEMBER_KEYS_UNREADABLE);
+    };
+    let listed: Vec<(String, MemberKey)> = members
         .iter()
         .filter_map(|m| {
             let id = m.get("userId")?.as_str().filter(|id| runtime_protocol::ids::is_identifier(id))?;
@@ -800,7 +803,8 @@ async fn relay(
                 if member_keys && let Err(code) = member_keys_gate(&rt, &r.body).await {
                     let headers = [("content-type".to_owned(), "application/json".to_owned())].into_iter().collect();
                     let body = serde_json::json!({ "error": code }).to_string();
-                    for p in SignedResponse::split(&req.id, 409, &headers, body.as_bytes()) {
+                    let status = if code == MEMBER_KEYS_UNREADABLE { 502 } else { 409 };
+                    for p in SignedResponse::split(&req.id, status, &headers, body.as_bytes()) {
                         if tx.send(ToWorker::Json(SupervisorMsg::SignedRequestResponse(p))).await.is_err() {
                             break;
                         }

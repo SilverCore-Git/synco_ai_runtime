@@ -230,7 +230,9 @@ relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pi
   (`UserPin.rsaFingerprint`) ; sinon **refus**. **Aucun retour arrière** (revue I2) : une clé
   déjà épinglée par le passé (`previous`, 16 dernières) ou égale à l'épinglée n'est jamais acceptée
   par rotation, et la clé épinglée, si la chaîne la contient, la précède.
-- **Refus global** : la réponse entière est remplacée par `409 {"error":"member_key_changed"}` ;
+- **Refus global** : la réponse entière est remplacée par `409 {"error":"member_key_changed"}`
+  (ou `member_pins_limit`, `member_pins_unavailable` ; corps illisible : `502 member_keys_unreadable`,
+  revue M3 ; variante non canonique du chemin : `relay_refused` sans appel à l'API, revue M1) ;
   `create_thread` rend `member_key_changed` (§9) sans créer ni sceller quoi que ce soit, y compris
   pour un salon d'espace (choix le plus sûr : un salon créé sans un membre serait surprenant, et un
   annuaire où une clé a été substituée n'est plus digne de confiance). La clé refusée est mise en

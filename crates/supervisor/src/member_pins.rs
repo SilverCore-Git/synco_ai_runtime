@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use synco_e2ee::encoding::{from_b64u, hex};
+use synco_e2ee::encoding::{b64u, from_b64u, hex};
 use synco_e2ee::identity::{IdentityTransition, ec_canonical_json, identity_chain_path, rsa_canonical_json};
 use synco_e2ee::primitives::sha256;
 
@@ -137,7 +137,13 @@ impl MemberKey {
         }
         Some(Self {
             fingerprint: hex(&sha256(&rsa_spki_der(n_mag, e_mag))),
-            thumbprint: hex(&sha256(canonical.as_bytes())).to_uppercase(),
+            // Revue M6 : JWK canonique recomposé depuis les entiers sans zéros de tête (forme
+            // minimale de la RFC 7518 §6.3.1, celle qu'exporte WebCrypto) : sur une clé légitime,
+            // identique à `computeKeyFingerprint` de l'app ; un `n` gonflé ne change pas l'empreinte.
+            thumbprint: hex(&sha256(
+                format!(r#"{{"e":"{}","kty":"RSA","n":"{}"}}"#, b64u(e_mag), b64u(n_mag)).as_bytes(),
+            ))
+            .to_uppercase(),
         })
     }
 
@@ -515,6 +521,7 @@ mod tests {
         let n = from_b64u(f["publicJwk"]["n"].as_str().unwrap()).unwrap();
         let padded = format!(r#"{{"kty":"RSA","n":"{}","e":"AQAB"}}"#, b64u(&[&[0u8, 0][..], &n].concat()));
         assert_eq!(MemberKey::from_jwk_str(&padded).unwrap().fingerprint, FIXTURE_SPKI_SHA256);
+        assert_eq!(MemberKey::from_jwk_str(&padded).unwrap().thumbprint, FIXTURE_THUMBPRINT, "revue M6");
         // Bornes : 1024 bits (shortPublicJwk), 8200 bits, exposant pair, autre type.
         assert!(MemberKey::from_jwk(&f["shortPublicJwk"]).is_none());
         assert!(MemberKey::from_jwk_str(&jwk(1, 8200)).is_none());

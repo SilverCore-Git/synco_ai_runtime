@@ -245,7 +245,9 @@ Rejoués par L01c (`synco-e2ee` et fonctions pures TS), puis par L10 et L08d (su
   l'échange de phase, l'absence de numéro de phase, le rejeu sur un autre plan et la confusion
   `plan_result` / `plan_agent_result`.
 - `validationCases` : `plan` → `ok` ou `plan_invalid` (worker L08d, appareil L10, et pour la forme vue
-  par l'API, L03g) ; groupes, `category.create`, `categoryId`.
+  par l'API, L03g) ; groupes, `category.create`, `categoryId` ; bornes de PC61 : 100 actions (passe), 101
+  (échoue), 2 000 dépendances (passe), 2 001 (échoue), clair de 65 Kio (passe), > 256 Kio (échoue) ;
+  `detail: "plan_too_large"` indique le motif rendu au modèle.
 - `levelCases` : graphe → niveaux ; `cascadeCases` : actions décochées → `skipped` (PC37) ;
   `failureCases` : échec → seules les dépendantes transitives `skipped` (PC54) ; `runCases` : simulation
   par pas unitaires (chaque exécutant démarre ses actions prêtes, plus petite `n` d'abord, dans la limite
@@ -259,3 +261,7 @@ par `primitives::seal` de la crate avec un IV figé ; **Rust** : le fichier fina
 (`session::decrypt_field`, `serde_json::to_string` = JCS, condensats, verrou et `refs`, niveaux,
 cascade, simulation) ; **TS** : 104 vérifications (`decryptAiField` de `synco_app`, WebCrypto pour les
 condensats, validateur de référence pour validation, niveaux, cascade, échec et simulation).
+
+Revérification après PC61 (code jetable sous `~/.cache`, supprimé) : **Rust** 71 vérifications (dont la
+taille JCS et les bornes des cas PC61), **TS** 107 vérifications (validateur de référence à 100 actions,
+2 000 dépendances, 256 Kio).

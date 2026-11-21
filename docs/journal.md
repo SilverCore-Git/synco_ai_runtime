@@ -819,3 +819,44 @@ code hors lot) ? (3) Monter `rustls` ≥ 0.23.46 et `rustix` 1.1.6 (autre lot).
   `cap_drop: ALL` + `no-new-privileges` (vérifié avec l'image de la passerelle existante `localhost/synco-ai-gateway:l04`, pas
   reconstruite : `/health` répond) ; Ollama : seulement `no-new-privileges` (root, non testé). **M5** : limite de
   `trust_proxy_hops = 1` sur hôte partagé. **M6** : profil AppArmor en `abi <abi/4.0>` + `unix,` (non testé).
+
+## 2026-11-21 — L07c : ajustements des adaptateurs LLM et de D6 (décisions de la porte C)
+
+Fichiers : `crates/worker/src/provider/{openai,mistral,gemini}.rs`, `crates/worker/tests/agent.rs`,
+`docs/plan/09`, `docs/plan/10`. `agent.rs` **non modifié** : la politique existante (nouvel essai seulement si
+rien n'a été diffusé, 1 essai + 3 nouveaux essais) suffit.
+
+- **PC9, flux coupé** : le décodeur OpenAI / `custom` / passerelle est désormais strict (`strict_end`), comme
+  Mistral et Gemini : un flux fermé sans `finish_reason` ni `[DONE]` donne `BadStream` (réessayable). Écart
+  volontaire avec le TS. Tests : `flux_coupe_est_une_erreur_reessayable_pour_tous_les_dialectes` (openai,
+  passerelle, custom ; échoue sans le changement, vérifié) et `flux_coupe_reessaye_pour_tous_les_fournisseurs`
+  (agent ; openai, custom, mistral, gemini : coupé sans contenu puis réponse = 2 requêtes ; coupé après du texte =
+  pas de nouvel essai, `provider_error`, aucune réponse enregistrée ; toujours coupé = 4 requêtes puis
+  `provider_error`). La passerelle n'est testée qu'au niveau du décodeur (le test d'agent exige un ticket).
+- **PC10, Mistral** : `mistral-large-4*` : effort transmis tel quel ; `mistral-small-2603*` et
+  `mistral-medium-3-5*` : `reasoning_effort = high` si l'effort est `medium` ou `high`, rien sinon ; les autres
+  modèles (dont les alias `*-latest`, dont le modèle réel n'est pas connu) : rien. Test
+  `effort_mistral_table_de_correspondance`.
+- **PC11, Gemini** : rien d'activé ; `include_thoughts` reste non demandé. Documenté dans l'en-tête de
+  `gemini.rs` : raisonnement Gemini désactivé jusqu'à un test réel avec une clé. `reasoning_effort` (L07b)
+  est inchangé.
+- **PC12, D6 révisée** : `memory.high` retiré, `memory.max` seul (09 §2, 10 §5). **Code restant hors périmètre**
+  (`crates/supervisor`) : `sandbox/cgroup.rs` écrit encore `memory.high = max`, `launcher.rs`
+  (`memory_high_bytes`), `cli.rs`, `config.rs` (`worker_memory_high_mib`, avertissement, validation),
+  `workers.rs`, `sandbox/mod.rs`, `tests/sandbox.rs`, `synco-ai-runtime.example.toml`. Aucun code ne pose une
+  limite `memory.high` effective (la valeur écrite est `max`), mais le nettoyage reste à faire dans un lot du superviseur.
+
+### À reporter dans `docs/plan/00` et `06` (touchés par un autre lot)
+
+- 00 : D6 (ligne 207) : retirer l'« écart L06 » et la question ouverte, écrire « `memory.max` seul, révisée le
+  2026-11-21 ». **Q22 tranchée** : `memory.high` retiré. **Q26 tranchée** : flux coupé = `BadStream` réessayable pour
+  tous les fournisseurs. **Q27 tranchée** : `high` si effort ≥ `medium`, rien sinon (modèles `high|none`).
+  **Q28 tranchée** : raisonnement Gemini désactivé jusqu'à un essai réel avec une clé.
+- 06 §9 : « Flux coupé » : `BadStream` pour **tous** les adaptateurs (supprimer « fin silencieuse `stop` comme
+  le TS » et la question ouverte) ; paragraphe `reasoning_effort` : Mistral `high|none` selon la table ci-dessus
+  (supprimer « question ouverte ») ; Gemini : mention « raisonnement désactivé jusqu'à un test réel ».
+
+### Non vérifié
+
+Aucun appel réel aux fournisseurs. Recette manuelle : un flux coupé réel (coupure réseau en cours de réponse) ;
+`reasoning_effort: high` accepté par `mistral-small-2603` et `mistral-medium-3-5`.

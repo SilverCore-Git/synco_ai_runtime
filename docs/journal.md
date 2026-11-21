@@ -1225,3 +1225,39 @@ Source : conception C1 (validée par l'utilisateur) et PC34 à PC43. Documentati
 - **Non vérifié** : aucun code n'implémente encore ces formats ; les cas de validation, de cascade et d'échec ne sont
   contrôlés que par un validateur jetable. Lots débloqués après validation par l'utilisateur : L01c, L03g, L03h (en
   parallèle), puis L08d.
+
+## 2026-11-21 — L00f, amendement : questions QP1 à QP5 tranchées (PC44 à PC48)
+
+Décisions de l'utilisateur prises après la livraison de L00f. Documentation et vecteurs seulement ; aucun code dans
+`crates/`, aucune dépendance. À la suite de `3968a8d`.
+
+- **PC44 (QP1) : ordre libre**, contraire de la recommandation « appareil d'abord ». 12 §8.1 : phases calculées de façon
+  déterministe (phases impaires d'appareil, paires d'agent ; une action se place dans la première phase de son exécutant
+  qui suit toutes ses dépendances ; à égalité l'appareil commence ; renumérotation si aucune action n'est en phase 1),
+  sur le plan entier avant décision ; phase vide sautée. Phase d'appareil : claim `{ deviceId, phase }` (un seul
+  appareil), `plan_result:<k>` partiel (id `plan:<planId>:<k>`, AAD `sessionId:planId:plan_result:<k>`). Phase d'agent :
+  le worker exécute puis dépose `plan_agent_result:<k>` (AAD `…:plan_agent_result:<k>`) par la nouvelle route
+  `POST …/plans/:planId/agent-result` ; la conversation repasse `awaiting_confirmation` avec push. Expiration du plan
+  entier : aucune phase ne démarre après `expiresAt`. Échec ou `unknown_outcome` : toute la suite `skipped`, toutes
+  phases. Nouveaux codes `plan_phase_mismatch`, `action_output_missing`. `PlanView` porte exécutant, phase, état et
+  sortie par action, `currentPhase` et `agentResults`.
+- **PC47 (QP2)** : condensat de `JCS({tool, args, argsRefs})`, `argsRefs` omis s'il est absent ; appel avec `args` non
+  résolus, `argsRefs` et `refs`. **Références vers l'appareil** (12 §8.5) : l'API enregistre elle-même la sortie
+  (`id`, `spaceId`) quand sa route de création reçoit `X-Synco-Plan: <planId>/<n>` pour une action en cours sous claim ;
+  `progress done` l'exige. Rien de chiffré n'est lu ; fuite résiduelle assumée : le lien objet ↔ action de plan.
+  Double contrôle : le worker et l'appareil comparent les résultats de phase déchiffrés aux sorties enregistrées.
+- **PC45 (QP3)**, **PC46 (QP4)** : recommandations adoptées (12 §11.4, §10.3 ; 03, 07, 08). **PC48 (QP5)** : détails
+  ratifiés, sauf `AiFeaturePolicyEvent` conservé 1 an avec purge bornée (07 §9, passe `purgeFeaturePolicyEvents`).
+- **Mis à jour** : 12 (§1, §4 à §9, §10.3, §11, §12, §14 à §16 ; marques « provisoire » retirées), 00 (PC44 à PC48,
+  glossaire), 03, 04, 07, 08, 09, `vectors/README.md`.
+- **Vecteurs** `action-plan.json` complétés : `plan_result` partiel de phase 1, `mixedPlan` (deux phases d'appareil,
+  deux d'agent, avec `plan_result:1`, `plan_agent_result:2`, `plan_result:3`), condensats PC47, `executeCases` (10),
+  `phaseCases` (9), `runCases` (7), 18 cas de chiffrement, 31 de validation. Code jetable (`~/.cache`, supprimé) :
+  chiffrés par `primitives::seal` de `synco-e2ee` (IV figé). **Revérifiés** : Rust, fichier final relu, 47 vérifications
+  (`session::decrypt_field`, `serde_json` = JCS, condensats, phases, verrou) ; TS, 94 vérifications (`decryptAiField` de
+  `synco_app`, WebCrypto, validateur de référence pour validation, phases, cascade, échec, déroulé). CK de test.
+- **Choix d'interprétation à confirmer** : « un échec propage la cascade » est lu comme l'arrêt de toute la suite (règle
+  existante du §7.3, plus strict que les seules dépendantes) ; un message de l'utilisateur entre deux phases clôt le plan
+  (`rejected`, ce qui est fait reste fait) ; un plan expiré en attente d'appareil donne `confirmation_timeout`.
+- **Reste ouvert** (12 §15) : `thread.create` du runtime en mode autonome n'a pas de condensat (C1), ses références ne
+  sont donc pas recontrôlées par l'API.

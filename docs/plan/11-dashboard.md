@@ -86,7 +86,10 @@ texte de conversation. Ni `event`, ni `log`, ni `signed_request` ne sont lus par
 
 **Ajout L05b (2026-11-21, Q25)** : la vue d'ensemble liste aussi les **clés RSA de membres refusées**
 (identifiant du membre, empreintes RFC 7638 de la clé épinglée et de la clé proposée, date), tirées
-de `member-rsa-pins.json` (empreintes seulement, jamais la clé). Seule action d'administration du
+de `member-rsa-pins.json` (empreintes seulement, jamais la clé). L'app ne montrant pas encore au
+membre l'empreinte de sa propre clé, la page ne promet aucune comparaison : elle demande à l'admin
+de vérifier auprès du membre, hors de Synco, qu'il a bien réinitialisé ou renouvelé son chiffrement
+(06 §4.3, revue I4). Seule action d'administration du
 dashboard : `POST /api/member-keys/accept { userId, fingerprint }` (session, origine et CSRF exigés
 par le garde ; confirmation en deux temps dans la page), qui accepte la clé en attente dont
 l'empreinte SPKI est celle affichée (06 §4.3).

@@ -105,7 +105,8 @@
     ]));
     if (o.memberKeyChanges && o.memberKeyChanges.length) {
       kids.push(el("h2", { text: "Clés de membres refusées" }));
-      kids.push(el("p", { class: "error", text: "La clé de chiffrement de ces membres a changé sans preuve signée : le runtime refuse de créer des salons tant qu'elle n'est pas vérifiée. Comparez l'empreinte proposée avec celle que le membre voit dans Synco avant de l'accepter." }));
+      kids.push(el("p", { class: "error", text: "La clé de chiffrement de ces membres a changé sans preuve signée : le runtime refuse de créer des salons tant que la clé n'est pas acceptée. Le serveur Synco a peut-être substitué cette clé." }));
+      kids.push(el("p", { class: "muted", text: "Synco n'affiche pas encore au membre l'empreinte de sa propre clé : aucune comparaison d'empreinte n'est possible aujourd'hui. Contactez le membre par un autre canal que Synco et demandez-lui s'il a réinitialisé ou renouvelé son chiffrement, et quand (comparez avec la date « Vue le »). N'acceptez que s'il le confirme ; sinon laissez la clé refusée. Les empreintes ci-dessous servent à reconnaître une même clé d'une alerte à l'autre." }));
       var mrows = o.memberKeyChanges.map(function (c) {
         var cell = el("td", {});
         var ask = el("button", { class: "btn", type: "button", text: "Accepter cette clé…" });

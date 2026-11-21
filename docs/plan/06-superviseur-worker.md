@@ -204,8 +204,8 @@ relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pi
 
 - **Identité épinglée** : `SHA-256` de la `SubjectPublicKeyInfo` DER (`rsaEncryption`), recalculée
   depuis `n` et `e` (zéros de tête sans effet ; vecteur WebCrypto `exportKey('spki')` en test). Est
-  aussi gardée l'empreinte RFC 7638 (`SHA-256` du JWK canonique), la même que
-  `computeKeyFingerprint` de l'app, pour l'affichage et la comparaison hors bande.
+  aussi gardée l'empreinte RFC 7638 (`SHA-256` du JWK canonique minimal), la même que
+  `computeKeyFingerprint` de l'app sur une clé légitime, pour l'affichage.
 - **Stockage** : `<state_dir>/member-rsa-pins.json`, données publiques (empreintes, jamais la clé),
   `{ "v": 1, "orgs": { org: { userId: { fingerprint, thumbprint, firstSeen, previous[], pending? } } } }`,
   écriture atomique (`fsync` + `rename`) **une fois par étape de contrôle, hors du verrou d'état**
@@ -240,10 +240,16 @@ relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pi
   attente (`pending`) ; alerte `member_rsa_key_changed` (vue d'ensemble du dashboard, journal sans
   clé, empreinte ni identifiant).
 - **Acceptation manuelle** : la vue d'ensemble liste les clés refusées (empreintes épinglée et
-  proposée au format de l'app) ; l'admin du runtime, après comparaison hors bande avec le membre,
-  accepte **la clé affichée** (`POST /api/member-keys/accept { userId, fingerprint }`, session +
-  origine + CSRF ; une autre empreinte → `409 no_pending_key`). Pas de commande en ligne : le
-  fichier est tenu en mémoire par le superviseur en marche.
+  proposée au format de l'app) ; l'admin du runtime accepte **la clé affichée**
+  (`POST /api/member-keys/accept { userId, fingerprint }`, session + origine + CSRF ; une autre
+  empreinte → `409 no_pending_key`). **Vérification réellement possible aujourd'hui** (revue I4) :
+  l'app ne montre pas au membre l'empreinte de sa propre clé (les réglages affichent `n` brut, servi
+  par l'API ; l'empreinte vue par un autre membre dans un DM vient aussi de l'API) : aucune
+  comparaison d'empreinte hors bande n'est possible. L'admin peut seulement demander au membre, par
+  un autre canal que Synco, s'il a réinitialisé ou renouvelé son chiffrement et quand (à rapprocher
+  de la date de l'alerte), et n'accepter que sur confirmation. Afficher l'empreinte de sa propre clé
+  dans l'app est une question posée à l'utilisateur. Pas de commande en ligne : le fichier est tenu
+  en mémoire par le superviseur en marche.
 - **Limites** : la première vue vient de l'API (TOFU) ; un membre qui n'a jamais délégué au runtime
   n'a pas de clé de signature épinglée et `sign-key` ne le sert pas (04 §4.1) : sa rotation légitime
   n'est acceptée que par l'admin. La clé RSA du propriétaire n'est pas liée à son mandat (00 §6, Q25).

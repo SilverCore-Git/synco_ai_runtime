@@ -850,8 +850,9 @@ Décision PC8 (2026-11-21) : épinglage persistant par le superviseur, lot dédi
 - **Rotation** : acceptée automatiquement seulement si la chaîne de `sign-key`, suivie depuis la plus ancienne clé de
   signature épinglée de l'utilisateur (`user-pins.json`) et **passant par la courante**, aboutit exactement à la clé RSA
   présentée (au plus 8 vérifications par réponse). Suivre depuis la plus ancienne est nécessaire : l'épingle de signature
-  avance à la réouverture d'une délégation alors que l'épingle RSA peut être restée en arrière ; exiger le passage par la
-  clé courante écarte une branche signée par une clé retirée. Sinon : **acceptation manuelle** au dashboard
+  avance à la réouverture d'une délégation alors que l'épingle RSA peut être restée en arrière. **Erroné, corrigé après
+  revue (I1)** : exiger seulement le passage par la clé courante n'écarte PAS une branche signée par une clé retirée qui
+  rejoint ensuite la courante ; voir « L05b : corrections après revue ». Sinon : **acceptation manuelle** au dashboard
   (`POST /api/member-keys/accept`, la seule clé affichée, session + origine + CSRF, confirmation en deux temps). Pas de
   commande en ligne : le superviseur garde le fichier en mémoire et l'écraserait.
 
@@ -881,3 +882,55 @@ réouverture du fichier d'état (unitaire et après `app::shutdown`), pas par un
    Convient-il, ou faut-il une autre voie (par exemple une acceptation par un admin de l'org dans Synco) ?
 4. **Refus global** même pour un salon d'espace scellé pour le seul propriétaire : confirmer (plus sûr) ou restreindre le
    refus aux destinataires réels de l'appel (le superviseur ne connaît pas les arguments de l'outil).
+
+## 2026-11-21 — L05b : corrections après revue
+
+Verdict : intégrable après corrections. Un commit par correction ; contrôles (`fmt`, `clippy -D warnings`, `cargo test
+--workspace`, 22 suites) avant chacun.
+
+- **I1** (`4e4bfe5`) : une branche signée par une clé de signature retirée (k1 → kA → k2 courante) était acceptée, la règle
+  « passer par la clé courante » ne suffisant pas. **Règle retenue, la plus stricte justifiable** : la chaîne suivie depuis
+  la plus ancienne clé épinglée doit (1) reproduire **exactement** l'historique de signature épinglé (`previous` puis
+  `sign_key`, que `pins.rs` remplit dans l'ordre avec chaque clé traversée) ; (2) aboutir à la clé RSA présentée, introduite
+  une seule fois ; (3) et cette clé doit être garantie par une clé **non retirée** : le maillon qui l'introduit est signé
+  par la clé courante ou une successeure, ou la chaîne s'arrête sur la clé courante et la clé RSA est celle que `pins.rs`
+  a liée à cette clé **au moment où il l'a acceptée** (nouveau champ optionnel `UserPin.rsaFingerprint` ; anciens fichiers
+  relus, `None` → acceptation par l'admin). Pourquoi (3) : un maillon servi aujourd'hui et signé par une clé retirée
+  (peut-être compromise) peut porter n'importe quelle clé RSA, même avec les bonnes clés de signature ; la liaison
+  enregistrée date d'une vérification faite quand cette clé n'était pas retirée. Sans le second cas, la rotation
+  ordinaire (l'utilisateur renouvelle sa délégation, donc l'épingle de signature avance avant l'épingle RSA) tomberait
+  toujours à l'admin.
+- **I2** (`80df1f6`) : `rotate` refuse une clé égale à l'épinglée ou présente dans `previous` ; `chain_vouches` refuse une
+  chaîne qui aboutit à la clé épinglée (elle la précède forcément si la chaîne la contient, la nouvelle étant introduite
+  une seule fois, au bout).
+- **I3** (`2a824d5`) : photo de l'état prise sous le verrou, écrite hors de lui (`spawn_blocking`), une fois par étape,
+  photos ordonnées (une plus ancienne n'écrase jamais une plus récente), réponse rendue après l'écriture ; échec →
+  refus fermé `member_pins_unavailable`. Bornes : 2 000 épingles par org (`member_pins_limit`, refus fermé), 16 précédentes,
+  100 clés en attente. **Mesure** (`cles_rsa_charge_et_plafond`) : 2 000 premières vues dans une réponse en ~0,12 s,
+  attente maximale du verrou d'état ~16-18 ms (contre 49 s de gel pour 3 000 avant).
+- **I4** (`c3ddf3f`) : l'app ne montre pas au membre l'empreinte de sa propre clé (réglages : `n` brut, servi par l'API).
+  Dashboard, 06 §4.3 et 11 ne promettent plus de comparaison : l'admin demande au membre, hors de Synco, s'il a
+  réinitialisé ou renouvelé son chiffrement et quand, et n'accepte que sur confirmation.
+- **I5** (`eff6b0f`) : injection d'un destinataire inconnu (ou d'une clé de l'API pour un membre jamais vu) à la première
+  vue : inhérent au TOFU, écrit dans 06 §4.3 « Limites » et 00 Q25.
+- **M1** (`a643325`) : variantes du chemin de l'annuaire (casse, `/` final, `//`, segment `.`) → `relay_refused`, sans
+  appel à l'API. **M3** (`40bb233`) : corps illisible → `502 member_keys_unreadable`. **M4** (`3ab07c0`) : `refuse` ne
+  mémorise rien si l'épingle a changé entre-temps ou si la clé est l'épinglée. **M5** (`9e8fa31`) : `v` ≠ 1 → refus de
+  démarrer ; échec d'écriture → alerte `member_pins_not_saved` au dashboard, refus fermé, réécriture complète à la photo
+  suivante. **M6** (`53a0362`) : empreinte affichée calculée sur le JWK minimal (`n`, `e` sans zéros de tête) ; l'app
+  hache le JWK servi, issu de `exportKey('jwk')` (forme minimale), donc identique sur une clé légitime.
+- **Tests** (`afd3056` et ceux des commits ci-dessus) : branche qui finit sur la courante ; maillon forgé par une clé
+  retirée avec une autre clé RSA ; retour arrière ; `e = 1` ; variantes du chemin (unitaire et au relais) ; au plus
+  8 vérifications `sign-key` par réponse ; org revérifiée après l'appel `sign-key` (désappairage pendant l'appel) ; deux
+  réponses concurrentes pour un membre jamais vu (une seule clé épinglée) ; écriture impossible ; plafond.
+- **Mutations faites** (sortie dans le compte rendu) : I1 (reproduction exacte retirée) → `rotation_par_chaine_d_identite`
+  échoue « branche qui finit sur la courante » ; I2 (`previous.contains` retiré) → échoue « retour arrière » ; org non
+  revérifiée → `cles_rsa_bornes_org_et_concurrence` échoue « rotation non installée » ; borne retirée → « vérifications de
+  rotation bornées » (11 ≠ 8). Restaurées, vertes.
+- La phrase de la première entrée L05b sur « le passage par la clé courante » est marquée erronée.
+
+**Questions (en plus de celles de L05b)** : afficher dans l'app l'empreinte RFC 7638 de sa propre clé (sans quoi l'admin du
+runtime ne peut rien comparer) ; le plafond de 2 000 épingles par org convient-il ?
+
+**Vérifié à la fin** : hôte, `sandbox-host.sh` vert (11 tests) puis `aller_retour_avec_bac_a_sable ... ok` ; test croisé
+Rust → TS : OK ; `synco_app` et `synco_api` non modifiés.

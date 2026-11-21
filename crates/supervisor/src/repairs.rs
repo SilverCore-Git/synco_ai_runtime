@@ -31,8 +31,10 @@ use crate::runtime::Runtime;
 pub const REPAIR_CONCURRENCY: usize = 4;
 /// Éléments demandés par page de `GET …/envelope-resets`.
 const REREAD_LIMIT: u32 = 100;
-/// Pages lues au plus (garde-fou).
-const REREAD_MAX_PAGES: usize = 100;
+/// Pages lues au plus (garde-fou : une API qui ne finit jamais de paginer ne bloque pas la reconnexion).
+/// Seuls les items **entrés dans la file** comptent vers [`MAX_REPAIRS`] ; les refusés localement
+/// (salon étranger…) ne font que consommer des pages.
+const REREAD_MAX_PAGES: usize = 1_000;
 /// Un même code de journal est écrit une fois par fenêtre.
 const LOG_WINDOW: Duration = Duration::from_secs(10);
 
@@ -101,7 +103,10 @@ impl Runtime {
     /// Demande une réparation (trame du flux ou item de la relecture API). Contrôle **local et
     /// immédiat** : un salon qui n'est pas à ce runtime n'entre jamais dans la file. Le reste
     /// (délégation, clé, signature) est fait par le travailleur, à chaque essai.
-    pub async fn submit_repair(&self, thread_id: &str, user_id: &str, delegation_id: &str) {
+    ///
+    /// Renvoie `true` si la demande est (ou était déjà) dans la file, `false` si elle est refusée
+    /// (salon étranger, file pleine, runtime pas appairé).
+    pub async fn submit_repair(&self, thread_id: &str, user_id: &str, delegation_id: &str) -> bool {
         let repair = Repair {
             thread_id: thread_id.to_owned(),
             user_id: user_id.to_owned(),
@@ -110,7 +115,7 @@ impl Runtime {
         let pushed = {
             let mut st = self.state.lock().await;
             if st.org_id.is_none() {
-                return;
+                return false;
             }
             if st.created_threads.get(thread_id).is_none_or(|c| c.user_id != user_id) {
                 drop(st);
@@ -118,7 +123,7 @@ impl Runtime {
                     "envelope_reset_foreign_thread",
                     "réinitialisation d'un salon qui n'est pas à ce runtime",
                 );
-                return;
+                return false;
             }
             let pushed = st.repairs.push(repair, now_secs());
             if pushed == Push::Full && st.alerts.back().is_none_or(|(_, c)| *c != "envelope_repairs_full") {
@@ -128,9 +133,10 @@ impl Runtime {
         };
         if pushed == Push::Full {
             self.warn_limited("envelope_repairs_full", "file de réparations pleine");
-            return;
+            return false;
         }
         self.repair_wake.notify_one();
+        true
     }
 
     /// Relit les réparations en attente côté API (`GET …/envelope-resets`, paginée) : à chaque
@@ -138,7 +144,7 @@ impl Runtime {
     /// local : l'API ne choisit jamais seule ce qui se signe.
     pub async fn reread_envelope_resets(&self) {
         let mut cursor: Option<String> = None;
-        let mut seen = 0usize;
+        let mut queued = 0usize;
         for _ in 0..REREAD_MAX_PAGES {
             let page = match self.api.envelope_resets(REREAD_LIMIT, cursor.as_deref()).await {
                 Ok(p) => p,
@@ -152,13 +158,15 @@ impl Runtime {
                 }
             };
             for item in page.items {
-                seen = seen.saturating_add(1);
-                if seen > MAX_REPAIRS {
-                    return;
-                }
-                if is_identifier(&item.thread_id) && is_identifier(&item.user_id) && is_identifier(&item.delegation_id)
+                if is_identifier(&item.thread_id)
+                    && is_identifier(&item.user_id)
+                    && is_identifier(&item.delegation_id)
+                    && self.submit_repair(&item.thread_id, &item.user_id, &item.delegation_id).await
                 {
-                    self.submit_repair(&item.thread_id, &item.user_id, &item.delegation_id).await;
+                    queued = queued.saturating_add(1);
+                    if queued >= MAX_REPAIRS {
+                        return;
+                    }
                 }
             }
             match page.next_cursor {

@@ -556,7 +556,7 @@ impl Runtime {
             ApiEvent::ThreadEnvelopeReset { thread_id, user_id, delegation_id } => {
                 // PC31 : la trame ne fait que demander ; la file et son travailleur (bornés) font
                 // les vérifications et l'appel à l'API, sans retarder les évènements suivants.
-                self.submit_repair(&thread_id, &user_id, &delegation_id).await;
+                let _ = self.submit_repair(&thread_id, &user_id, &delegation_id).await;
             }
             ApiEvent::RuntimeUnpaired => self.unpaired.notify_one(),
             ApiEvent::Ping | ApiEvent::Unknown => {}

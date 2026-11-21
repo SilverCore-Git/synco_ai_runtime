@@ -1229,7 +1229,7 @@ async fn file_non_saturable_par_des_delegations_inventees() {
     wait_until_async(&rt, |st| st.vault.get(USER).is_some()).await;
     remember_thread(&rt, THREAD, USER, "d-good").await;
     for i in 0..10_000 {
-        rt.submit_repair(THREAD, USER, &format!("d-faux{i}")).await;
+        let _ = rt.submit_repair(THREAD, USER, &format!("d-faux{i}")).await;
     }
     {
         let st = rt.state.lock().await;
@@ -1239,7 +1239,7 @@ async fn file_non_saturable_par_des_delegations_inventees() {
     wait_until_async(&rt, |st| st.repairs.is_empty()).await;
     assert!(reposes(&env).is_empty(), "une délégation inventée ne signe rien");
     // Autre salon, délégation inventée, puis la vraie : la dernière reçue gagne, la réparation passe.
-    rt.submit_repair(THREAD, USER, "d-faux-encore").await;
+    let _ = rt.submit_repair(THREAD, USER, "d-faux-encore").await;
     env.api.push(reset_frame(THREAD, USER, "d-good"));
     wait_until("vraie réparation", || reposes(&env).len() == 1).await;
     assert_eq!(reposes(&env)[0].body["delegationId"], "d-good");
@@ -1314,6 +1314,29 @@ async fn relecture_api_paginee_et_verifiee_localement() {
     let env = restart(env, |_| ()).await;
     wait_until_async(&env.running.runtime, |st| st.vault.get(USER).is_some()).await;
     assert_eq!(reposes(&env).len(), 1);
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+}
+
+/// PC31 : la relecture API ne s'arrête pas au plafond des items **vus** mais à celui des items
+/// **entrés dans la file** : plus de `MAX_REPAIRS` items refusés localement (salons étrangers) ne
+/// cachent pas la vraie réparation qui les suit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn relecture_api_non_bloquee_par_les_items_refuses() {
+    let env = setup().await;
+    let rt = Arc::clone(&env.running.runtime);
+    wait_until_async(&rt, |st| st.vault.get(USER).is_some()).await;
+    remember_thread(&rt, THREAD, USER, "d-good").await;
+    let item = |t: &str| json!({ "threadId": t, "userId": USER, "delegationId": "d-good", "resetAt": "2026-11-21T10:00:00.000Z" });
+    let foreign = synco_ai_runtime::repair_queue::MAX_REPAIRS + 200;
+    env.api.with(|st| {
+        st.resets_page = 500;
+        st.resets = (0..foreign).map(|i| item(&format!("cm3threadetranger{i:09}"))).collect();
+        st.resets.push(item(THREAD));
+        st.resets_requests.clear();
+    });
+    let env = restart(env, |_| ()).await;
+    wait_until("enveloppe reposée malgré les items refusés qui précèdent", || reposes(&env).len() == 1).await;
+    assert!(reposes(&env)[0].path.contains(THREAD));
     synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }
 

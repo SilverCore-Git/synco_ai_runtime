@@ -1,0 +1,2520 @@
+{
+  "description": "Plan d'action (12 §3–§9, L00f) : clair canonique (RFC 8785, entiers seulement), chiffrement gcm1: sous CK avec l'AAD sessionId:planId:plan, élément plan_result (AAD sessionId:planId:plan_result), condensat serverDigests, validation, cascade de l'acceptation partielle (PC37) et arrêt sur échec. IV fixes : vecteurs seulement. CK de TEST.",
+  "keys": {
+    "ckHex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
+    "otherCkHex": "5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d"
+  },
+  "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+  "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+  "ckHex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
+  "plan": {
+    "v": 1,
+    "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+    "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+    "toolCallId": "call_7",
+    "createdAt": 1795000000,
+    "expiresAt": 1795604800,
+    "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+    "actions": [
+      {
+        "n": 1,
+        "kind": "thread.create",
+        "args": {
+          "name": "budget",
+          "type": "text",
+          "spaceId": "cm3spaceexample0000000001"
+        }
+      },
+      {
+        "n": 2,
+        "kind": "thread.create",
+        "args": {
+          "name": "annonces",
+          "type": "text",
+          "spaceId": "cm3spaceexample0000000001"
+        }
+      },
+      {
+        "n": 3,
+        "kind": "folder.create",
+        "args": {
+          "spaceId": "cm3spaceexample0000000001",
+          "name": "Lancement"
+        }
+      },
+      {
+        "n": 4,
+        "kind": "file.create_text",
+        "args": {
+          "spaceId": "cm3spaceexample0000000001",
+          "name": "plan.md",
+          "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+        },
+        "after": [
+          3
+        ],
+        "argsRefs": {
+          "folderId": "$3.id"
+        }
+      },
+      {
+        "n": 5,
+        "kind": "server.call",
+        "tool": "create_task",
+        "args": {
+          "title": "Valider le budget"
+        },
+        "after": [
+          1
+        ],
+        "argsRefs": {
+          "description": "$1.id"
+        }
+      }
+    ]
+  },
+  "planCanonical": "{\"actions\":[{\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":1},{\"args\":{\"name\":\"annonces\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":2},{\"args\":{\"name\":\"Lancement\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\\n- budget\\n- annonces\\n\",\"name\":\"plan.md\",\"spaceId\":\"cm3spaceexample0000000001\"},\"argsRefs\":{\"folderId\":\"$3.id\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[1],\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.\",\"toolCallId\":\"call_7\",\"v\":1}",
+  "aadPlan": "0f0e0d0c-0b0a-4908-8706-050403020100:5b1c2d3e-4f50-4a61-8b72-938495a6b7c8:plan",
+  "ivPlanHex": "6d6d6d6d6d6d6d6d6d6d6d6d",
+  "planValue": "gcm1:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ",
+  "planResult": {
+    "v": 1,
+    "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+    "outcomes": [
+      {
+        "n": 1,
+        "state": "done",
+        "output": {
+          "id": "cm3threadnew0000000000001",
+          "spaceId": "cm3spaceexample0000000001"
+        }
+      },
+      {
+        "n": 2,
+        "state": "skipped"
+      },
+      {
+        "n": 3,
+        "state": "done",
+        "output": {
+          "id": "cm3foldernew0000000000001",
+          "spaceId": "cm3spaceexample0000000001"
+        }
+      },
+      {
+        "n": 4,
+        "state": "done",
+        "output": {
+          "id": "cm3filenew00000000000001",
+          "spaceId": "cm3spaceexample0000000001"
+        }
+      },
+      {
+        "n": 5,
+        "state": "pending"
+      }
+    ]
+  },
+  "planResultCanonical": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"skipped\"},{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":5,\"state\":\"pending\"}],\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+  "aadPlanResult": "0f0e0d0c-0b0a-4908-8706-050403020100:5b1c2d3e-4f50-4a61-8b72-938495a6b7c8:plan_result",
+  "ivPlanResultHex": "7e7e7e7e7e7e7e7e7e7e7e7e",
+  "planResultValue": "gcm1:fn5+fn5+fn5+fn5+TMSPQRj9OMwS46+r7O2XuHDFQdWHZaBMmLvOvjY/uxVDWFEOfrT2XlxDwH6SyvII/twacXYQL4LUWszYUWKDxxKIi9z2bXkCaHnpiIcmEqTverILk556mvQwdHg70b+t0M4HxKSiRt1opor7Z7dv07k564v3hru/FQq6HXImdjq2HEMrTaLADZVjIup2nTPukfSCPrAIRE8f7aTq8evbMmJdJlaBnQ2kPCqCY3rzRz13+aSoX3S5El5S8Y7BMsrh372F2jDm8cir7sRlXBMgDzd35bm83d3vokE+Ia4OS4LRBdmPbLAWzg3EoMsgPdKHnAmIMqwqe2VYc39ZwO+3ScIQ6pWdTlofDwxzj8zIiPhmYOOhdcBMUdENscL9hDLzb8X6vS+pCIA2q02Nr7GSfsjH7KQ9FWB8tHrGWrdU1VS07t7deIEDxpbQqvwpIIOryJErNvDNo+2zKB7X7xBVI/GfQKT99roiZSiylzfvFahS8bF2wrVRhIBD3QJyDFyuSQ2X+U+gKQMhZdxqhFhkGwPoG8CvJSzargzxiFcwSiMVqgOz54ycUvdu1xNwqM9fJrcKR9Dt1UUEx/uGXnltkLTS",
+  "serverDigests": [
+    {
+      "n": 5,
+      "input": {
+        "tool": "create_task",
+        "args": {
+          "title": "Valider le budget"
+        }
+      },
+      "canonical": "{\"args\":{\"title\":\"Valider le budget\"},\"tool\":\"create_task\"}",
+      "sha256Hex": "b32ef55136fbddab6c6bee255d75b88f3536c0e5afbf191e63415da24acb6cb1",
+      "note": "Condensat de {tool, args} tel que C1 §2.3 ; pour une action à argsRefs, voir 12 §15 QP2 (provisoire)."
+    }
+  ],
+  "pendingToolCall": {
+    "id": "call_7",
+    "name": "propose_actions",
+    "category": "client",
+    "mutating": true,
+    "interactive": false,
+    "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+    "args": "gcm1:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ"
+  },
+  "encryptionCases": [
+    {
+      "name": "plan chiffré, AAD sessionId:planId:plan",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "value": "gcm1:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ",
+      "plaintext": "{\"actions\":[{\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":1},{\"args\":{\"name\":\"annonces\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":2},{\"args\":{\"name\":\"Lancement\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\\n- budget\\n- annonces\\n\",\"name\":\"plan.md\",\"spaceId\":\"cm3spaceexample0000000001\"},\"argsRefs\":{\"folderId\":\"$3.id\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[1],\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.\",\"toolCallId\":\"call_7\",\"v\":1}",
+      "expect": "ok"
+    },
+    {
+      "name": "plan_result chiffré, AAD sessionId:planId:plan_result",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result",
+      "value": "gcm1:fn5+fn5+fn5+fn5+TMSPQRj9OMwS46+r7O2XuHDFQdWHZaBMmLvOvjY/uxVDWFEOfrT2XlxDwH6SyvII/twacXYQL4LUWszYUWKDxxKIi9z2bXkCaHnpiIcmEqTverILk556mvQwdHg70b+t0M4HxKSiRt1opor7Z7dv07k564v3hru/FQq6HXImdjq2HEMrTaLADZVjIup2nTPukfSCPrAIRE8f7aTq8evbMmJdJlaBnQ2kPCqCY3rzRz13+aSoX3S5El5S8Y7BMsrh372F2jDm8cir7sRlXBMgDzd35bm83d3vokE+Ia4OS4LRBdmPbLAWzg3EoMsgPdKHnAmIMqwqe2VYc39ZwO+3ScIQ6pWdTlofDwxzj8zIiPhmYOOhdcBMUdENscL9hDLzb8X6vS+pCIA2q02Nr7GSfsjH7KQ9FWB8tHrGWrdU1VS07t7deIEDxpbQqvwpIIOryJErNvDNo+2zKB7X7xBVI/GfQKT99roiZSiylzfvFahS8bF2wrVRhIBD3QJyDFyuSQ2X+U+gKQMhZdxqhFhkGwPoG8CvJSzargzxiFcwSiMVqgOz54ycUvdu1xNwqM9fJrcKR9Dt1UUEx/uGXnltkLTS",
+      "plaintext": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"skipped\"},{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":5,\"state\":\"pending\"}],\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+      "expect": "ok"
+    },
+    {
+      "name": "plan ouvert avec l'AAD d'une autre conversation",
+      "sessionId": "aaaaaaaa-0b0a-4908-8706-050403020100",
+      "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "value": "gcm1:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ",
+      "expect": "field_authentication_failed"
+    },
+    {
+      "name": "plan ouvert avec un autre planId",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c9",
+      "fieldName": "plan",
+      "value": "gcm1:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ",
+      "expect": "field_authentication_failed"
+    },
+    {
+      "name": "plan ouvert comme plan_result",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result",
+      "value": "gcm1:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ",
+      "expect": "field_authentication_failed"
+    },
+    {
+      "name": "plan_result ouvert comme plan",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "value": "gcm1:fn5+fn5+fn5+fn5+TMSPQRj9OMwS46+r7O2XuHDFQdWHZaBMmLvOvjY/uxVDWFEOfrT2XlxDwH6SyvII/twacXYQL4LUWszYUWKDxxKIi9z2bXkCaHnpiIcmEqTverILk556mvQwdHg70b+t0M4HxKSiRt1opor7Z7dv07k564v3hru/FQq6HXImdjq2HEMrTaLADZVjIup2nTPukfSCPrAIRE8f7aTq8evbMmJdJlaBnQ2kPCqCY3rzRz13+aSoX3S5El5S8Y7BMsrh372F2jDm8cir7sRlXBMgDzd35bm83d3vokE+Ia4OS4LRBdmPbLAWzg3EoMsgPdKHnAmIMqwqe2VYc39ZwO+3ScIQ6pWdTlofDwxzj8zIiPhmYOOhdcBMUdENscL9hDLzb8X6vS+pCIA2q02Nr7GSfsjH7KQ9FWB8tHrGWrdU1VS07t7deIEDxpbQqvwpIIOryJErNvDNo+2zKB7X7xBVI/GfQKT99roiZSiylzfvFahS8bF2wrVRhIBD3QJyDFyuSQ2X+U+gKQMhZdxqhFhkGwPoG8CvJSzargzxiFcwSiMVqgOz54ycUvdu1xNwqM9fJrcKR9Dt1UUEx/uGXnltkLTS",
+      "expect": "field_authentication_failed"
+    },
+    {
+      "name": "plan ouvert avec l'AAD de pendingToolCall (__pending__)",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "__pending__",
+      "fieldName": "pending_tool_call_args",
+      "value": "gcm1:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ",
+      "expect": "field_authentication_failed"
+    },
+    {
+      "name": "plan ouvert avec une autre CK",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "ckHex": "5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d",
+      "fieldName": "plan",
+      "value": "gcm1:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ",
+      "expect": "field_authentication_failed"
+    },
+    {
+      "name": "tag altéré",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "value": "gcm1:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbY",
+      "expect": "field_authentication_failed"
+    },
+    {
+      "name": "préfixe gcm2:",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "value": "gcm2:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ",
+      "expect": "field_unknown_version"
+    }
+  ],
+  "validationCases": [
+    {
+      "name": "plan de référence",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "20 actions (plafond)",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d1"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d2"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d3"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d4"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d5"
+            }
+          },
+          {
+            "n": 6,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d6"
+            }
+          },
+          {
+            "n": 7,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d7"
+            }
+          },
+          {
+            "n": 8,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d8"
+            }
+          },
+          {
+            "n": 9,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d9"
+            }
+          },
+          {
+            "n": 10,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d10"
+            }
+          },
+          {
+            "n": 11,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d11"
+            }
+          },
+          {
+            "n": 12,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d12"
+            }
+          },
+          {
+            "n": 13,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d13"
+            }
+          },
+          {
+            "n": 14,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d14"
+            }
+          },
+          {
+            "n": 15,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d15"
+            }
+          },
+          {
+            "n": 16,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d16"
+            }
+          },
+          {
+            "n": 17,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d17"
+            }
+          },
+          {
+            "n": 18,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d18"
+            }
+          },
+          {
+            "n": 19,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d19"
+            }
+          },
+          {
+            "n": 20,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d20"
+            }
+          }
+        ]
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "21 actions",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d1"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d2"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d3"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d4"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d5"
+            }
+          },
+          {
+            "n": 6,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d6"
+            }
+          },
+          {
+            "n": 7,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d7"
+            }
+          },
+          {
+            "n": 8,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d8"
+            }
+          },
+          {
+            "n": 9,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d9"
+            }
+          },
+          {
+            "n": 10,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d10"
+            }
+          },
+          {
+            "n": 11,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d11"
+            }
+          },
+          {
+            "n": 12,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d12"
+            }
+          },
+          {
+            "n": 13,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d13"
+            }
+          },
+          {
+            "n": 14,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d14"
+            }
+          },
+          {
+            "n": 15,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d15"
+            }
+          },
+          {
+            "n": 16,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d16"
+            }
+          },
+          {
+            "n": 17,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d17"
+            }
+          },
+          {
+            "n": 18,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d18"
+            }
+          },
+          {
+            "n": 19,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d19"
+            }
+          },
+          {
+            "n": 20,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d20"
+            }
+          },
+          {
+            "n": 21,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d21"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "aucune action",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": []
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "clair canonique > 64 Kio",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "version 2",
+      "plan": {
+        "v": 2,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "champ inconnu à la racine",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ],
+        "executor": "runtime"
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "planId non conforme (« : »)",
+      "plan": {
+        "v": 1,
+        "planId": "a:b",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "sessionId différent de la conversation",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "autre-session",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "expiresAt ≤ createdAt",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795000000,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "expiresAt − createdAt > 7 jours",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604801,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "kind hors liste (thread.delete)",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.delete",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "server.call sans tool",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "tool sur une action d'appareil",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "tool": "create_task"
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "server.call vers un outil non server (create_thread)",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_thread",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "server.call vers un outil server non mutant (list_spaces)",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "list_spaces",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "champ inconnu dans args de thread.create (isPrivate)",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001",
+              "isPrivate": true
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "type « vocal » (vocabulaire de l'API, pas de l'outil)",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "vocal",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "nom de salon vide",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "n non consécutifs (1, 2, 3, 4, 6)",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 6,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "after vers une action postérieure",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              2
+            ]
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "after vers elle-même",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              5
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "argsRefs vers une action absente de after",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$2.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "argsRefs vers un champ non exportable ($1.name)",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.name"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "argsRefs et args fixent le même champ",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget",
+              "description": "x"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "argsRefs vers un champ absent du schéma de l’outil",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "owner": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "argsRefs mal formé ($1)",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "dépendance entre deux actions d’appareil (#annonces après #budget)",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            },
+            "after": [
+              1
+            ]
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.md",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "action d'appareil qui dépend d'une action server.call (provisoire, 12 §15 QP1)",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "x"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "y",
+              "type": "text"
+            },
+            "after": [
+              1
+            ]
+          }
+        ]
+      },
+      "expect": "plan_invalid"
+    }
+  ],
+  "cascadeCases": [
+    {
+      "name": "décocher le salon #budget retire aussi la tâche",
+      "unchecked": [
+        1
+      ],
+      "expectSkipped": [
+        1,
+        5
+      ]
+    },
+    {
+      "name": "décocher le dossier retire aussi la note",
+      "unchecked": [
+        3
+      ],
+      "expectSkipped": [
+        3,
+        4
+      ]
+    },
+    {
+      "name": "décocher la note seule",
+      "unchecked": [
+        4
+      ],
+      "expectSkipped": [
+        4
+      ]
+    },
+    {
+      "name": "décocher #annonces (sans dépendante)",
+      "unchecked": [
+        2
+      ],
+      "expectSkipped": [
+        2
+      ]
+    },
+    {
+      "name": "tout décocher",
+      "unchecked": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "expectSkipped": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "name": "chaîne 1 → 2 → 3 : décocher 1",
+      "actions": [
+        {
+          "n": 1,
+          "after": []
+        },
+        {
+          "n": 2,
+          "after": [
+            1
+          ]
+        },
+        {
+          "n": 3,
+          "after": [
+            2
+          ]
+        }
+      ],
+      "unchecked": [
+        1
+      ],
+      "expectSkipped": [
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "failureCases": [
+    {
+      "name": "échec de l'action 3 : les suivantes passent en skipped, aucune annulation",
+      "accepted": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "failedAt": 3,
+      "expectStates": {
+        "1": "done",
+        "2": "done",
+        "3": "failed",
+        "4": "skipped",
+        "5": "skipped"
+      }
+    },
+    {
+      "name": "échec de l'action 1 avec #annonces décochée",
+      "accepted": [
+        1,
+        3,
+        4,
+        5
+      ],
+      "failedAt": 1,
+      "expectStates": {
+        "1": "failed",
+        "2": "skipped",
+        "3": "skipped",
+        "4": "skipped",
+        "5": "skipped"
+      }
+    }
+  ]
+}

@@ -1572,6 +1572,9 @@ async fn cles_rsa_des_membres_epinglees_par_le_superviseur() {
     assert_eq!(body["members"].as_array().unwrap().len(), 2);
     // 2. Même clé : acceptée.
     assert_eq!(ask(members(1, 2)).await.0, 200);
+    // Q23 : l'annuaire d'un espace (`?spaceId=`) passe par le même contrôle d'épinglage.
+    let space_dir = "/api/runtime/v1/e2ee/members/keys?spaceId=cm3spaceexample0000000001";
+    assert_eq!(ask_path(members(1, 2), space_dir).await.0, 200);
     // Revue M1 : variante du chemin (contournerait le contrôle) refusée au relais, sans appel à l'API.
     let directory_calls =
         || env.api.with(|st| st.seen.iter().filter(|r| r.path.to_ascii_lowercase().contains("members")).count());
@@ -1594,6 +1597,10 @@ async fn cles_rsa_des_membres_epinglees_par_le_superviseur() {
         (OTHER, spki(3))
     );
     assert_eq!(ask(members(1, 3)).await.0, 409, "toujours refusée");
+    let (status, body) = ask_path(members(1, 3), space_dir).await;
+    assert_eq!((status, body), (409, json!({ "error": "member_key_changed" })), "annuaire d'espace contrôlé aussi");
+    env.api
+        .with(|st| assert!(st.seen.iter().any(|r| r.path.ends_with("members/keys?spaceId=cm3spaceexample0000000001"))));
     // 4. Rotation légitime de USER : transition signée par sa clé de signature épinglée.
     let k2 = EcSigningKey::generate(&mut OsRandom).unwrap();
     let t = synco_e2ee::identity::sign_identity_transition(

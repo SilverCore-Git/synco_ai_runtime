@@ -18,12 +18,15 @@
 //! sans chaîne d'identité valide remplace la réponse entière par `409 member_key_changed` : refus
 //! global, rien n'est scellé (`crates/supervisor/src/member_pins.rs`, 06 §4.3).
 //!
-//! **Destinataires** : à l'accueil de l'org, tous les membres (comme l'app) ; dans un espace,
-//! **seulement le propriétaire** de la conversation, car le canal ne donne pas les membres d'un
-//! espace (l'app utilise `space.membersId`) et sceller la clé pour un non-membre la lui donnerait.
-//! **Catégorie** : `categoryId` est exigé par l'API et le canal ne l'expose pas ; le worker transmet
-//! celui des arguments s'il est fourni (cf. docs/journal.md L07, besoin d'API remonté).
+//! **Destinataires** (Q23) : à l'accueil de l'org, tous les membres (`GET /e2ee/members/keys`) ;
+//! dans un espace, ses membres (`GET /e2ee/members/keys?spaceId=`, même service que l'app). Les deux
+//! réponses passent par le contrôle d'épinglage du superviseur avant d'arriver ici. Les annuaires
+//! sont lus avant toute création.
+//! **Catégorie** : `categoryId` est facultatif ; absent, l'API prend la première catégorie visible
+//! de la cible, ou répond `409 no_default_category` (traduit en erreur claire pour l'agent).
 //! Le modèle de l'app (`'voice'`) est traduit en `'vocal'` (valeur du schéma de l'API).
+
+use std::collections::BTreeMap;
 
 use rsa::rand_core::{TryCryptoRng, TryRng};
 use rsa::sha2::Sha256;
@@ -107,12 +110,78 @@ fn unknown_with(created: Vec<Value>) -> Outcome {
     Outcome::Failed(json!({ "error": "unknown_outcome", "note": super::UNKNOWN_OUTCOME_NOTE, "threads": created }))
 }
 
+/// Code de l'API traduit en erreur claire pour l'agent (Q23).
+pub const NO_DEFAULT_CATEGORY: &str = "no_default_category";
+
+fn code_note(code: &str) -> Option<&'static str> {
+    (code == NO_DEFAULT_CATEGORY).then_some(
+        "Aucune catégorie visible dans cette cible pour y placer le salon : l'organisation ou l'espace n'a pas de catégorie accessible à l'utilisateur. Aucun salon n'a été créé pour cette entrée ; demande à l'utilisateur d'en créer une ou d'indiquer un categoryId.",
+    )
+}
+
+fn failure(code: &str, threads: Option<&[Value]>) -> Value {
+    let mut v = json!({ "error": code });
+    if let Some(note) = code_note(code) {
+        crate::json_set(&mut v, "note", json!(note));
+    }
+    if let Some(t) = threads {
+        crate::json_set(&mut v, "threads", json!(t));
+    }
+    v
+}
+
 fn api_failure(r: &crate::api::ApiResponse) -> Outcome {
     match r.code() {
         Some("lease_conflict") => Outcome::LeaseLost,
-        Some(c) => error(c),
+        Some(c) => Outcome::Failed(failure(c, None)),
         None => error("tool_failed"),
     }
+}
+
+/// Membres à la clé lisible, et nombre d'écartés.
+type Directory = (Vec<(String, PublicKey)>, usize);
+
+/// Annuaire des destinataires possibles d'une cible : membres de l'org (accueil) ou de l'espace
+/// (`?spaceId=`, Q23). Réponse déjà passée par le contrôle d'épinglage du superviseur
+/// (`member_keys_gate`) : le worker ne lit jamais d'annuaire d'une autre route. Rend les membres
+/// dont la clé est lisible et le nombre d'écartés ; une erreur est rendue telle quelle au modèle.
+async fn directory(ctx: &ToolCtx<'_>, space: Option<&str>) -> Result<Directory, Outcome> {
+    let path = match space {
+        Some(s) => format!("{PREFIX}/e2ee/members/keys?spaceId={s}"),
+        None => format!("{PREFIX}/e2ee/members/keys"),
+    };
+    let Ok(members) = ctx.api.call(HttpMethod::Get, &path, None).await else {
+        return Err(error("tool_failed"));
+    };
+    if !members.ok() {
+        if members.code() == Some(MEMBER_KEY_CHANGED) {
+            // Q25 : le superviseur a refusé l'annuaire (clé d'un membre changée sans preuve) ; rien
+            // n'est scellé, aucun salon n'est créé.
+            return Err(Outcome::Failed(json!({ "error": MEMBER_KEY_CHANGED,
+                "note": "La clé de chiffrement d'un membre a changé sans preuve : aucun salon n'a été créé. L'administrateur du runtime doit vérifier cette clé (tableau de bord) avant de réessayer." })));
+        }
+        return Err(api_failure(&members));
+    }
+    let list = members.body.get("members").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    let usable: Vec<(String, PublicKey)> = list
+        .iter()
+        .filter_map(|m| {
+            let id = m.get("userId")?.as_str()?;
+            runtime_protocol::ids::is_identifier(id).then_some(())?;
+            Some((id.to_owned(), rsa_public_from_jwk(m.get("publicKey")?)?))
+        })
+        .collect();
+    // Membres écartés (clé illisible ou trop courte) : signalés au modèle, jamais en silence.
+    let skipped = list.len().saturating_sub(usable.len());
+    Ok((usable, skipped))
+}
+
+/// Salon demandé, arguments validés.
+struct Wanted<'a> {
+    name: &'a str,
+    kind: &'static str,
+    space: Option<&'a str>,
+    category: Option<&'a str>,
 }
 
 /// Exécute l'outil.
@@ -123,35 +192,9 @@ pub async fn run(ctx: &ToolCtx<'_>, args: &Value) -> Outcome {
     if list.len() > MAX_THREADS_PER_CALL {
         return error("too_many_threads");
     }
-    let Ok(members) = ctx.api.call(HttpMethod::Get, &format!("{PREFIX}/e2ee/members/keys"), None).await else {
-        return error("tool_failed");
-    };
-    if !members.ok() {
-        if members.code() == Some(MEMBER_KEY_CHANGED) {
-            // Q25 : le superviseur a refusé l'annuaire (clé d'un membre changée sans preuve) ; rien
-            // n'est scellé, aucun salon n'est créé.
-            return Outcome::Failed(json!({ "error": MEMBER_KEY_CHANGED,
-                "note": "La clé de chiffrement d'un membre a changé sans preuve : aucun salon n'a été créé. L'administrateur du runtime doit vérifier cette clé (tableau de bord) avant de réessayer." }));
-        }
-        return api_failure(&members);
-    }
-    let listed = members.body.get("members").and_then(Value::as_array).map_or(0, Vec::len);
-    let members: Vec<(String, PublicKey)> = members
-        .body
-        .get("members")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|m| {
-            let id = m.get("userId")?.as_str()?;
-            runtime_protocol::ids::is_identifier(id).then_some(())?;
-            Some((id.to_owned(), rsa_public_from_jwk(m.get("publicKey")?)?))
-        })
-        .collect();
-    // Membres écartés (clé illisible ou trop courte) : signalés au modèle, jamais en silence.
-    let skipped = listed.saturating_sub(members.len());
-    let mut created = Vec::new();
+    // Arguments validés d'abord, puis annuaires lus **avant** toute création : un refus d'annuaire
+    // n'a donc jamais créé de salon.
+    let mut wanted = Vec::new();
     for t in list {
         let name = t.get("name").and_then(Value::as_str).unwrap_or_default();
         if name.is_empty() || name.chars().count() > 255 {
@@ -165,9 +208,30 @@ pub async fn run(ctx: &ToolCtx<'_>, args: &Value) -> Outcome {
         if space.is_some_and(|s| !runtime_protocol::ids::is_identifier(s)) {
             return error("invalid_arguments");
         }
+        // `categoryId` est facultatif (Q23) : absent, l'API choisit la première catégorie visible.
+        let category = t.get("categoryId").and_then(Value::as_str).filter(|c| runtime_protocol::ids::is_identifier(c));
+        wanted.push(Wanted { name, kind, space, category });
+    }
+    let mut directories: BTreeMap<Option<&str>, Directory> = BTreeMap::new();
+    for w in &wanted {
+        if let std::collections::btree_map::Entry::Vacant(slot) = directories.entry(w.space) {
+            match directory(ctx, w.space).await {
+                Ok(d) => {
+                    slot.insert(d);
+                }
+                Err(outcome) => return outcome,
+            }
+        }
+    }
+    let mut skipped = 0usize;
+    let mut created = Vec::new();
+    for w in &wanted {
+        let Wanted { name, kind, space, category } = *w;
+        let Some((members, skipped_here)) = directories.get(&space) else { return error("tool_failed") };
+        skipped = skipped.saturating_add(*skipped_here);
         let Ok(key) = SymmetricKey::generate(&mut OsRandom) else { return error("tool_failed") };
-        let recipients: Vec<&(String, PublicKey)> =
-            members.iter().filter(|(id, _)| space.is_none() || id == ctx.user_id).collect();
+        // Accueil : tous les membres de l'org ; espace : ses membres (l'API ne rend que ceux-là).
+        let recipients: Vec<&(String, PublicKey)> = members.iter().collect();
         if recipients.len() > MAX_RECIPIENTS {
             // Corps du canal ≤ 256 Kio (04 §4.3) : erreur explicite plutôt qu'un écartement.
             return Outcome::Failed(
@@ -188,8 +252,7 @@ pub async fn run(ctx: &ToolCtx<'_>, args: &Value) -> Outcome {
         if let Some(s) = space {
             crate::json_set(&mut body, "spaceId", json!(s));
         }
-        if let Some(c) = t.get("categoryId").and_then(Value::as_str).filter(|c| runtime_protocol::ids::is_identifier(c))
-        {
+        if let Some(c) = category {
             crate::json_set(&mut body, "categoryId", json!(c));
         }
         let r = match super::sent(ctx.api.call(HttpMethod::Post, &format!("{PREFIX}/e2ee/threads"), Some(&body)).await)
@@ -209,7 +272,7 @@ pub async fn run(ctx: &ToolCtx<'_>, args: &Value) -> Outcome {
             return if created.is_empty() {
                 api_failure(&r)
             } else {
-                Outcome::Failed(json!({ "error": r.code().unwrap_or("tool_failed"), "threads": created }))
+                Outcome::Failed(failure(r.code().unwrap_or("tool_failed"), Some(&created)))
             };
         }
         let Some(thread_id) =

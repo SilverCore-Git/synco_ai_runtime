@@ -105,6 +105,10 @@ pub struct ApiState {
     pub events: Vec<Value>,
     pub pushes: Vec<String>,
     pub members: Value,
+    /// Annuaires par espace (`GET /e2ee/members/keys?spaceId=`).
+    pub space_members: std::collections::BTreeMap<String, Value>,
+    /// Code d'erreur de `POST /e2ee/threads` (409) quand l'entrée n'a pas de `categoryId` (Q23).
+    pub no_default_category: bool,
     pub threads_created: Vec<Value>,
     pub envelopes: Vec<(String, Value)>,
     pub entries: Vec<(String, Value)>,
@@ -205,6 +209,14 @@ impl FakeApi {
                 (200, json!({ "ticket": format!("sgt1.test{}", st.tickets), "expiresAt": "2030-01-01T00:00:00.000Z", "url": "https://gw.example.com" }))
             }),
             // `members` = {"error": …} : le superviseur a remplacé l'annuaire (Q25, 409).
+            // `?spaceId=` : membres de cet espace (`space_members`), 403 sinon.
+            ("GET", ["e2ee", "members", "keys"]) if query.starts_with("spaceId=") => self.with(|st| {
+                match st.space_members.get(query.trim_start_matches("spaceId=")) {
+                    Some(m) if m.get("error").is_some() => (409, m.clone()),
+                    Some(m) => (200, json!({ "members": m })),
+                    None => err(403, "forbidden"),
+                }
+            }),
             ("GET", ["e2ee", "members", "keys"]) if self.with(|st| st.members.get("error").is_some()) => {
                 self.with(|st| (409, st.members.clone()))
             }
@@ -225,6 +237,9 @@ impl FakeApi {
                     }
                     if json.get("commitment").is_some() || json.get("creatorId").is_some() {
                         return err(400, "invalid_body");
+                    }
+                    if st.no_default_category && json.get("categoryId").is_none() {
+                        return err(409, "no_default_category");
                     }
                     let id = format!("cm3threadnew{n:013}");
                     st.threads_created.push(json.clone());

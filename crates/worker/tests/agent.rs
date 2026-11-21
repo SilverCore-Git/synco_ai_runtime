@@ -548,6 +548,10 @@ async fn outil_e2ee_create_thread_enveloppe_rt1_et_entree() {
     ] });
     llm.push(Script::ok(sse_tool("call_t", "create_thread", &args, (10, 3))));
     llm.push(Script::ok(sse_text(&["Salons créés."], (10, 3))));
+    api.with(|st| {
+        let both = st.members.clone();
+        st.space_members.insert(SPACE.into(), both);
+    });
     let mut ini = init(1);
     ini.tool_policy = policy(&[("create_thread", ToolPolicy::Auto)]);
     let (peer, _t) = spawn_worker(&api, &llm, ini, default_keys(false));
@@ -557,13 +561,22 @@ async fn outil_e2ee_create_thread_enveloppe_rt1_et_entree() {
     let (created, envelopes, entries) =
         api.with(|st| (st.threads_created.clone(), st.envelopes.clone(), st.entries.clone()));
     assert_eq!(created.len(), 2);
-    // Accueil : tous les membres dont la clé RSA est lisible ; espace : le seul propriétaire.
+    // Accueil : tous les membres dont la clé RSA est lisible ; espace : les membres de l'espace
+    // (`GET /e2ee/members/keys?spaceId=`, Q23).
     let home_keys: Vec<&str> =
         created[0]["keys"].as_array().unwrap().iter().map(|k| k["userId"].as_str().unwrap()).collect();
     assert_eq!(home_keys, [USER, MEMBER]);
     let space_keys: Vec<&str> =
         created[1]["keys"].as_array().unwrap().iter().map(|k| k["userId"].as_str().unwrap()).collect();
-    assert_eq!(space_keys, [USER]);
+    assert_eq!(space_keys, [USER, MEMBER]);
+    api.with(|st| {
+        let dirs: Vec<&str> =
+            st.seen.iter().filter(|r| r.path.contains("/members/keys")).map(|r| r.path.as_str()).collect();
+        assert_eq!(
+            dirs,
+            ["/api/runtime/v1/e2ee/members/keys", &format!("/api/runtime/v1/e2ee/members/keys?spaceId={SPACE}")]
+        );
+    });
     assert_eq!(created[1]["type"], "vocal");
     assert_eq!(created[1]["spaceId"], SPACE);
     assert_eq!(created[0]["categoryId"], "cm3categoryhome0000000001");
@@ -955,6 +968,57 @@ async fn create_thread_refuse_si_une_cle_de_membre_a_change() {
     let result = &msgs.iter().find(|m| m["role"] == "tool").unwrap()["toolResult"];
     assert_eq!(result["error"], "member_key_changed");
     assert!(result.get("threads").is_none());
+}
+
+/// Lance `create_thread` avec `threads` et rend le résultat de l'outil (message `tool`).
+async fn create_thread_result(api: &FakeApi, threads: Value) -> Value {
+    let llm = FakeLlm::start();
+    api.deposit_message(M1, "Crée les salons");
+    llm.push(Script::ok(sse_tool("call_t", "create_thread", &json!({ "threads": threads }), (10, 3))));
+    llm.push(Script::ok(sse_text(&["Fait."], (10, 3))));
+    let mut ini = init(1);
+    ini.tool_policy = policy(&[("create_thread", ToolPolicy::Auto)]);
+    let (peer, _t) = spawn_worker(api, &llm, ini, default_keys(false));
+    assert_eq!(peer.wait_done().await, DoneReason::Idle);
+    let msgs = api.clear_messages();
+    msgs.iter().find(|m| m["role"] == "tool").unwrap()["toolResult"].clone()
+}
+
+/// Q23 : `no_default_category` (409) est traduit en erreur claire ; sans `categoryId`, le corps
+/// n'en porte pas (l'API choisit).
+#[tokio::test]
+async fn create_thread_sans_categorie_par_defaut() {
+    let api = FakeApi::new();
+    api.with(|st| st.no_default_category = true);
+    let r = create_thread_result(&api, json!([{ "name": "Projets", "type": "text" }])).await;
+    assert_eq!(r["error"], "no_default_category");
+    assert!(r["note"].as_str().unwrap().contains("catégorie"), "{r}");
+    api.with(|st| {
+        assert!(st.threads_created.is_empty());
+        assert!(st.envelopes.is_empty() && st.entries.is_empty());
+    });
+}
+
+/// Q23 : un espace dont l'annuaire est refusé (403) ou dont une clé a changé (409, épinglage) ne
+/// laisse créer **aucun** salon, pas même celui de l'accueil demandé avant.
+#[tokio::test]
+async fn create_thread_annuaire_d_espace_refuse_avant_toute_creation() {
+    for (dir, expected) in [(None, "forbidden"), (Some(json!({ "error": "member_key_changed" })), "member_key_changed")]
+    {
+        let api = FakeApi::new();
+        if let Some(d) = dir {
+            api.with(|st| {
+                st.space_members.insert(SPACE.into(), d);
+            });
+        }
+        let r =
+            create_thread_result(&api, json!([{ "name": "Projets" }, { "name": "Équipe", "spaceId": SPACE }])).await;
+        assert_eq!(r["error"], expected);
+        api.with(|st| {
+            assert!(st.threads_created.is_empty(), "aucun salon créé");
+            assert!(st.envelopes.is_empty() && st.entries.is_empty());
+        });
+    }
 }
 
 /// M5 : arguments tronqués (`finish_reason: length`) : outil jamais exécuté, erreur au modèle.

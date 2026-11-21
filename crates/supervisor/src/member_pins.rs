@@ -22,6 +22,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -37,6 +38,12 @@ pub const MEMBER_PINS_FILE: &str = "member-rsa-pins.json";
 pub const MIN_RSA_BITS: usize = 2048;
 /// Taille maximale (comme `rsa::PublicKey::MAX_SIZE`).
 pub const MAX_RSA_BITS: usize = 8192;
+/// Épingles au plus par org (l'app vise 100 membres) ; au-delà, refus fermé (`member_pins_limit`).
+pub const MAX_PINS_PER_ORG: usize = 2000;
+/// Empreintes précédentes gardées par membre (refus des retours arrière).
+pub const MAX_PREVIOUS: usize = 16;
+/// Clés en attente au plus par org ; au-delà, le refus reste fermé mais n'est plus mémorisé.
+pub const MAX_PENDING_PER_ORG: usize = 100;
 
 // ---------------------------------------------------------------------------
 // Empreintes
@@ -262,6 +269,32 @@ pub enum Verdict {
     Trusted,
     /// Clé différente de l'épinglée (rien n'est modifié).
     Changed,
+    /// Première vue, mais l'org a déjà [`MAX_PINS_PER_ORG`] épingles : rien n'est épinglé.
+    Full,
+}
+
+/// État à écrire, pris sous le verrou d'état et écrit **hors** de lui ([`Self::write`], par
+/// exemple dans `spawn_blocking`) : une seule écriture atomique (`rename`) par réponse.
+#[derive(Debug)]
+pub struct PinSnapshot {
+    path: PathBuf,
+    bytes: Vec<u8>,
+    generation: u64,
+    written: Arc<Mutex<u64>>,
+}
+
+impl PinSnapshot {
+    /// Écrit l'état (fichier temporaire, `fsync`, `rename`). Les écritures sont sérialisées et
+    /// une photo plus ancienne que la dernière écrite est ignorée : l'ordre est préservé.
+    pub fn write(self) -> Result<()> {
+        let mut last = self.written.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.generation <= *last {
+            return Ok(());
+        }
+        crate::seal::write_atomic(&self.path, &self.bytes)?;
+        *last = self.generation;
+        Ok(())
+    }
 }
 
 /// Magasin des épingles RSA des membres.
@@ -269,6 +302,9 @@ pub enum Verdict {
 pub struct MemberPinStore {
     path: Option<PathBuf>,
     file: PinFile,
+    dirty: bool,
+    generation: u64,
+    written: Arc<Mutex<u64>>,
 }
 
 impl Default for MemberPinStore {
@@ -281,7 +317,11 @@ impl MemberPinStore {
     /// Magasin en mémoire seulement (tests).
     #[must_use]
     pub fn in_memory() -> Self {
-        Self { path: None, file: PinFile { v: 1, orgs: BTreeMap::new() } }
+        Self::with(None, PinFile { v: 1, orgs: BTreeMap::new() })
+    }
+
+    fn with(path: Option<PathBuf>, file: PinFile) -> Self {
+        Self { path, file, dirty: false, generation: 0, written: Arc::new(Mutex::new(0)) }
     }
 
     /// Ouvre `member-rsa-pins.json` (absent : vide). Illisible : erreur (jamais un épinglage remis
@@ -295,19 +335,32 @@ impl MemberPinStore {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => PinFile { v: 1, orgs: BTreeMap::new() },
             Err(e) => return Err(Error::Io(format!("{MEMBER_PINS_FILE} : {}", e.kind()))),
         };
-        Ok(Self { path: Some(path), file })
+        Ok(Self::with(Some(path), file))
     }
 
     fn persist(&mut self) {
-        // Seul le format courant est écrit.
+        self.dirty = true;
+    }
+
+    /// Photo de l'état modifié depuis la dernière (`None` : rien à écrire, ou magasin en mémoire).
+    /// Seul le format courant est écrit.
+    pub fn snapshot(&mut self) -> Result<Option<PinSnapshot>> {
+        let Some(path) = self.path.clone().filter(|_| self.dirty) else {
+            self.dirty = false;
+            return Ok(None);
+        };
         self.file.v = 1;
-        if let Some(path) = &self.path {
-            let saved = serde_json::to_vec_pretty(&self.file)
-                .map_err(|_| Error::Io("sérialisation".into()))
-                .and_then(|bytes| crate::seal::write_atomic(path, &bytes));
-            if let Err(e) = saved {
-                tracing::warn!(code = "member_pins_not_saved", error = %e, "épingles RSA non enregistrées");
-            }
+        let bytes = serde_json::to_vec_pretty(&self.file).map_err(|_| Error::Io("sérialisation".into()))?;
+        self.dirty = false;
+        self.generation = self.generation.saturating_add(1);
+        Ok(Some(PinSnapshot { path, bytes, generation: self.generation, written: Arc::clone(&self.written) }))
+    }
+
+    /// Écrit tout de suite (tests, outils) : à ne pas appeler sous le verrou d'état.
+    pub fn flush(&mut self) -> Result<()> {
+        match self.snapshot()? {
+            Some(snap) => snap.write(),
+            None => Ok(()),
         }
     }
 
@@ -323,6 +376,7 @@ impl MemberPinStore {
         match users.get(user_id) {
             Some(pin) if pin.fingerprint == key.fingerprint => Verdict::Trusted,
             Some(_) => Verdict::Changed,
+            None if users.len() >= MAX_PINS_PER_ORG => Verdict::Full,
             None => {
                 users.insert(
                     user_id.to_owned(),
@@ -344,6 +398,8 @@ impl MemberPinStore {
         if let Some(pin) = self.file.orgs.get_mut(org_id).and_then(|m| m.get_mut(user_id)) {
             let old = core::mem::replace(&mut pin.fingerprint, key.fingerprint.clone());
             pin.previous.push(old);
+            let excess = pin.previous.len().saturating_sub(MAX_PREVIOUS);
+            pin.previous.drain(..excess);
             pin.thumbprint.clone_from(&key.thumbprint);
             pin.pending = None;
             self.persist();
@@ -369,7 +425,10 @@ impl MemberPinStore {
     /// Refus : la clé présentée est mise en attente (la dernière remplace la précédente) pour
     /// décision de l'admin du runtime. Journal sans clé ni empreinte.
     pub fn refuse(&mut self, org_id: &str, user_id: &str, key: &MemberKey, now: u64) {
-        if let Some(pin) = self.file.orgs.get_mut(org_id).and_then(|m| m.get_mut(user_id)) {
+        let pending_count = self.pending(org_id).len();
+        if let Some(pin) = self.file.orgs.get_mut(org_id).and_then(|m| m.get_mut(user_id))
+            && (pin.pending.is_some() || pending_count < MAX_PENDING_PER_ORG)
+        {
             pin.pending = Some(PendingKey {
                 fingerprint: key.fingerprint.clone(),
                 thumbprint: key.thumbprint.clone(),
@@ -548,6 +607,45 @@ mod tests {
     }
 
     #[test]
+    fn bornes() {
+        let mut s = MemberPinStore::in_memory();
+        let k = key(1);
+        for i in 0..MAX_PINS_PER_ORG {
+            assert_eq!(s.check("o", &format!("u{i}"), &k, 1), Verdict::Pinned);
+        }
+        assert_eq!(s.check("o", "nouveau", &k, 1), Verdict::Full, "plafond par org");
+        assert_eq!(s.check("o", "u0", &k, 1), Verdict::Trusted, "les épinglés restent vérifiés");
+        assert_eq!(s.check("autre", "nouveau", &k, 1), Verdict::Pinned, "plafond par org");
+        for i in 0..=MAX_PENDING_PER_ORG {
+            s.refuse("o", &format!("u{i}"), &key(2), 2);
+        }
+        assert_eq!(s.pending("o").len(), MAX_PENDING_PER_ORG, "attente bornée");
+        let mut s = MemberPinStore::in_memory();
+        s.check("o", "u", &key(0), 1);
+        for seed in 1..=40u8 {
+            let from = s.get("o", "u").unwrap().fingerprint.clone();
+            assert!(s.rotate("o", "u", &from, &key(seed)));
+        }
+        assert_eq!(s.get("o", "u").unwrap().previous.len(), MAX_PREVIOUS);
+    }
+
+    #[test]
+    fn ecriture_hors_verrou_et_dans_l_ordre() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = MemberPinStore::open(dir.path()).unwrap();
+        assert!(s.snapshot().unwrap().is_none(), "rien à écrire");
+        s.check("o", "u1", &key(1), 1);
+        let first = s.snapshot().unwrap().unwrap();
+        s.check("o", "u2", &key(2), 1);
+        let second = s.snapshot().unwrap().unwrap();
+        assert!(s.snapshot().unwrap().is_none(), "une photo par lot de modifications");
+        second.write().unwrap();
+        first.write().unwrap();
+        let reopened = MemberPinStore::open(dir.path()).unwrap();
+        assert!(reopened.get("o", "u2").is_some(), "la photo la plus ancienne n'écrase pas la plus récente");
+    }
+
+    #[test]
     fn persistance_et_fichier_public() {
         let dir = tempfile::tempdir().unwrap();
         {
@@ -555,6 +653,7 @@ mod tests {
             s.check("o1", "u1", &key(1), 1);
             assert_eq!(s.check("o1", "u1", &key(2), 2), Verdict::Changed);
             s.refuse("o1", "u1", &key(2), 2);
+            s.flush().unwrap();
         }
         // « Redémarrage » : nouvelle ouverture du fichier.
         let mut s = MemberPinStore::open(dir.path()).unwrap();

@@ -72,9 +72,13 @@ impl OverviewSource for Runtime {
 
     fn accept_member_key(&self, user_id: String, fingerprint: String) -> BoxFuture<'_, bool> {
         Box::pin(async move {
-            let mut st = self.state.lock().await;
-            let Some(org) = st.org_id.clone() else { return false };
-            st.member_pins.accept_pending(&org, &user_id, &fingerprint)
+            let (accepted, snapshot) = {
+                let mut st = self.state.lock().await;
+                let Some(org) = st.org_id.clone() else { return false };
+                let accepted = st.member_pins.accept_pending(&org, &user_id, &fingerprint);
+                (accepted, st.member_pins.snapshot())
+            };
+            self.save_member_pins(snapshot).await && accepted
         })
     }
 }

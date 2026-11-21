@@ -164,6 +164,23 @@ impl Runtime {
         Ok(())
     }
 
+    /// Écrit une photo des épingles RSA des membres **hors** du verrou d'état (`spawn_blocking`).
+    /// Échec : alerte `member_pins_not_saved` au dashboard et `false` (l'appelant refuse, fermé).
+    pub async fn save_member_pins(
+        &self,
+        snapshot: crate::error::Result<Option<crate::member_pins::PinSnapshot>>,
+    ) -> bool {
+        let saved = match snapshot {
+            Ok(None) => return true,
+            Ok(Some(snap)) => matches!(tokio::task::spawn_blocking(move || snap.write()).await, Ok(Ok(()))),
+            Err(_) => false,
+        };
+        if !saved {
+            self.state.lock().await.alert(now_secs(), "member_pins_not_saved");
+        }
+        saved
+    }
+
     /// Ouvre une délégation : mandat (clé épinglée TOFU, 03 §4) → enveloppe de tête (03 §3), par
     /// `accept_delegation` uniquement → entrées (03 §5). Puis `status` à l'API (sans cause).
     pub async fn open_delegation(self: &Arc<Self>, record: &DelegationRecord) -> Result<(), DelegationFailure> {

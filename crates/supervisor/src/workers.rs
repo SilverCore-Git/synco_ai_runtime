@@ -320,14 +320,24 @@ pub const MEMBER_KEY_CHANGED: &str = "member_key_changed";
 /// Vérifications de rotation (appels `sign-key`) au plus par réponse de l'annuaire.
 const MAX_ROTATION_LOOKUPS: usize = 8;
 
+/// Plafond d'épingles RSA atteint pour l'org : refus fermé.
+pub const MEMBER_PINS_LIMIT: &str = "member_pins_limit";
+/// Épingles RSA non enregistrées (ou runtime désappairé) : refus fermé.
+pub const MEMBER_PINS_UNAVAILABLE: &str = "member_pins_unavailable";
+
 /// Épinglage TOFU des clés RSA des membres (Q25, `member_pins`), appliqué par le superviseur à la
-/// réponse 2xx de [`MEMBER_KEYS_PATH`] **avant** que le worker la voie. Rend `false` si une clé au
-/// moins a changé sans chaîne d'identité valide : la réponse entière est alors remplacée par
-/// `409 member_key_changed` (refus global, aucun scellement). Un membre dont la clé est illisible
-/// ou hors bornes n'est pas épinglé : le worker l'écarte lui-même (`skippedRecipients`).
-pub(crate) async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> bool {
+/// réponse 2xx de [`MEMBER_KEYS_PATH`] **avant** que le worker la voie. `Err(code)` : la réponse
+/// entière est remplacée par une erreur (refus global, aucun scellement) — [`MEMBER_KEY_CHANGED`]
+/// (une clé a changé sans chaîne d'identité valide), [`MEMBER_PINS_LIMIT`],
+/// [`MEMBER_PINS_UNAVAILABLE`]. Un membre dont la clé est illisible ou hors bornes n'est pas
+/// épinglé : le worker l'écarte lui-même (`skippedRecipients`).
+///
+/// Le verrou d'état n'est tenu que pour les comparaisons ; l'état est écrit **une fois** par étape,
+/// hors du verrou (`Runtime::save_member_pins`), et l'écriture doit réussir avant que la réponse
+/// soit rendue (sinon refus fermé).
+pub async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> Result<(), &'static str> {
     use crate::member_pins::{MemberKey, SignHistory, Verdict, chain_vouches};
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else { return true };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else { return Ok(()) };
     let listed: Vec<(String, MemberKey)> = value
         .get("members")
         .and_then(serde_json::Value::as_array)
@@ -340,26 +350,40 @@ pub(crate) async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> bool {
         })
         .collect();
     let now = now_secs();
-    // (utilisateur, clé présentée, empreinte épinglée, clés de signature épinglées, ancienne → courante)
-    let (org, changed) = {
+    // (utilisateur, clé présentée, empreinte épinglée, clés de signature épinglées, liaison RSA)
+    let (org, changed, full, snapshot) = {
         let mut st = rt.state.lock().await;
-        let Some(org) = st.org_id.clone() else { return false };
+        let Some(org) = st.org_id.clone() else { return Err(MEMBER_PINS_UNAVAILABLE) };
         let mut changed = Vec::new();
+        let mut full = false;
         for (user, key) in listed {
-            if st.member_pins.check(&org, &user, &key, now) == Verdict::Changed {
-                let from = st.member_pins.get(&org, &user).map(|p| p.fingerprint.clone()).unwrap_or_default();
-                let (sign, bound): (Vec<String>, Option<String>) = st
-                    .pins
-                    .get(&user)
-                    .map(|p| (p.previous.iter().chain([&p.sign_key]).cloned().collect(), p.rsa_fingerprint.clone()))
-                    .unwrap_or_default();
-                changed.push((user, key, from, sign, bound));
+            match st.member_pins.check(&org, &user, &key, now) {
+                Verdict::Pinned | Verdict::Trusted => {}
+                Verdict::Full => full = true,
+                Verdict::Changed => {
+                    let from = st.member_pins.get(&org, &user).map(|p| p.fingerprint.clone()).unwrap_or_default();
+                    let (sign, bound): (Vec<String>, Option<String>) = st
+                        .pins
+                        .get(&user)
+                        .map(|p| (p.previous.iter().chain([&p.sign_key]).cloned().collect(), p.rsa_fingerprint.clone()))
+                        .unwrap_or_default();
+                    changed.push((user, key, from, sign, bound));
+                }
             }
         }
-        (org, changed)
+        if full {
+            st.alert(now, "member_pins_limit");
+        }
+        (org, changed, full, st.member_pins.snapshot())
     };
+    if !rt.save_member_pins(snapshot).await {
+        return Err(MEMBER_PINS_UNAVAILABLE);
+    }
+    if full {
+        return Err(MEMBER_PINS_LIMIT);
+    }
     if changed.is_empty() {
-        return true;
+        return Ok(());
     }
     // Rotation légitime : chaîne de transitions partant de la clé de signature épinglée (03 §4).
     // Seuls les utilisateurs qui ont délégué à ce runtime ont une telle épingle (et une route
@@ -376,22 +400,32 @@ pub(crate) async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> bool {
                 Err(_) => false,
             };
         let mut st = rt.state.lock().await;
+        // Désappairé ou réappairé pendant l'appel réseau : rien n'est installé.
         if st.org_id.as_deref() != Some(org.as_str()) {
-            return false;
+            return Err(MEMBER_PINS_UNAVAILABLE);
         }
         if !(vouched && st.member_pins.rotate(&org, &user, &from, &key)) {
             refused.push((user, key));
         }
     }
-    if refused.is_empty() {
-        return true;
+    let snapshot = {
+        let mut st = rt.state.lock().await;
+        if st.org_id.as_deref() != Some(org.as_str()) {
+            return Err(MEMBER_PINS_UNAVAILABLE);
+        }
+        for (user, key) in &refused {
+            st.member_pins.refuse(&org, user, key, now);
+        }
+        if !refused.is_empty() {
+            st.alert(now, "member_rsa_key_changed");
+        }
+        st.member_pins.snapshot()
+    };
+    let saved = rt.save_member_pins(snapshot).await;
+    if !refused.is_empty() {
+        return Err(MEMBER_KEY_CHANGED);
     }
-    let mut st = rt.state.lock().await;
-    for (user, key) in &refused {
-        st.member_pins.refuse(&org, user, key, now);
-    }
-    st.alert(now, "member_rsa_key_changed");
-    false
+    if saved { Ok(()) } else { Err(MEMBER_PINS_UNAVAILABLE) }
 }
 
 fn created_key_error(reference: &str, code: &str) -> pipe::CreatedKeyMsg {
@@ -744,9 +778,9 @@ async fn relay(
                 let member_keys = req.method == pipe::HttpMethod::Get
                     && req.path.split('?').next() == Some(MEMBER_KEYS_PATH)
                     && (200..300).contains(&r.status);
-                if member_keys && !member_keys_gate(&rt, &r.body).await {
+                if member_keys && let Err(code) = member_keys_gate(&rt, &r.body).await {
                     let headers = [("content-type".to_owned(), "application/json".to_owned())].into_iter().collect();
-                    let body = format!(r#"{{"error":"{MEMBER_KEY_CHANGED}"}}"#);
+                    let body = serde_json::json!({ "error": code }).to_string();
                     for p in SignedResponse::split(&req.id, 409, &headers, body.as_bytes()) {
                         if tx.send(ToWorker::Json(SupervisorMsg::SignedRequestResponse(p))).await.is_err() {
                             break;

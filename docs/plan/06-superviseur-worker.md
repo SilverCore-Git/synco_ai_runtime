@@ -208,8 +208,14 @@ relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pi
   `computeKeyFingerprint` de l'app, pour l'affichage et la comparaison hors bande.
 - **Stockage** : `<state_dir>/member-rsa-pins.json`, données publiques (empreintes, jamais la clé),
   `{ "v": 1, "orgs": { org: { userId: { fingerprint, thumbprint, firstSeen, previous[], pending? } } } }`,
-  écriture atomique. Absent : vide ; illisible : le superviseur ne démarre pas (pas de remise à zéro
-  silencieuse).
+  écriture atomique (`fsync` + `rename`) **une fois par étape de contrôle, hors du verrou d'état**
+  (`spawn_blocking`, photos ordonnées : une plus ancienne n'écrase jamais une plus récente) ; la
+  réponse n'est rendue au worker qu'après l'écriture (échec : refus fermé `member_pins_unavailable`
+  et alerte `member_pins_not_saved`). Absent : vide ; illisible : le superviseur ne démarre pas (pas
+  de remise à zéro silencieuse). **Bornes** (revue I3) : 2 000 épingles par org (au-delà, refus
+  fermé `member_pins_limit` et alerte), 16 empreintes précédentes par membre, 100 clés en attente
+  par org (au-delà, le refus reste fermé sans être mémorisé). Mesure : 2 000 premières vues dans une
+  réponse en 0,12 s, verrou d'état tenu au plus 16 ms (`integration.rs::cles_rsa_charge_et_plafond`).
 - **Règle**, pour chaque membre de la réponse dont la clé est lisible et dans les bornes (sinon le
   worker l'écarte, `skippedRecipients`) : première vue du couple (org, utilisateur) → épinglée ;
   même empreinte → acceptée ; empreinte différente → **rotation** acceptée seulement selon une

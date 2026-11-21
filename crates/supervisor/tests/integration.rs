@@ -1540,3 +1540,49 @@ async fn cles_rsa_des_membres_epinglees_par_le_superviseur() {
     assert_eq!(reopened.get(ORG, OTHER).unwrap().fingerprint, spki(3));
     assert_eq!(reopened.pending(ORG).len(), 1);
 }
+
+/// Revue I3 : 2 000 premières vues dans une réponse = une seule écriture, hors du verrou d'état
+/// (mesure : durée du contrôle, attente maximale du verrou pendant ce temps) ; au-delà du plafond
+/// d'épingles par org, refus fermé.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cles_rsa_charge_et_plafond() {
+    use synco_ai_runtime::member_pins::MAX_PINS_PER_ORG;
+    use synco_ai_runtime::workers::member_keys_gate;
+    let env = setup().await;
+    wait_until("appairé", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    let rt = Arc::clone(&env.running.runtime);
+    let members: Vec<Value> = (0..MAX_PINS_PER_ORG)
+        .map(|i| json!({ "userId": format!("cm3charge{i:016}"), "publicKey": rsa_jwk(u8::try_from(i % 200).unwrap() + 1) }))
+        .collect();
+    let body = json!({ "members": members }).to_string();
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let probe = {
+        let (rt, stop) = (Arc::clone(&rt), Arc::clone(&stop));
+        tokio::spawn(async move {
+            let mut worst = Duration::ZERO;
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                let t = std::time::Instant::now();
+                drop(rt.state.lock().await);
+                worst = worst.max(t.elapsed());
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            worst
+        })
+    };
+    let t = std::time::Instant::now();
+    assert_eq!(member_keys_gate(&rt, body.as_bytes()).await, Ok(()));
+    let elapsed = t.elapsed();
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let worst = probe.await.unwrap();
+    eprintln!("mesure I3 : {MAX_PINS_PER_ORG} premières vues en {elapsed:?}, attente maximale du verrou {worst:?}");
+    assert!(elapsed < Duration::from_secs(10), "{elapsed:?}");
+    let text = std::fs::read_to_string(env.state_dir.join(synco_ai_runtime::member_pins::MEMBER_PINS_FILE)).unwrap();
+    assert_eq!(text.matches("\"fingerprint\"").count(), MAX_PINS_PER_ORG, "toutes écrites");
+    // Même réponse : rien à écrire, acceptée.
+    assert_eq!(member_keys_gate(&rt, body.as_bytes()).await, Ok(()));
+    // Un membre de plus : plafond, refus fermé, alerte.
+    let more = json!({ "members": [{ "userId": "cm3chargeenplus0000000001", "publicKey": rsa_jwk(1) }] }).to_string();
+    assert_eq!(member_keys_gate(&rt, more.as_bytes()).await, Err("member_pins_limit"));
+    assert!(rt.state.lock().await.alerts.iter().any(|(_, c)| *c == "member_pins_limit"));
+    synco_ai_runtime::app::shutdown(&rt).await;
+}

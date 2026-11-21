@@ -1441,7 +1441,7 @@ fn spki(seed: u8) -> String {
 async fn cles_rsa_des_membres_epinglees_par_le_superviseur() {
     use synco_ai_runtime::dashboard::routes::OverviewSource as _;
     // Le worker scripté fait un `GET /e2ee/members/keys` à chaque ordre reçu et rend la réponse.
-    let (go_tx, go_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let (go_tx, go_rx) = tokio::sync::mpsc::channel::<String>(1);
     let (res_tx, res_rx) = tokio::sync::mpsc::channel::<(u16, Value)>(1);
     let go_rx = Arc::new(tokio::sync::Mutex::new(Some(go_rx)));
     let script: ScriptFn = Arc::new(move |_, io| {
@@ -1451,14 +1451,15 @@ async fn cles_rsa_des_membres_epinglees_par_le_superviseur() {
             let (mut rd, mut wr) = tokio::io::split(io);
             handshake(&mut rd, &mut wr).await;
             let mut n = 0;
-            while go.recv().await.is_some() {
+            while let Some(path) = go.recv().await {
                 n += 1;
                 let id = format!("m{n}");
-                for p in SignedRequest::split(&id, HttpMethod::Get, "/api/runtime/v1/e2ee/members/keys", b"", true) {
+                for p in SignedRequest::split(&id, HttpMethod::Get, &path, b"", true) {
                     wire::write_json(&mut wr, &WorkerMsg::SignedRequest(p)).await.unwrap();
                 }
-                let (status, _, body) = response(&mut rd, &id).await;
-                res_tx.send((status, serde_json::from_slice(&body).unwrap_or(Value::Null))).await.unwrap();
+                let (status, error, body) = response(&mut rd, &id).await;
+                let body = serde_json::from_slice(&body).unwrap_or_else(|_| json!({ "relay": error }));
+                res_tx.send((status, body)).await.unwrap();
             }
             let _ = wire::write_json(&mut wr, &WorkerMsg::Done(wire::DoneMsg { reason: wire::DoneReason::Idle })).await;
         })
@@ -1474,14 +1475,15 @@ async fn cles_rsa_des_membres_epinglees_par_le_superviseur() {
         ])
     };
     let res_rx = Arc::new(tokio::sync::Mutex::new(res_rx));
-    let ask = |m: Value| {
+    let ask_path = |m: Value, path: &str| {
         env.api.with(|st| st.members = m);
-        let (go, res) = (go_tx.clone(), Arc::clone(&res_rx));
+        let (go, res, path) = (go_tx.clone(), Arc::clone(&res_rx), path.to_owned());
         async move {
-            go.send(()).await.unwrap();
+            go.send(path).await.unwrap();
             tokio::time::timeout(Duration::from_secs(10), res.lock().await.recv()).await.unwrap().unwrap()
         }
     };
+    let ask = |m: Value| ask_path(m, "/api/runtime/v1/e2ee/members/keys");
     env.api.push(json!({ "type": "conversation.wake", "sessionId": SESSION, "authId": AUTH, "reason": "inbox" }));
 
     // 1. Première vue : épinglées, réponse transmise telle quelle.
@@ -1490,6 +1492,13 @@ async fn cles_rsa_des_membres_epinglees_par_le_superviseur() {
     assert_eq!(body["members"].as_array().unwrap().len(), 2);
     // 2. Même clé : acceptée.
     assert_eq!(ask(members(1, 2)).await.0, 200);
+    // Revue M1 : variante du chemin (contournerait le contrôle) refusée au relais, sans appel à l'API.
+    let directory_calls =
+        || env.api.with(|st| st.seen.iter().filter(|r| r.path.to_ascii_lowercase().contains("members")).count());
+    let before = directory_calls();
+    let (status, body) = ask_path(members(1, 3), "/api/runtime/v1/e2ee/Members/keys/").await;
+    assert_eq!((status, body), (0, json!({ "relay": "relay_refused" })));
+    assert_eq!(directory_calls(), before, "rien n'est parti vers l'API");
     // 3. Clé substituée (membre sans délégation, donc sans chaîne vérifiable) : refus global.
     let (status, body) = ask(members(1, 3)).await;
     assert_eq!((status, body), (409, json!({ "error": "member_key_changed" })), "aucune clé transmise au worker");

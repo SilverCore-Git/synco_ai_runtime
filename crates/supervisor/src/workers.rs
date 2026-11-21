@@ -320,6 +320,21 @@ pub const MEMBER_KEY_CHANGED: &str = "member_key_changed";
 /// Vérifications de rotation (appels `sign-key`) au plus par réponse de l'annuaire.
 const MAX_ROTATION_LOOKUPS: usize = 8;
 
+/// Variante non canonique du chemin de l'annuaire (casse, `/` final, `//`, segment `.`) : Express
+/// (ni strict, ni sensible à la casse) et la normalisation des URL l'enverraient au même annuaire,
+/// sans passer par [`member_keys_gate`]. Refusée au relais (défense en profondeur, revue M1 ;
+/// l'encodage `%` est déjà refusé par [`worker_path_allowed`]).
+#[must_use]
+pub fn member_keys_variant(path: &str) -> bool {
+    let raw = path.split('?').next().unwrap_or_default();
+    if raw == MEMBER_KEYS_PATH {
+        return false;
+    }
+    let segments: Vec<String> =
+        raw.split('/').filter(|s| !s.is_empty() && *s != ".").map(str::to_ascii_lowercase).collect();
+    format!("/{}", segments.join("/")) == MEMBER_KEYS_PATH
+}
+
 /// Plafond d'épingles RSA atteint pour l'org : refus fermé.
 pub const MEMBER_PINS_LIMIT: &str = "member_pins_limit";
 /// Épingles RSA non enregistrées (ou runtime désappairé) : refus fermé.
@@ -693,6 +708,10 @@ async fn relay(
     if req.id.is_empty() || req.id.len() > 64 {
         return Err("worker_bad_request_id");
     }
+    if member_keys_variant(&req.path) {
+        reply(tx, SignedResponse::failure(&req.id, "relay_refused"));
+        return Ok(());
+    }
     let (req, body, permit, epoch) = {
         let mut st = rt.state.lock().await;
         let owner_delegation = st.vault.get(user_id).map(|d| d.delegation_id().to_owned());
@@ -844,6 +863,21 @@ mod tests {
             "https://ailleurs.example.com/api/runtime/v1/e2ee/threads",
         ] {
             assert!(!worker_path_allowed(bad, s, Some("d1")), "{bad}");
+        }
+        // Revue M1 : variantes de l'annuaire des clés (contrôle d'épinglage contourné sinon).
+        assert!(!member_keys_variant(MEMBER_KEYS_PATH));
+        assert!(!member_keys_variant("/api/runtime/v1/e2ee/members/keys?x=1"));
+        assert!(!member_keys_variant("/api/runtime/v1/e2ee/threads"));
+        for v in [
+            "/api/runtime/v1/e2ee/members/keys/",
+            "/api/runtime/v1/e2ee/Members/Keys",
+            "/API/runtime/v1/e2ee/members/keys",
+            "/api/runtime/v1/e2ee//members/keys",
+            "/api/runtime/v1/e2ee/./members/keys",
+            "/api/runtime/v1/e2ee/members/keys/.",
+            "/api/runtime/v1/e2ee/members/keys/?x=1",
+        ] {
+            assert!(member_keys_variant(v), "{v}");
         }
         assert!(!worker_path_allowed("/api/runtime/v1/delegations/d1/entries", s, None));
     }

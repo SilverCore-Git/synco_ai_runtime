@@ -1289,3 +1289,11 @@ Documentation et vecteurs seulement ; aucun code dans `crates/`, aucune dépenda
   `session::decrypt_field`) et en TS (104, dont `decryptAiField` de `synco_app`).
 - **À valider par l'utilisateur** : le nouveau `kind` `category.create` (non listé jusqu'ici, nécessaire au cas
   demandé) ; les valeurs de concurrence et de nouveaux essais.
+
+## 2026-11-21 — L00f, dernier ajustement (PC59 à PC62)
+
+PC59 (`category.create`, `categoryId`), PC60 (concurrence 4 / 8, 3 nouveaux essais sur `429`) et PC62 (bilan à
+l'expiration d'un plan accepté) validés tels quels. **PC61** : plan de 100 actions au plus (était 20), 2 000 entrées
+d'`after`, clair ≤ 256 Kio, corps de `POST …/plans` ≤ 1 Mio, `plan_too_large` rendu au modèle qui découpe (consigne de
+12 §3.1), groupes 1 à 50 repliés par défaut au-delà de 30 actions (12 §17). Vecteurs : cas à 100 / 101 actions,
+2 000 / 2 001 dépendances, 65 Kio / > 256 Kio ; revérifiés en Rust (71) et en TS (107), code jetable supprimé.

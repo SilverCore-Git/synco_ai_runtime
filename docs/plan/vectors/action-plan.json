@@ -1,5 +1,5 @@
 {
-  "description": "Plan d'action (12 §3–§9, L00f) : clair canonique (RFC 8785, entiers seulement), chiffrement gcm1: sous CK avec l'AAD sessionId:planId:plan, élément plan_result (AAD sessionId:planId:plan_result), condensat serverDigests, validation, cascade de l'acceptation partielle (PC37) et arrêt sur échec. IV fixes : vecteurs seulement. CK de TEST.",
+  "description": "Plan d'action (12 §3–§9, L00f, amendé par PC44 et PC47) : clair canonique (RFC 8785, entiers seulement), chiffrement gcm1: sous CK avec l'AAD sessionId:planId:plan, résultats partiels par phase (plan_result:<k> de l'appareil, plan_agent_result:<k> de l'agent), condensats serverDigests de JCS({tool, args, argsRefs}), verrou et refs, phases de l'ordre libre, validation, cascade (PC37), déroulé par phases et arrêt sur échec. IV fixes : vecteurs seulement. CK de TEST.",
   "keys": {
     "ckHex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
     "otherCkHex": "5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d"
@@ -73,6 +73,20 @@
       }
     ]
   },
+  "planExecutors": [
+    "device",
+    "device",
+    "device",
+    "device",
+    "agent"
+  ],
+  "planPhases": [
+    1,
+    1,
+    1,
+    1,
+    2
+  ],
   "planCanonical": "{\"actions\":[{\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":1},{\"args\":{\"name\":\"annonces\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":2},{\"args\":{\"name\":\"Lancement\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\\n- budget\\n- annonces\\n\",\"name\":\"plan.md\",\"spaceId\":\"cm3spaceexample0000000001\"},\"argsRefs\":{\"folderId\":\"$3.id\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[1],\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.\",\"toolCallId\":\"call_7\",\"v\":1}",
   "aadPlan": "0f0e0d0c-0b0a-4908-8706-050403020100:5b1c2d3e-4f50-4a61-8b72-938495a6b7c8:plan",
   "ivPlanHex": "6d6d6d6d6d6d6d6d6d6d6d6d",
@@ -80,6 +94,7 @@
   "planResult": {
     "v": 1,
     "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+    "phase": 1,
     "outcomes": [
       {
         "n": 1,
@@ -108,20 +123,337 @@
           "id": "cm3filenew00000000000001",
           "spaceId": "cm3spaceexample0000000001"
         }
-      },
-      {
-        "n": 5,
-        "state": "pending"
       }
     ]
   },
-  "planResultCanonical": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"skipped\"},{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":5,\"state\":\"pending\"}],\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
-  "aadPlanResult": "0f0e0d0c-0b0a-4908-8706-050403020100:5b1c2d3e-4f50-4a61-8b72-938495a6b7c8:plan_result",
+  "planResultCanonical": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"skipped\"},{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+  "aadPlanResult": "0f0e0d0c-0b0a-4908-8706-050403020100:5b1c2d3e-4f50-4a61-8b72-938495a6b7c8:plan_result:1",
   "ivPlanResultHex": "7e7e7e7e7e7e7e7e7e7e7e7e",
-  "planResultValue": "gcm1:fn5+fn5+fn5+fn5+TMSPQRj9OMwS46+r7O2XuHDFQdWHZaBMmLvOvjY/uxVDWFEOfrT2XlxDwH6SyvII/twacXYQL4LUWszYUWKDxxKIi9z2bXkCaHnpiIcmEqTverILk556mvQwdHg70b+t0M4HxKSiRt1opor7Z7dv07k564v3hru/FQq6HXImdjq2HEMrTaLADZVjIup2nTPukfSCPrAIRE8f7aTq8evbMmJdJlaBnQ2kPCqCY3rzRz13+aSoX3S5El5S8Y7BMsrh372F2jDm8cir7sRlXBMgDzd35bm83d3vokE+Ia4OS4LRBdmPbLAWzg3EoMsgPdKHnAmIMqwqe2VYc39ZwO+3ScIQ6pWdTlofDwxzj8zIiPhmYOOhdcBMUdENscL9hDLzb8X6vS+pCIA2q02Nr7GSfsjH7KQ9FWB8tHrGWrdU1VS07t7deIEDxpbQqvwpIIOryJErNvDNo+2zKB7X7xBVI/GfQKT99roiZSiylzfvFahS8bF2wrVRhIBD3QJyDFyuSQ2X+U+gKQMhZdxqhFhkGwPoG8CvJSzargzxiFcwSiMVqgOz54ycUvdu1xNwqM9fJrcKR9Dt1UUEx/uGXnltkLTS",
+  "planResultValue": "gcm1:fn5+fn5+fn5+fn5+TMSPQRj9OMwS46+r7O2XuHDFQdWHZaBMmLvOvjY/uxVDWFEOfrT2XlxDwH6SyvII/twacXYQL4LUWszYUWKDxxKIi9z2bXkCaHnpiIcmEqTverILk556mvQwdHg70b+t0M4HxKSiRt1opor7Z7dv07k564v3hru/FQq6HXImdjq2HEMrTaLADZVjIup2nTPukfSCPrAIRE8f7aTq8evbMmJdJlaBnQ2kPCqCY3rzRz13+aSoX3S5El5S8Y7BMsrh372F2jDm8cir7sRlXBMgDzd35bm83d3vokE+Ia4OS4LRBdmPbLAWzg3EoMsgPdKHnAmIMqwqe2VYc39ZwO+3ScIQ6pWdTlofDwxzj8zIiPhmYOOhdcBMUdENscL9hDLzb8X6vS+pCIA2q02Nr7GSfsjH7KQ9FWB8tHrGWrdU1VS07t7deIEDxpbQqvwpIIOryJErNvDNo+2zKB7X7xBVI4DIQLq3rfxrZWH32mH6W/MeyLA6nP4KgZNdskpjGR37QXHD9kHjKlA9Pow5hRBwHF3pEtj6cnjc4Ayxk0drUSoc45kPTyQ7jSsAj3isGRA0seQ=",
+  "mixedPlan": {
+    "planId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+    "plan": {
+      "v": 1,
+      "planId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "toolCallId": "call_9",
+      "createdAt": 1795000000,
+      "expiresAt": 1795604800,
+      "summary": "Je crée l'espace Lancement, j'y range le plan et j'ouvre une tâche de relecture.",
+      "actions": [
+        {
+          "n": 1,
+          "kind": "folder.create",
+          "args": {
+            "spaceId": "cm3spaceexample0000000001",
+            "name": "Archives"
+          }
+        },
+        {
+          "n": 2,
+          "kind": "server.call",
+          "tool": "create_space",
+          "args": {
+            "name": "Lancement"
+          }
+        },
+        {
+          "n": 3,
+          "kind": "folder.create",
+          "args": {
+            "name": "Documents"
+          },
+          "after": [
+            2
+          ],
+          "argsRefs": {
+            "spaceId": "$2.id"
+          }
+        },
+        {
+          "n": 4,
+          "kind": "file.create_text",
+          "args": {
+            "name": "plan.md",
+            "content": "# Plan de lancement\n"
+          },
+          "after": [
+            3
+          ],
+          "argsRefs": {
+            "spaceId": "$3.spaceId",
+            "folderId": "$3.id"
+          }
+        },
+        {
+          "n": 5,
+          "kind": "server.call",
+          "tool": "create_task",
+          "args": {
+            "title": "Relire le plan"
+          },
+          "after": [
+            4
+          ],
+          "argsRefs": {
+            "description": "$4.id"
+          }
+        }
+      ]
+    },
+    "executors": [
+      "device",
+      "agent",
+      "device",
+      "device",
+      "agent"
+    ],
+    "phases": [
+      1,
+      2,
+      3,
+      3,
+      4
+    ],
+    "encrypted": [
+      {
+        "label": "plan",
+        "fieldName": "plan",
+        "aad": "0f0e0d0c-0b0a-4908-8706-050403020100:6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9:plan",
+        "ivHex": "6e6e6e6e6e6e6e6e6e6e6e6e",
+        "clear": {
+          "v": 1,
+          "planId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+          "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+          "toolCallId": "call_9",
+          "createdAt": 1795000000,
+          "expiresAt": 1795604800,
+          "summary": "Je crée l'espace Lancement, j'y range le plan et j'ouvre une tâche de relecture.",
+          "actions": [
+            {
+              "n": 1,
+              "kind": "folder.create",
+              "args": {
+                "spaceId": "cm3spaceexample0000000001",
+                "name": "Archives"
+              }
+            },
+            {
+              "n": 2,
+              "kind": "server.call",
+              "tool": "create_space",
+              "args": {
+                "name": "Lancement"
+              }
+            },
+            {
+              "n": 3,
+              "kind": "folder.create",
+              "args": {
+                "name": "Documents"
+              },
+              "after": [
+                2
+              ],
+              "argsRefs": {
+                "spaceId": "$2.id"
+              }
+            },
+            {
+              "n": 4,
+              "kind": "file.create_text",
+              "args": {
+                "name": "plan.md",
+                "content": "# Plan de lancement\n"
+              },
+              "after": [
+                3
+              ],
+              "argsRefs": {
+                "spaceId": "$3.spaceId",
+                "folderId": "$3.id"
+              }
+            },
+            {
+              "n": 5,
+              "kind": "server.call",
+              "tool": "create_task",
+              "args": {
+                "title": "Relire le plan"
+              },
+              "after": [
+                4
+              ],
+              "argsRefs": {
+                "description": "$4.id"
+              }
+            }
+          ]
+        },
+        "canonical": "{\"actions\":[{\"args\":{\"name\":\"Archives\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":1},{\"args\":{\"name\":\"Lancement\"},\"kind\":\"server.call\",\"n\":2,\"tool\":\"create_space\"},{\"after\":[2],\"args\":{\"name\":\"Documents\"},\"argsRefs\":{\"spaceId\":\"$2.id\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\",\"name\":\"plan.md\"},\"argsRefs\":{\"folderId\":\"$3.id\",\"spaceId\":\"$3.spaceId\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[4],\"args\":{\"title\":\"Relire le plan\"},\"argsRefs\":{\"description\":\"$4.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"Je crée l'espace Lancement, j'y range le plan et j'ouvre une tâche de relecture.\",\"toolCallId\":\"call_9\",\"v\":1}",
+        "value": "gcm1:bm5ubm5ubm5ubm5u3LRbv4Pp9UJkt6Xqgm4VnL5yKuPjjjmTUhbuOwIfm+qXsc7pIsQBoNlICjLSwuQE/1Lja5l03OlwZlxnIAMqN7G7vtziKG28BSO1zI1/Omo9XzhrnzmpVK+srhC9ZH8fH0kKGLRv1wrTB0nkaNX7vgSxUmzM2oAJnxYnRkcwwd5MIJvGIFd8HX+CAEgGwieVzki8DdTBQrT3Z2MOOCXCgA3Km+WemJg5oPwsg1b4yB0dA0+lvc0+trU94/iZozzUeF/nMOONUX3TUPhKVyaVM38ZEfCjZFYIYNHgwX23p8Pats+hCV+85JvLj43SZwkvhF4244xC0m9++v8g1K21UMp11L7AIbO6SJii2euWWR1sMUOob/dR8/i8HKQyAOedpEutl0VeoX0UI+GySCcluwWfSXPl/ncZ8GE+MaKcntMp2ubsFuUwZnfvJ9Tj1NWtgHBD6RD0ixMT6U8N9JOrZCbo8940ys4KC8gafZnXe0wJSfuXO/kRjxRt04FlkwISfR0FFA7iUqRtVBD5NYAEQkdKgXO+HLVMiu1QjlqoCc50W1/9NDiN3WjqmhsABYISe/6IePSrGEEEOD2tQMlSV/hdmeNny762EuIKbPSUP9sc9J3RTTprmV3hHaFP8oHeiEzoOsMke8cjgh8HACiyUTG5FW97Rp08sA+u7G2L3L6gRQhPK+Xdxw5mkraQroWglKr/k28H1zoaPk0THjBigbNiRZfsc6pDI3k5rNXbgVb7Q7V+3hxV6VhpyQKNjbCLLiiANlILxG0PAKakRXM1AxNp5srELtouCr2xtmzY2U83hf//awWaqheCodh4bgtZyOwqgKCWIeuNM1pyeKO2diUcte5F6T54r/8jbBui0oqF9K9NkYRdHKq1QaUBze8eTF+afmb1HlU6B/EGWrcOawiO9nJqR8Zz1sNW529z3kfUdRkkpoKUCEFYq6Ht2v3aj3CAIcY2gVRgm9c7AQC3CORHcDrDBNxT6Hgb0ZzOFzaOEPJo4/JJY2PBL6WEigPIEr7lKm1Up+5gTdVJqya4E1/tKtPKu/JBfaYw3Kv4sD2qYqSJc26EMmBXUuP0i10szKWz0+CKxL6VibteL0FownxnN8BN2ZSP67sY1RrzKO/VN4UOfUsQlD35BMZkVM1GpIE="
+      },
+      {
+        "label": "plan_result, phase 1 (appareil)",
+        "fieldName": "plan_result:1",
+        "aad": "0f0e0d0c-0b0a-4908-8706-050403020100:6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9:plan_result:1",
+        "ivHex": "717171717171717171717171",
+        "clear": {
+          "v": 1,
+          "planId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+          "phase": 1,
+          "outcomes": [
+            {
+              "n": 1,
+              "state": "done",
+              "output": {
+                "id": "cm3foldernew0000000000002",
+                "spaceId": "cm3spaceexample0000000001"
+              }
+            }
+          ]
+        },
+        "canonical": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3foldernew0000000000002\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"}],\"phase\":1,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"v\":1}",
+        "value": "gcm1:cXFxcXFxcXFxcXFxB+l1oLUqumDu63hZByOF4hdQYfVXykxL+QK+/JYmMpYIOpJifXClfPVjqsYIyx8gwByKBbexpcGuqO85PWgiX9hv8VPm4HvEzba1E3mSuaK6EIkwLDE1vYH0yhpXv1UWFRAktEue12qvvRsyul0JfS2OfJOWI1cUm4FgYts4pE590T/zDMbmN8gbpSAtZ2wOhN0Irl9+SSoFUsSnulBQ+YQz9AITlY6elwHKWEGipJ9Nl21HRQmDmAPoH0j2BmsaERYHdA6yjA=="
+      },
+      {
+        "label": "plan_agent_result, phase 2 (agent)",
+        "fieldName": "plan_agent_result:2",
+        "aad": "0f0e0d0c-0b0a-4908-8706-050403020100:6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9:plan_agent_result:2",
+        "ivHex": "727272727272727272727272",
+        "clear": {
+          "v": 1,
+          "planId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+          "phase": 2,
+          "outcomes": [
+            {
+              "n": 2,
+              "state": "done",
+              "output": {
+                "id": "cm3spacenew00000000000001"
+              }
+            }
+          ]
+        },
+        "canonical": "{\"outcomes\":[{\"n\":2,\"output\":{\"id\":\"cm3spacenew00000000000001\"},\"state\":\"done\"}],\"phase\":2,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"v\":1}",
+        "value": "gcm1:cnJycnJycnJycnJyvwTn4l8tB4IlAzBGlg4k6em0kGZwn1234gwvzY8D7q55y1ezwaZUvbzcRERlW1hcnHqkYke/20X7Y6YER4Dp3leo/ZEmEQeGa/NnC/nOQ2t1vkj1J8QdqtfLN78RNjWR+nMsuCUem3qpmQ6J8gGaoQrLHbA1YTCR/3EJj7vjgWfzw91A2vqhDbJC7ETauhyeiEFIN9yCHALgUbQdX6oUsrQ="
+      },
+      {
+        "label": "plan_result, phase 3 (appareil)",
+        "fieldName": "plan_result:3",
+        "aad": "0f0e0d0c-0b0a-4908-8706-050403020100:6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9:plan_result:3",
+        "ivHex": "737373737373737373737373",
+        "clear": {
+          "v": 1,
+          "planId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+          "phase": 3,
+          "outcomes": [
+            {
+              "n": 3,
+              "state": "done",
+              "output": {
+                "id": "cm3foldernew0000000000003",
+                "spaceId": "cm3spacenew00000000000001"
+              }
+            },
+            {
+              "n": 4,
+              "state": "done",
+              "output": {
+                "id": "cm3filenew00000000000002",
+                "spaceId": "cm3spacenew00000000000001"
+              }
+            }
+          ]
+        },
+        "canonical": "{\"outcomes\":[{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000003\",\"spaceId\":\"cm3spacenew00000000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000002\",\"spaceId\":\"cm3spacenew00000000000001\"},\"state\":\"done\"}],\"phase\":3,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"v\":1}",
+        "value": "gcm1:c3Nzc3Nzc3Nzc3NzFpbVonlGSz2WXEegLfl0K8Hp6adCKDUQwjcJawNnfy0E00GNRY2IvPduMJOjtp7MXl0TLDCtkL9liw0hYBXupoi7CPHgXMTCv17WBKZwpnbeq+d6H1IOo3qMeRgloxSP1J7/NHRVuP0u3Q2gaJ//7khCowiVQzBHvESlDA4HmYLcJyNuyND2YQ8w+eH4jp4ReYNc+FR0ytQsKBP0SHLuDKWsio8O12Quhqyf0w2DVe+VvAxXDNJLleWBHzREPh8c8murZwk39jnK3Iu2CO0j9ruZ+b6Fv0mIzbGS0Ne4b3PB5MkDgHnMINMOoee4r9jERQB+3blCbcowIEmPK6KbelIJ0vQ8dDl6nEhAYARypD4lCgHMW1/+lWsW/0ggzwBP27t+LNmkOD6uTyN5wUMN"
+      }
+    ]
+  },
+  "toolManifest": {
+    "note": "Extrait du manifeste (GET …/tools) utilisé par validationCases : seuls les outils server et mutating sont admis en server.call.",
+    "tools": [
+      {
+        "name": "create_task",
+        "category": "server",
+        "mutating": true,
+        "parameters": {
+          "title": {
+            "type": "string",
+            "required": true,
+            "min": 1
+          },
+          "description": {
+            "type": "string",
+            "required": false
+          }
+        }
+      },
+      {
+        "name": "create_space",
+        "category": "server",
+        "mutating": true,
+        "parameters": {
+          "name": {
+            "type": "string",
+            "required": true,
+            "min": 1,
+            "max": 255
+          },
+          "logo": {
+            "type": "string",
+            "required": false
+          }
+        }
+      },
+      {
+        "name": "delete_task",
+        "category": "server",
+        "mutating": true,
+        "parameters": {
+          "taskId": {
+            "type": "string",
+            "required": true,
+            "min": 1
+          }
+        }
+      },
+      {
+        "name": "list_spaces",
+        "category": "server",
+        "mutating": false,
+        "parameters": {}
+      },
+      {
+        "name": "create_thread",
+        "category": "client",
+        "mutating": true,
+        "parameters": {}
+      }
+    ]
+  },
   "serverDigests": [
     {
+      "name": "action 5 du plan de référence, avec argsRefs : JCS({tool, args, argsRefs})",
+      "plan": "plan",
       "n": 5,
+      "input": {
+        "tool": "create_task",
+        "args": {
+          "title": "Valider le budget"
+        },
+        "argsRefs": {
+          "description": "$1.id"
+        }
+      },
+      "canonical": "{\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"tool\":\"create_task\"}",
+      "sha256Hex": "6eeedf1733a3cc6dbdaadbaa2d5b1f24b990d5fea3839092f17ebaa97b12cec2"
+    },
+    {
+      "name": "action sans argsRefs : JCS({tool, args}), argsRefs omis",
+      "plan": null,
+      "n": null,
       "input": {
         "tool": "create_task",
         "args": {
@@ -129,8 +461,276 @@
         }
       },
       "canonical": "{\"args\":{\"title\":\"Valider le budget\"},\"tool\":\"create_task\"}",
-      "sha256Hex": "b32ef55136fbddab6c6bee255d75b88f3536c0e5afbf191e63415da24acb6cb1",
-      "note": "Condensat de {tool, args} tel que C1 §2.3 ; pour une action à argsRefs, voir 12 §15 QP2 (provisoire)."
+      "sha256Hex": "b32ef55136fbddab6c6bee255d75b88f3536c0e5afbf191e63415da24acb6cb1"
+    },
+    {
+      "name": "plan mixte, action 2 (sans argsRefs)",
+      "plan": "mixedPlan",
+      "n": 2,
+      "input": {
+        "tool": "create_space",
+        "args": {
+          "name": "Lancement"
+        }
+      },
+      "canonical": "{\"args\":{\"name\":\"Lancement\"},\"tool\":\"create_space\"}",
+      "sha256Hex": "1154952c0be7b763f7506b5aa823f0c738abea0f18a4de55373ce8af08132adf"
+    },
+    {
+      "name": "plan mixte, action 5 : argsRefs vers la sortie d'une action d'appareil",
+      "plan": "mixedPlan",
+      "n": 5,
+      "input": {
+        "tool": "create_task",
+        "args": {
+          "title": "Relire le plan"
+        },
+        "argsRefs": {
+          "description": "$4.id"
+        }
+      },
+      "canonical": "{\"args\":{\"title\":\"Relire le plan\"},\"argsRefs\":{\"description\":\"$4.id\"},\"tool\":\"create_task\"}",
+      "sha256Hex": "4634a159da26062871297afc7700379cc272da2f5721ddcacf0253996c56b5b6"
+    }
+  ],
+  "executeCases": [
+    {
+      "name": "refs égales à la sortie enregistrée de #budget",
+      "plan": "plan",
+      "n": 5,
+      "serverDigest": "6eeedf1733a3cc6dbdaadbaa2d5b1f24b990d5fea3839092f17ebaa97b12cec2",
+      "recordedOutputs": {
+        "1": {
+          "id": "cm3threadnew0000000000001",
+          "spaceId": "cm3spaceexample0000000001"
+        }
+      },
+      "call": {
+        "tool": "create_task",
+        "args": {
+          "title": "Valider le budget"
+        },
+        "argsRefs": {
+          "description": "$1.id"
+        },
+        "refs": {
+          "description": "cm3threadnew0000000000001"
+        }
+      },
+      "expect": "ok",
+      "effectiveArgs": {
+        "title": "Valider le budget",
+        "description": "cm3threadnew0000000000001"
+      }
+    },
+    {
+      "name": "ref différente de la sortie enregistrée",
+      "plan": "plan",
+      "n": 5,
+      "serverDigest": "6eeedf1733a3cc6dbdaadbaa2d5b1f24b990d5fea3839092f17ebaa97b12cec2",
+      "recordedOutputs": {
+        "1": {
+          "id": "cm3threadnew0000000000001",
+          "spaceId": "cm3spaceexample0000000001"
+        }
+      },
+      "call": {
+        "tool": "create_task",
+        "args": {
+          "title": "Valider le budget"
+        },
+        "argsRefs": {
+          "description": "$1.id"
+        },
+        "refs": {
+          "description": "cm3threadnew0000000000009"
+        }
+      },
+      "expect": "action_not_accepted"
+    },
+    {
+      "name": "argsRefs absent de l’appel : condensat différent",
+      "plan": "plan",
+      "n": 5,
+      "serverDigest": "6eeedf1733a3cc6dbdaadbaa2d5b1f24b990d5fea3839092f17ebaa97b12cec2",
+      "recordedOutputs": {
+        "1": {
+          "id": "cm3threadnew0000000000001",
+          "spaceId": "cm3spaceexample0000000001"
+        }
+      },
+      "call": {
+        "tool": "create_task",
+        "args": {
+          "title": "Valider le budget"
+        },
+        "refs": {
+          "description": "cm3threadnew0000000000001"
+        }
+      },
+      "expect": "action_not_accepted"
+    },
+    {
+      "name": "args déjà résolus (champ dans args) : condensat différent",
+      "plan": "plan",
+      "n": 5,
+      "serverDigest": "6eeedf1733a3cc6dbdaadbaa2d5b1f24b990d5fea3839092f17ebaa97b12cec2",
+      "recordedOutputs": {
+        "1": {
+          "id": "cm3threadnew0000000000001",
+          "spaceId": "cm3spaceexample0000000001"
+        }
+      },
+      "call": {
+        "tool": "create_task",
+        "args": {
+          "title": "Valider le budget",
+          "description": "cm3threadnew0000000000001"
+        }
+      },
+      "expect": "action_not_accepted"
+    },
+    {
+      "name": "action visée sans sortie enregistrée (pas encore done)",
+      "plan": "plan",
+      "n": 5,
+      "serverDigest": "6eeedf1733a3cc6dbdaadbaa2d5b1f24b990d5fea3839092f17ebaa97b12cec2",
+      "recordedOutputs": {},
+      "call": {
+        "tool": "create_task",
+        "args": {
+          "title": "Valider le budget"
+        },
+        "argsRefs": {
+          "description": "$1.id"
+        },
+        "refs": {
+          "description": "cm3threadnew0000000000001"
+        }
+      },
+      "expect": "action_not_accepted"
+    },
+    {
+      "name": "ref en trop, hors argsRefs",
+      "plan": "plan",
+      "n": 5,
+      "serverDigest": "6eeedf1733a3cc6dbdaadbaa2d5b1f24b990d5fea3839092f17ebaa97b12cec2",
+      "recordedOutputs": {
+        "1": {
+          "id": "cm3threadnew0000000000001",
+          "spaceId": "cm3spaceexample0000000001"
+        }
+      },
+      "call": {
+        "tool": "create_task",
+        "args": {
+          "title": "Valider le budget"
+        },
+        "argsRefs": {
+          "description": "$1.id"
+        },
+        "refs": {
+          "description": "cm3threadnew0000000000001",
+          "title": "x"
+        }
+      },
+      "expect": "action_not_accepted"
+    },
+    {
+      "name": "autre outil, mêmes args",
+      "plan": "plan",
+      "n": 5,
+      "serverDigest": "6eeedf1733a3cc6dbdaadbaa2d5b1f24b990d5fea3839092f17ebaa97b12cec2",
+      "recordedOutputs": {
+        "1": {
+          "id": "cm3threadnew0000000000001",
+          "spaceId": "cm3spaceexample0000000001"
+        }
+      },
+      "call": {
+        "tool": "delete_task",
+        "args": {
+          "title": "Valider le budget"
+        },
+        "argsRefs": {
+          "description": "$1.id"
+        },
+        "refs": {
+          "description": "cm3threadnew0000000000001"
+        }
+      },
+      "expect": "action_not_accepted"
+    },
+    {
+      "name": "plan mixte, action 2 sans refs",
+      "plan": "mixedPlan",
+      "n": 2,
+      "serverDigest": "1154952c0be7b763f7506b5aa823f0c738abea0f18a4de55373ce8af08132adf",
+      "recordedOutputs": {},
+      "call": {
+        "tool": "create_space",
+        "args": {
+          "name": "Lancement"
+        }
+      },
+      "expect": "ok",
+      "effectiveArgs": {
+        "name": "Lancement"
+      }
+    },
+    {
+      "name": "plan mixte, action 5 : ref vers la sortie d'appareil enregistrée par l'API (X-Synco-Plan)",
+      "plan": "mixedPlan",
+      "n": 5,
+      "serverDigest": "4634a159da26062871297afc7700379cc272da2f5721ddcacf0253996c56b5b6",
+      "recordedOutputs": {
+        "4": {
+          "id": "cm3filenew00000000000002",
+          "spaceId": "cm3spacenew00000000000001"
+        }
+      },
+      "call": {
+        "tool": "create_task",
+        "args": {
+          "title": "Relire le plan"
+        },
+        "argsRefs": {
+          "description": "$4.id"
+        },
+        "refs": {
+          "description": "cm3filenew00000000000002"
+        }
+      },
+      "expect": "ok",
+      "effectiveArgs": {
+        "title": "Relire le plan",
+        "description": "cm3filenew00000000000002"
+      }
+    },
+    {
+      "name": "plan mixte, action 5 : identifiant de plan_result différent de celui que l'API a enregistré",
+      "plan": "mixedPlan",
+      "n": 5,
+      "serverDigest": "4634a159da26062871297afc7700379cc272da2f5721ddcacf0253996c56b5b6",
+      "recordedOutputs": {
+        "4": {
+          "id": "cm3filenew00000000000002",
+          "spaceId": "cm3spacenew00000000000001"
+        }
+      },
+      "call": {
+        "tool": "create_task",
+        "args": {
+          "title": "Relire le plan"
+        },
+        "argsRefs": {
+          "description": "$4.id"
+        },
+        "refs": {
+          "description": "cm3filenew00000000000009"
+        }
+      },
+      "expect": "action_not_accepted"
     }
   ],
   "pendingToolCall": {
@@ -153,12 +753,12 @@
       "expect": "ok"
     },
     {
-      "name": "plan_result chiffré, AAD sessionId:planId:plan_result",
+      "name": "plan_result de la phase 1, AAD sessionId:planId:plan_result:1",
       "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
       "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
-      "fieldName": "plan_result",
-      "value": "gcm1:fn5+fn5+fn5+fn5+TMSPQRj9OMwS46+r7O2XuHDFQdWHZaBMmLvOvjY/uxVDWFEOfrT2XlxDwH6SyvII/twacXYQL4LUWszYUWKDxxKIi9z2bXkCaHnpiIcmEqTverILk556mvQwdHg70b+t0M4HxKSiRt1opor7Z7dv07k564v3hru/FQq6HXImdjq2HEMrTaLADZVjIup2nTPukfSCPrAIRE8f7aTq8evbMmJdJlaBnQ2kPCqCY3rzRz13+aSoX3S5El5S8Y7BMsrh372F2jDm8cir7sRlXBMgDzd35bm83d3vokE+Ia4OS4LRBdmPbLAWzg3EoMsgPdKHnAmIMqwqe2VYc39ZwO+3ScIQ6pWdTlofDwxzj8zIiPhmYOOhdcBMUdENscL9hDLzb8X6vS+pCIA2q02Nr7GSfsjH7KQ9FWB8tHrGWrdU1VS07t7deIEDxpbQqvwpIIOryJErNvDNo+2zKB7X7xBVI/GfQKT99roiZSiylzfvFahS8bF2wrVRhIBD3QJyDFyuSQ2X+U+gKQMhZdxqhFhkGwPoG8CvJSzargzxiFcwSiMVqgOz54ycUvdu1xNwqM9fJrcKR9Dt1UUEx/uGXnltkLTS",
-      "plaintext": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"skipped\"},{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":5,\"state\":\"pending\"}],\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+      "fieldName": "plan_result:1",
+      "value": "gcm1:fn5+fn5+fn5+fn5+TMSPQRj9OMwS46+r7O2XuHDFQdWHZaBMmLvOvjY/uxVDWFEOfrT2XlxDwH6SyvII/twacXYQL4LUWszYUWKDxxKIi9z2bXkCaHnpiIcmEqTverILk556mvQwdHg70b+t0M4HxKSiRt1opor7Z7dv07k564v3hru/FQq6HXImdjq2HEMrTaLADZVjIup2nTPukfSCPrAIRE8f7aTq8evbMmJdJlaBnQ2kPCqCY3rzRz13+aSoX3S5El5S8Y7BMsrh372F2jDm8cir7sRlXBMgDzd35bm83d3vokE+Ia4OS4LRBdmPbLAWzg3EoMsgPdKHnAmIMqwqe2VYc39ZwO+3ScIQ6pWdTlofDwxzj8zIiPhmYOOhdcBMUdENscL9hDLzb8X6vS+pCIA2q02Nr7GSfsjH7KQ9FWB8tHrGWrdU1VS07t7deIEDxpbQqvwpIIOryJErNvDNo+2zKB7X7xBVI4DIQLq3rfxrZWH32mH6W/MeyLA6nP4KgZNdskpjGR37QXHD9kHjKlA9Pow5hRBwHF3pEtj6cnjc4Ayxk0drUSoc45kPTyQ7jSsAj3isGRA0seQ=",
+      "plaintext": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"skipped\"},{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
       "expect": "ok"
     },
     {
@@ -181,7 +781,7 @@
       "name": "plan ouvert comme plan_result",
       "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
       "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
-      "fieldName": "plan_result",
+      "fieldName": "plan_result:1",
       "value": "gcm1:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ",
       "expect": "field_authentication_failed"
     },
@@ -190,7 +790,7 @@
       "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
       "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
       "fieldName": "plan",
-      "value": "gcm1:fn5+fn5+fn5+fn5+TMSPQRj9OMwS46+r7O2XuHDFQdWHZaBMmLvOvjY/uxVDWFEOfrT2XlxDwH6SyvII/twacXYQL4LUWszYUWKDxxKIi9z2bXkCaHnpiIcmEqTverILk556mvQwdHg70b+t0M4HxKSiRt1opor7Z7dv07k564v3hru/FQq6HXImdjq2HEMrTaLADZVjIup2nTPukfSCPrAIRE8f7aTq8evbMmJdJlaBnQ2kPCqCY3rzRz13+aSoX3S5El5S8Y7BMsrh372F2jDm8cir7sRlXBMgDzd35bm83d3vokE+Ia4OS4LRBdmPbLAWzg3EoMsgPdKHnAmIMqwqe2VYc39ZwO+3ScIQ6pWdTlofDwxzj8zIiPhmYOOhdcBMUdENscL9hDLzb8X6vS+pCIA2q02Nr7GSfsjH7KQ9FWB8tHrGWrdU1VS07t7deIEDxpbQqvwpIIOryJErNvDNo+2zKB7X7xBVI/GfQKT99roiZSiylzfvFahS8bF2wrVRhIBD3QJyDFyuSQ2X+U+gKQMhZdxqhFhkGwPoG8CvJSzargzxiFcwSiMVqgOz54ycUvdu1xNwqM9fJrcKR9Dt1UUEx/uGXnltkLTS",
+      "value": "gcm1:fn5+fn5+fn5+fn5+TMSPQRj9OMwS46+r7O2XuHDFQdWHZaBMmLvOvjY/uxVDWFEOfrT2XlxDwH6SyvII/twacXYQL4LUWszYUWKDxxKIi9z2bXkCaHnpiIcmEqTverILk556mvQwdHg70b+t0M4HxKSiRt1opor7Z7dv07k564v3hru/FQq6HXImdjq2HEMrTaLADZVjIup2nTPukfSCPrAIRE8f7aTq8evbMmJdJlaBnQ2kPCqCY3rzRz13+aSoX3S5El5S8Y7BMsrh372F2jDm8cir7sRlXBMgDzd35bm83d3vokE+Ia4OS4LRBdmPbLAWzg3EoMsgPdKHnAmIMqwqe2VYc39ZwO+3ScIQ6pWdTlofDwxzj8zIiPhmYOOhdcBMUdENscL9hDLzb8X6vS+pCIA2q02Nr7GSfsjH7KQ9FWB8tHrGWrdU1VS07t7deIEDxpbQqvwpIIOryJErNvDNo+2zKB7X7xBVI4DIQLq3rfxrZWH32mH6W/MeyLA6nP4KgZNdskpjGR37QXHD9kHjKlA9Pow5hRBwHF3pEtj6cnjc4Ayxk0drUSoc45kPTyQ7jSsAj3isGRA0seQ=",
       "expect": "field_authentication_failed"
     },
     {
@@ -225,6 +825,73 @@
       "fieldName": "plan",
       "value": "gcm2:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ",
       "expect": "field_unknown_version"
+    },
+    {
+      "name": "plan_result de la phase 1 ouvert comme phase 3",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result:3",
+      "value": "gcm1:fn5+fn5+fn5+fn5+TMSPQRj9OMwS46+r7O2XuHDFQdWHZaBMmLvOvjY/uxVDWFEOfrT2XlxDwH6SyvII/twacXYQL4LUWszYUWKDxxKIi9z2bXkCaHnpiIcmEqTverILk556mvQwdHg70b+t0M4HxKSiRt1opor7Z7dv07k564v3hru/FQq6HXImdjq2HEMrTaLADZVjIup2nTPukfSCPrAIRE8f7aTq8evbMmJdJlaBnQ2kPCqCY3rzRz13+aSoX3S5El5S8Y7BMsrh372F2jDm8cir7sRlXBMgDzd35bm83d3vokE+Ia4OS4LRBdmPbLAWzg3EoMsgPdKHnAmIMqwqe2VYc39ZwO+3ScIQ6pWdTlofDwxzj8zIiPhmYOOhdcBMUdENscL9hDLzb8X6vS+pCIA2q02Nr7GSfsjH7KQ9FWB8tHrGWrdU1VS07t7deIEDxpbQqvwpIIOryJErNvDNo+2zKB7X7xBVI4DIQLq3rfxrZWH32mH6W/MeyLA6nP4KgZNdskpjGR37QXHD9kHjKlA9Pow5hRBwHF3pEtj6cnjc4Ayxk0drUSoc45kPTyQ7jSsAj3isGRA0seQ=",
+      "expect": "field_authentication_failed"
+    },
+    {
+      "name": "plan_result ouvert sans numéro de phase",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result",
+      "value": "gcm1:fn5+fn5+fn5+fn5+TMSPQRj9OMwS46+r7O2XuHDFQdWHZaBMmLvOvjY/uxVDWFEOfrT2XlxDwH6SyvII/twacXYQL4LUWszYUWKDxxKIi9z2bXkCaHnpiIcmEqTverILk556mvQwdHg70b+t0M4HxKSiRt1opor7Z7dv07k564v3hru/FQq6HXImdjq2HEMrTaLADZVjIup2nTPukfSCPrAIRE8f7aTq8evbMmJdJlaBnQ2kPCqCY3rzRz13+aSoX3S5El5S8Y7BMsrh372F2jDm8cir7sRlXBMgDzd35bm83d3vokE+Ia4OS4LRBdmPbLAWzg3EoMsgPdKHnAmIMqwqe2VYc39ZwO+3ScIQ6pWdTlofDwxzj8zIiPhmYOOhdcBMUdENscL9hDLzb8X6vS+pCIA2q02Nr7GSfsjH7KQ9FWB8tHrGWrdU1VS07t7deIEDxpbQqvwpIIOryJErNvDNo+2zKB7X7xBVI4DIQLq3rfxrZWH32mH6W/MeyLA6nP4KgZNdskpjGR37QXHD9kHjKlA9Pow5hRBwHF3pEtj6cnjc4Ayxk0drUSoc45kPTyQ7jSsAj3isGRA0seQ=",
+      "expect": "field_authentication_failed"
+    },
+    {
+      "name": "plan_result rejoué sur un autre plan",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+      "fieldName": "plan_result:1",
+      "value": "gcm1:fn5+fn5+fn5+fn5+TMSPQRj9OMwS46+r7O2XuHDFQdWHZaBMmLvOvjY/uxVDWFEOfrT2XlxDwH6SyvII/twacXYQL4LUWszYUWKDxxKIi9z2bXkCaHnpiIcmEqTverILk556mvQwdHg70b+t0M4HxKSiRt1opor7Z7dv07k564v3hru/FQq6HXImdjq2HEMrTaLADZVjIup2nTPukfSCPrAIRE8f7aTq8evbMmJdJlaBnQ2kPCqCY3rzRz13+aSoX3S5El5S8Y7BMsrh372F2jDm8cir7sRlXBMgDzd35bm83d3vokE+Ia4OS4LRBdmPbLAWzg3EoMsgPdKHnAmIMqwqe2VYc39ZwO+3ScIQ6pWdTlofDwxzj8zIiPhmYOOhdcBMUdENscL9hDLzb8X6vS+pCIA2q02Nr7GSfsjH7KQ9FWB8tHrGWrdU1VS07t7deIEDxpbQqvwpIIOryJErNvDNo+2zKB7X7xBVI4DIQLq3rfxrZWH32mH6W/MeyLA6nP4KgZNdskpjGR37QXHD9kHjKlA9Pow5hRBwHF3pEtj6cnjc4Ayxk0drUSoc45kPTyQ7jSsAj3isGRA0seQ=",
+      "expect": "field_authentication_failed"
+    },
+    {
+      "name": "plan mixte chiffré",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+      "fieldName": "plan",
+      "value": "gcm1:bm5ubm5ubm5ubm5u3LRbv4Pp9UJkt6Xqgm4VnL5yKuPjjjmTUhbuOwIfm+qXsc7pIsQBoNlICjLSwuQE/1Lja5l03OlwZlxnIAMqN7G7vtziKG28BSO1zI1/Omo9XzhrnzmpVK+srhC9ZH8fH0kKGLRv1wrTB0nkaNX7vgSxUmzM2oAJnxYnRkcwwd5MIJvGIFd8HX+CAEgGwieVzki8DdTBQrT3Z2MOOCXCgA3Km+WemJg5oPwsg1b4yB0dA0+lvc0+trU94/iZozzUeF/nMOONUX3TUPhKVyaVM38ZEfCjZFYIYNHgwX23p8Pats+hCV+85JvLj43SZwkvhF4244xC0m9++v8g1K21UMp11L7AIbO6SJii2euWWR1sMUOob/dR8/i8HKQyAOedpEutl0VeoX0UI+GySCcluwWfSXPl/ncZ8GE+MaKcntMp2ubsFuUwZnfvJ9Tj1NWtgHBD6RD0ixMT6U8N9JOrZCbo8940ys4KC8gafZnXe0wJSfuXO/kRjxRt04FlkwISfR0FFA7iUqRtVBD5NYAEQkdKgXO+HLVMiu1QjlqoCc50W1/9NDiN3WjqmhsABYISe/6IePSrGEEEOD2tQMlSV/hdmeNny762EuIKbPSUP9sc9J3RTTprmV3hHaFP8oHeiEzoOsMke8cjgh8HACiyUTG5FW97Rp08sA+u7G2L3L6gRQhPK+Xdxw5mkraQroWglKr/k28H1zoaPk0THjBigbNiRZfsc6pDI3k5rNXbgVb7Q7V+3hxV6VhpyQKNjbCLLiiANlILxG0PAKakRXM1AxNp5srELtouCr2xtmzY2U83hf//awWaqheCodh4bgtZyOwqgKCWIeuNM1pyeKO2diUcte5F6T54r/8jbBui0oqF9K9NkYRdHKq1QaUBze8eTF+afmb1HlU6B/EGWrcOawiO9nJqR8Zz1sNW529z3kfUdRkkpoKUCEFYq6Ht2v3aj3CAIcY2gVRgm9c7AQC3CORHcDrDBNxT6Hgb0ZzOFzaOEPJo4/JJY2PBL6WEigPIEr7lKm1Up+5gTdVJqya4E1/tKtPKu/JBfaYw3Kv4sD2qYqSJc26EMmBXUuP0i10szKWz0+CKxL6VibteL0FownxnN8BN2ZSP67sY1RrzKO/VN4UOfUsQlD35BMZkVM1GpIE=",
+      "plaintext": "{\"actions\":[{\"args\":{\"name\":\"Archives\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":1},{\"args\":{\"name\":\"Lancement\"},\"kind\":\"server.call\",\"n\":2,\"tool\":\"create_space\"},{\"after\":[2],\"args\":{\"name\":\"Documents\"},\"argsRefs\":{\"spaceId\":\"$2.id\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\",\"name\":\"plan.md\"},\"argsRefs\":{\"folderId\":\"$3.id\",\"spaceId\":\"$3.spaceId\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[4],\"args\":{\"title\":\"Relire le plan\"},\"argsRefs\":{\"description\":\"$4.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"Je crée l'espace Lancement, j'y range le plan et j'ouvre une tâche de relecture.\",\"toolCallId\":\"call_9\",\"v\":1}",
+      "expect": "ok"
+    },
+    {
+      "name": "résultat de phase d'agent, AAD sessionId:planId:plan_agent_result:2",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+      "fieldName": "plan_agent_result:2",
+      "value": "gcm1:cnJycnJycnJycnJyvwTn4l8tB4IlAzBGlg4k6em0kGZwn1234gwvzY8D7q55y1ezwaZUvbzcRERlW1hcnHqkYke/20X7Y6YER4Dp3leo/ZEmEQeGa/NnC/nOQ2t1vkj1J8QdqtfLN78RNjWR+nMsuCUem3qpmQ6J8gGaoQrLHbA1YTCR/3EJj7vjgWfzw91A2vqhDbJC7ETauhyeiEFIN9yCHALgUbQdX6oUsrQ=",
+      "plaintext": "{\"outcomes\":[{\"n\":2,\"output\":{\"id\":\"cm3spacenew00000000000001\"},\"state\":\"done\"}],\"phase\":2,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"v\":1}",
+      "expect": "ok"
+    },
+    {
+      "name": "résultat de phase d'agent ouvert comme plan_result:2",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+      "fieldName": "plan_result:2",
+      "value": "gcm1:cnJycnJycnJycnJyvwTn4l8tB4IlAzBGlg4k6em0kGZwn1234gwvzY8D7q55y1ezwaZUvbzcRERlW1hcnHqkYke/20X7Y6YER4Dp3leo/ZEmEQeGa/NnC/nOQ2t1vkj1J8QdqtfLN78RNjWR+nMsuCUem3qpmQ6J8gGaoQrLHbA1YTCR/3EJj7vjgWfzw91A2vqhDbJC7ETauhyeiEFIN9yCHALgUbQdX6oUsrQ=",
+      "expect": "field_authentication_failed"
+    },
+    {
+      "name": "plan_result d'appareil ouvert comme plan_agent_result:1",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+      "fieldName": "plan_agent_result:1",
+      "value": "gcm1:cXFxcXFxcXFxcXFxB+l1oLUqumDu63hZByOF4hdQYfVXykxL+QK+/JYmMpYIOpJifXClfPVjqsYIyx8gwByKBbexpcGuqO85PWgiX9hv8VPm4HvEzba1E3mSuaK6EIkwLDE1vYH0yhpXv1UWFRAktEue12qvvRsyul0JfS2OfJOWI1cUm4FgYts4pE590T/zDMbmN8gbpSAtZ2wOhN0Irl9+SSoFUsSnulBQ+YQz9AITlY6elwHKWEGipJ9Nl21HRQmDmAPoH0j2BmsaERYHdA6yjA==",
+      "expect": "field_authentication_failed"
+    },
+    {
+      "name": "plan_result de la phase 3 du plan mixte",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+      "fieldName": "plan_result:3",
+      "value": "gcm1:c3Nzc3Nzc3Nzc3NzFpbVonlGSz2WXEegLfl0K8Hp6adCKDUQwjcJawNnfy0E00GNRY2IvPduMJOjtp7MXl0TLDCtkL9liw0hYBXupoi7CPHgXMTCv17WBKZwpnbeq+d6H1IOo3qMeRgloxSP1J7/NHRVuP0u3Q2gaJ//7khCowiVQzBHvESlDA4HmYLcJyNuyND2YQ8w+eH4jp4ReYNc+FR0ytQsKBP0SHLuDKWsio8O12Quhqyf0w2DVe+VvAxXDNJLleWBHzREPh8c8murZwk39jnK3Iu2CO0j9ruZ+b6Fv0mIzbGS0Ne4b3PB5MkDgHnMINMOoee4r9jERQB+3blCbcowIEmPK6KbelIJ0vQ8dDl6nEhAYARypD4lCgHMW1/+lWsW/0ggzwBP27t+LNmkOD6uTyN5wUMN",
+      "plaintext": "{\"outcomes\":[{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000003\",\"spaceId\":\"cm3spacenew00000000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000002\",\"spaceId\":\"cm3spacenew00000000000001\"},\"state\":\"done\"}],\"phase\":3,\"planId\":\"6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9\",\"v\":1}",
+      "expect": "ok"
     }
   ],
   "validationCases": [
@@ -2360,7 +3027,7 @@
       "expect": "ok"
     },
     {
-      "name": "action d'appareil qui dépend d'une action server.call (provisoire, 12 §15 QP1)",
+      "name": "action d'appareil qui dépend d'une action server.call (ordre libre, PC44)",
       "plan": {
         "v": 1,
         "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
@@ -2391,7 +3058,421 @@
           }
         ]
       },
+      "expect": "ok"
+    },
+    {
+      "name": "plan mixte à deux phases d'appareil (PC44)",
+      "plan": {
+        "v": 1,
+        "planId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_9",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je crée l'espace Lancement, j'y range le plan et j'ouvre une tâche de relecture.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Archives"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "server.call",
+            "tool": "create_space",
+            "args": {
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "name": "Documents"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "spaceId": "$2.id"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "name": "plan.md",
+              "content": "# Plan de lancement\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "spaceId": "$3.spaceId",
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Relire le plan"
+            },
+            "after": [
+              4
+            ],
+            "argsRefs": {
+              "description": "$4.id"
+            }
+          }
+        ]
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "argsRefs vers un champ non exporté par server.call ($2.spaceId)",
+      "plan": {
+        "v": 1,
+        "planId": "6c2d3e4f-5061-4b72-8c83-94a5b6c7d8e9",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_9",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je crée l'espace Lancement, j'y range le plan et j'ouvre une tâche de relecture.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Archives"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "server.call",
+            "tool": "create_space",
+            "args": {
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "name": "Documents"
+            },
+            "after": [
+              2
+            ],
+            "argsRefs": {
+              "spaceId": "$2.spaceId"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "name": "plan.md",
+              "content": "# Plan de lancement\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "spaceId": "$3.spaceId",
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Relire le plan"
+            },
+            "after": [
+              4
+            ],
+            "argsRefs": {
+              "description": "$4.id"
+            }
+          }
+        ]
+      },
       "expect": "plan_invalid"
+    }
+  ],
+  "phaseCases": [
+    {
+      "name": "plan de référence, mode plan",
+      "mode": "plan",
+      "actions": [
+        {
+          "n": 1,
+          "executor": "device"
+        },
+        {
+          "n": 2,
+          "executor": "device"
+        },
+        {
+          "n": 3,
+          "executor": "device"
+        },
+        {
+          "n": 4,
+          "executor": "device",
+          "after": [
+            3
+          ]
+        },
+        {
+          "n": 5,
+          "executor": "agent",
+          "after": [
+            1
+          ]
+        }
+      ],
+      "expectPhases": [
+        1,
+        1,
+        1,
+        1,
+        2
+      ]
+    },
+    {
+      "name": "plan mixte : deux phases d'appareil, deux phases d'agent",
+      "mode": "plan",
+      "actions": [
+        {
+          "n": 1,
+          "executor": "device"
+        },
+        {
+          "n": 2,
+          "executor": "agent"
+        },
+        {
+          "n": 3,
+          "executor": "device",
+          "after": [
+            2
+          ]
+        },
+        {
+          "n": 4,
+          "executor": "device",
+          "after": [
+            3
+          ]
+        },
+        {
+          "n": 5,
+          "executor": "agent",
+          "after": [
+            4
+          ]
+        }
+      ],
+      "expectPhases": [
+        1,
+        2,
+        3,
+        3,
+        4
+      ]
+    },
+    {
+      "name": "plan de référence, mode autonome (thread.create par le runtime)",
+      "mode": "auto",
+      "actions": [
+        {
+          "n": 1,
+          "executor": "agent"
+        },
+        {
+          "n": 2,
+          "executor": "agent"
+        },
+        {
+          "n": 3,
+          "executor": "device"
+        },
+        {
+          "n": 4,
+          "executor": "device",
+          "after": [
+            3
+          ]
+        },
+        {
+          "n": 5,
+          "executor": "agent",
+          "after": [
+            1
+          ]
+        }
+      ],
+      "expectPhases": [
+        2,
+        2,
+        1,
+        1,
+        2
+      ]
+    },
+    {
+      "name": "agent seul",
+      "actions": [
+        {
+          "n": 1,
+          "executor": "agent"
+        },
+        {
+          "n": 2,
+          "executor": "agent",
+          "after": [
+            1
+          ]
+        }
+      ],
+      "expectPhases": [
+        1,
+        1
+      ]
+    },
+    {
+      "name": "action d'appareil qui dépend de l'agent",
+      "actions": [
+        {
+          "n": 1,
+          "executor": "agent"
+        },
+        {
+          "n": 2,
+          "executor": "device",
+          "after": [
+            1
+          ]
+        }
+      ],
+      "expectPhases": [
+        1,
+        2
+      ]
+    },
+    {
+      "name": "à égalité, l'appareil commence",
+      "actions": [
+        {
+          "n": 1,
+          "executor": "agent"
+        },
+        {
+          "n": 2,
+          "executor": "device"
+        }
+      ],
+      "expectPhases": [
+        2,
+        1
+      ]
+    },
+    {
+      "name": "chaîne alternée",
+      "actions": [
+        {
+          "n": 1,
+          "executor": "device"
+        },
+        {
+          "n": 2,
+          "executor": "agent",
+          "after": [
+            1
+          ]
+        },
+        {
+          "n": 3,
+          "executor": "device",
+          "after": [
+            2
+          ]
+        },
+        {
+          "n": 4,
+          "executor": "agent",
+          "after": [
+            3
+          ]
+        }
+      ],
+      "expectPhases": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "name": "aucune action d'appareil sans dépendance : renumérotation depuis 1",
+      "actions": [
+        {
+          "n": 1,
+          "executor": "agent"
+        },
+        {
+          "n": 2,
+          "executor": "device",
+          "after": [
+            1
+          ]
+        },
+        {
+          "n": 3,
+          "executor": "agent"
+        }
+      ],
+      "expectPhases": [
+        1,
+        2,
+        1
+      ]
+    },
+    {
+      "name": "appareil → appareil : même phase",
+      "actions": [
+        {
+          "n": 1,
+          "executor": "device"
+        },
+        {
+          "n": 2,
+          "executor": "device",
+          "after": [
+            1
+          ]
+        },
+        {
+          "n": 3,
+          "executor": "agent",
+          "after": [
+            2
+          ]
+        }
+      ],
+      "expectPhases": [
+        1,
+        1,
+        2
+      ]
     }
   ],
   "cascadeCases": [
@@ -2478,6 +3559,46 @@
         2,
         3
       ]
+    },
+    {
+      "name": "plan mixte : décocher l'espace (action d'agent 2) retire 3, 4 et 5",
+      "actions": [
+        {
+          "n": 1,
+          "after": []
+        },
+        {
+          "n": 2,
+          "after": []
+        },
+        {
+          "n": 3,
+          "after": [
+            2
+          ]
+        },
+        {
+          "n": 4,
+          "after": [
+            3
+          ]
+        },
+        {
+          "n": 5,
+          "after": [
+            4
+          ]
+        }
+      ],
+      "unchecked": [
+        2
+      ],
+      "expectSkipped": [
+        2,
+        3,
+        4,
+        5
+      ]
     }
   ],
   "failureCases": [
@@ -2515,6 +3636,171 @@
         "4": "skipped",
         "5": "skipped"
       }
+    }
+  ],
+  "runCases": [
+    {
+      "name": "plan mixte, tout accepté",
+      "plan": "mixedPlan",
+      "accepted": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "expectPhasesRun": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "expectStates": {
+        "1": "done",
+        "2": "done",
+        "3": "done",
+        "4": "done",
+        "5": "done"
+      },
+      "expectStatus": "done"
+    },
+    {
+      "name": "plan mixte, #1 décochée : la phase 1 est vide, l'agent commence",
+      "plan": "mixedPlan",
+      "accepted": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "expectPhasesRun": [
+        2,
+        3,
+        4
+      ],
+      "expectStates": {
+        "1": "skipped",
+        "2": "done",
+        "3": "done",
+        "4": "done",
+        "5": "done"
+      },
+      "expectStatus": "done"
+    },
+    {
+      "name": "plan mixte, #3 décochée (cascade 4, 5) : phases 1 et 2 seulement",
+      "plan": "mixedPlan",
+      "accepted": [
+        1,
+        2
+      ],
+      "expectPhasesRun": [
+        1,
+        2
+      ],
+      "expectStates": {
+        "1": "done",
+        "2": "done",
+        "3": "skipped",
+        "4": "skipped",
+        "5": "skipped"
+      },
+      "expectStatus": "done"
+    },
+    {
+      "name": "plan mixte, échec de l'action d'agent 2 : les phases 3 et 4 ne démarrent pas",
+      "plan": "mixedPlan",
+      "accepted": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "failedAt": 2,
+      "expectPhasesRun": [
+        1,
+        2
+      ],
+      "expectStates": {
+        "1": "done",
+        "2": "failed",
+        "3": "skipped",
+        "4": "skipped",
+        "5": "skipped"
+      },
+      "expectStatus": "failed"
+    },
+    {
+      "name": "plan mixte, échec de l'action 3 dans la seconde phase d'appareil",
+      "plan": "mixedPlan",
+      "accepted": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "failedAt": 3,
+      "expectPhasesRun": [
+        1,
+        2,
+        3
+      ],
+      "expectStates": {
+        "1": "done",
+        "2": "done",
+        "3": "failed",
+        "4": "skipped",
+        "5": "skipped"
+      },
+      "expectStatus": "failed"
+    },
+    {
+      "name": "plan mixte, expiré avant la phase 3 : aucune phase ne démarre après expiresAt",
+      "plan": "mixedPlan",
+      "accepted": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "expiresBeforePhase": 3,
+      "expectPhasesRun": [
+        1,
+        2
+      ],
+      "expectStates": {
+        "1": "done",
+        "2": "done",
+        "3": "skipped",
+        "4": "skipped",
+        "5": "skipped"
+      },
+      "expectStatus": "expired"
+    },
+    {
+      "name": "plan de référence, #annonces décochée",
+      "plan": "plan",
+      "accepted": [
+        1,
+        3,
+        4,
+        5
+      ],
+      "expectPhasesRun": [
+        1,
+        2
+      ],
+      "expectStates": {
+        "1": "done",
+        "2": "skipped",
+        "3": "done",
+        "4": "done",
+        "5": "done"
+      },
+      "expectStatus": "done"
     }
   ]
 }

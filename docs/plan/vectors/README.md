@@ -224,16 +224,35 @@ Toutes les clés sont des **clés de test** créées pour ces vecteurs (scalaire
 
 Rejoués par L01c (`synco-e2ee` et fonctions pures TS), puis par L10 et L08d (superviseur).
 
-### 4.2 `action-plan.json` (12 §3 à §9)
+### 4.2 `action-plan.json` (12 §3 à §9 ; amendé le 2026-11-21 par PC44 et PC47)
 
 - `plan`, `planCanonical` (RFC 8785, entiers seulement), `aadPlan`, `ivPlanHex`, `planValue` : plan de
-  référence et sa valeur `gcm1:` exacte sous `CK` ; `pendingToolCall` : forme stockée (12 §3.4).
-- `planResult`, `planResultCanonical`, `aadPlanResult`, `planResultValue` : élément `plan_result`.
-- `serverDigests` : condensat SHA-256 (`hex`) du JSON canonique `{tool, args}` d'une action `server.call`
-  (provisoire pour une action à `argsRefs` : 12 §15, QP2).
+  référence et sa valeur `gcm1:` exacte sous `CK` ; `planExecutors` et `planPhases` : exécutant et phase
+  de chaque action (12 §8.1) ; `pendingToolCall` : forme stockée (12 §3.4).
+- `planResult`, `planResultCanonical`, `aadPlanResult`, `planResultValue` : `plan_result` **partiel** de
+  la phase 1 (AAD `sessionId:planId:plan_result:1`, 12 §9).
+- `mixedPlan` : plan à **deux phases d'appareil** et deux phases d'agent (phases `1, 2, 3, 3, 4`), avec
+  ses valeurs chiffrées : le plan, `plan_result:1`, `plan_agent_result:2` (résultat de phase de
+  l'agent) et `plan_result:3`.
+- `toolManifest` : extrait du manifeste utilisé par la validation (outils `server` et `mutating`).
+- `serverDigests` : SHA-256 (`hex`) de `JCS({tool, args, argsRefs})`, `argsRefs` omis s'il est absent
+  (PC47) ; le cas sans `argsRefs` garde le condensat de la première version.
+- `executeCases` : verrou de 12 §8.4 : condensat de l'appel, puis chaque `refs[champ]` égale à la sortie
+  **enregistrée par l'API** (`recordedOutputs`) de l'action visée ; `expect` = `ok` (avec `effectiveArgs`)
+  ou `action_not_accepted`.
 - `encryptionCases` : mêmes champs que `conversation-fields.json` (`sessionId`, `messageId` = `planId`,
-  `fieldName`, `value`, `plaintext`, `ckHex` facultatif) et mêmes codes d'erreur.
+  `fieldName`, `value`, `plaintext`, `ckHex` facultatif) et mêmes codes d'erreur ; couvrent l'échange de
+  phase, l'absence de numéro de phase, le rejeu sur un autre plan et la confusion `plan_result` /
+  `plan_agent_result`.
 - `validationCases` : `plan` → `ok` ou `plan_invalid` (rejoués par le worker L08d, l'appareil L10 et,
-  pour la partie que l'API voit, L03g) ; deux cas portent sur la règle provisoire QP1.
-- `cascadeCases` : actions décochées → actions `skipped` (PC37) ; `failureCases` : arrêt à la première
-  action en échec (12 §7.3).
+  pour la partie que l'API voit, L03g) ; une action d'appareil peut dépendre d'une action d'agent (PC44).
+- `phaseCases` : exécutant et `after` de chaque action → phases (12 §8.1) ; `cascadeCases` : actions
+  décochées → actions `skipped` (PC37) ; `failureCases` : arrêt à la première action en échec (12 §7.3) ;
+  `runCases` : déroulé par phases (phases vides sautées, arrêt sur échec, aucune phase démarrée après
+  `expiresAt`) → phases exécutées, états, statut final.
+
+Revérification après l'amendement (code jetable sous `~/.cache`, supprimé) : chiffrés produits par
+`primitives::seal` de la crate avec un IV figé ; **Rust** : le fichier final relu, 47 vérifications
+(`session::decrypt_field` sur chaque cas et chaque valeur, `serde_json::to_string` = JCS, condensats,
+phases, verrou et `refs`) ; **TS** : 94 vérifications (`decryptAiField` de `synco_app`, WebCrypto pour
+les condensats, validateur de référence pour validation, phases, cascade, échec et déroulé).

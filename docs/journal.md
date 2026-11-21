@@ -990,3 +990,57 @@ runtime ne peut rien comparer) ; le plafond de 2 000 épingles par org convient-
 
 **Vérifié à la fin** : hôte, `sandbox-host.sh` vert (11 tests) puis `aller_retour_avec_bac_a_sable ... ok` ; test croisé
 Rust → TS : OK ; `synco_app` et `synco_api` non modifiés.
+
+## 2026-11-21 — L08b : consommation des compléments API de L03d
+
+Forme des routes et trames : spec API §14 (lecture seule). Un commit par point ; `fmt`, `clippy -D warnings` et
+`cargo test --workspace` (22 suites) avant chacun.
+
+- **PC17** (`b8a4e83`) : `DelegationRecord.display_name` (optionnel) ; le superviseur garde `userId → nom` (`State.display_names`,
+  remplacé à chaque relecture de `GET /delegations`, nettoyé : contrôles → espace, 128 caractères, bords retirés). Nouvelle
+  route `GET /api/names` du dashboard ; le JS (`userCell`, `who`) insère le nom par `textContent` (info-bulle = identifiant),
+  repli sur l'identifiant. Sessions, détail, totaux par utilisateur, clés de membres refusées.
+- **Q18** (`443cb47`) : `reconcile_authorizations` fait un seul `GET /authorizations?state=active` paginé (curseur `after`, `limit=500`)
+  au lieu d'un `GET /conversations/:id` par conversation. Absente de la réponse = retirée. Erreur, curseur qui ne progresse pas
+  ou plus de 200 pages : tout est gardé. Seules les autorisations connues **avant** l'appel sont candidates (une autorisation
+  notifiée pendant l'appel n'est jamais retirée).
+- **Q23** (`a1fed02`) : `create_thread` valide les arguments, puis lit les annuaires **avant toute création** (accueil :
+  `members/keys` ; espace : `members/keys?spaceId=`) ; un espace refusé ou une clé changée ne laisse créer aucun salon. Le relais
+  applique déjà `member_keys_gate` à tout `…/members/keys?…` (test ajouté pour `?spaceId=`) : aucun contournement. Destinataires
+  d'un espace = ses membres (le refus provisoire « propriétaire seul » est retiré). `categoryId` reste facultatif ;
+  `no_default_category` (409) devient une erreur claire avec `note` pour l'agent.
+- **Q30** (`95a7b3d`) : `provider_not_configured` écrit par le superviseur quand le fournisseur n'est pas utilisable (avant :
+  `provider_error`) ; reconnu par le worker (`LlmError::NotConfigured`, code `provider_not_configured` ou `gateway_not_configured`
+  dans une réponse, ou ticket `gateway_not_configured` refusé), sans nouvel essai ; conservé par l'historique du dashboard
+  (liste fermée) et affiché distinctement.
+- **Q21** (`e9f9bc6`) : trame `thread.envelope_reset` (`ApiEvent::ThreadEnvelopeReset`) et `Runtime::repose_envelope`. **Vérifications
+  locales avant de signer** : (1) le salon est dans le **registre des salons créés par ce runtime** (nouveau,
+  `created_threads.json`, rempli par `created_key`, borné à 10 000, vidé au désappairage) et pour **ce `userId`** ;
+  (2) `delegationId` de la trame = délégation ouverte, non expirée, non révoquée de cet utilisateur ; (3) la clé du salon
+  (entrée `thread`, version 1) est dans cette délégation. `commitment` recalculé depuis la clé, signature `rt1` par `csk`,
+  `POST …/key-envelope/repose` (S seule, corps strict). Un salon à la fois (`repose_inflight`) ; trois essais seulement sur
+  panne réseau/5xx ; tout refus de l'API (`envelope_exists`, `forbidden`…) est définitif. Journalisation par code seulement.
+- **PC12** (`24eed3f`) : `memory_high_bytes` retiré de `ResourceLimits` (launcher, cli, workers, sandbox) ; `limits.worker_memory_high_mib`
+  devient `Option<u64>` ignoré, plus validé (un ancien fichier avec 0 ou une valeur > max reste lu), `--check-config` avertit
+  toujours. `cgroup.rs` écrit toujours `memory.high = max` (explicite).
+
+**Écarts et limites à reporter (docs/plan, géré par L00e)** :
+1. La spec (§14.8) et le lot parlent d'un « registre local des salons créés » ; il n'existait pas (seul un ensemble transitoire par
+   worker). Créé ici. Les salons créés **avant** L08b ne sont pas dans le registre : leur réinitialisation est ignorée (journal
+   `envelope_reset_foreign_thread`). Aucun déploiement ne les concerne à ce jour.
+2. Le lot décrit le contrôle comme « ThreadKey `rt1:<délégation>` de ce runtime et de ce `userId` ». Le runtime ne reçoit pas le
+   `creatorId` (trame sans lui, aucune route pour le lire) : le contrôle repose sur le registre + la délégation de la trame.
+3. Contrainte de §14.8 non traitée : si la clé n'est plus dans le coffre (délégation renouvelée sans l'entrée, redémarrage avant
+   synchro), la trame est ignorée (`envelope_reset_key_missing`), sans reprise automatique à l'arrivée de l'entrée.
+   Une reprise ferait garder les trames en attente : non faite, à décider.
+4. L'API compare « même enveloppe » (200 `updated: 0`) ; la signature ECDSA étant aléatoire, un rejeu envoie une signature
+   différente pour le même `commitment`. Le mock traite `commitment` seul ; à vérifier côté API (si elle compare la signature, le
+   rejeu reçoit `envelope_exists`, géré sans boucle).
+5. `GET /authorizations` renvoie aussi `displayName` : non exploité (PC17 s'appuie sur `GET /delegations`).
+
+**Mutations faites** : registre ignoré → `enveloppe_rt1_reposee_apres_reinitialisation` échoue ; utilisateur du registre non
+comparé → échoue ; `delegationId` de la trame non comparé → échoue. La vérification `revoked_delegations` du coffre est
+redondante avec l'effacement du coffre à la révocation (défense en profondeur, non couverte seule).
+
+**Vérifié à la fin** : hôte, `sandbox-host.sh` vert (11 tests) puis `aller_retour_avec_bac_a_sable ... ok` ; test croisé
+Rust → TS : OK ; `synco_app` et `synco_api` non modifiés.

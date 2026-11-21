@@ -51,6 +51,10 @@ Le régime `client` n'utilise pas ces états (la boucle tourne dans le navigateu
 | `running` | outil `interactive` | `awaiting_user` | worker | runtime |
 | `running` | clé manquante et indispensable | `awaiting_key` | worker | runtime |
 | `awaiting_confirmation` | `confirm` | `queued` | utilisateur | API, au dépôt |
+| `running` | outil `propose_actions` (plan d'action, L00f) : `POST …/plans` | `awaiting_confirmation` (`pendingToolCall` = `propose_actions`) | worker | runtime |
+| `awaiting_confirmation` (plan) | `plan_decision` `reject` (route de décision) | `queued` ; `propose_actions` clos par `{"error":"plan_rejected"}` | utilisateur | API, à la décision |
+| `awaiting_confirmation` (plan) | `plan_decision` `accept` | inchangé (l'appareil exécute) | utilisateur | API |
+| `awaiting_confirmation` (plan) | `plan_result` | `queued` ; le worker exécute les actions d'agent puis clôt `propose_actions` avec le bilan | appareil | API, au dépôt |
 | `awaiting_user` | `answer` ou `upload` | `queued` | utilisateur | API, au dépôt |
 | `awaiting_confirmation`, `awaiting_user` | `message` | `queued` ; l'outil en attente est clos par le worker avec le résultat `{"error":"superseded_by_user_message"}` | utilisateur | API puis runtime |
 | `awaiting_key` | entrée ajoutée pour `awaitingKey` (03 §11) | `queued` | client (P11) | API, à l'ajout de l'entrée |
@@ -115,6 +119,23 @@ Règles communes :
   correspondant.
 - **Socket** : chaque transition écrite par l'API ou par le worker émet `ai:session-status` vers le
   propriétaire.
+
+### 2.2 Plan d'action (ajouté par L00f, 2026-11-21 ; 12)
+
+- Le plan **généralise** `awaiting_confirmation` : même état, même push `AI_AWAITING_CONFIRMATION`, même
+  délai `confirmationTimeoutSecs` (`failed` `confirmation_timeout` ; le plan passe `expired`). L'état du
+  plan lui-même (`proposed` … `done`) vit dans `AiActionPlan` (12 §7) et s'affiche dans la carte (L12).
+- Un `message` pendant l'attente : `queued`, `propose_actions` clos par
+  `{"error":"superseded_by_user_message"}`, plan `rejected`.
+- Reprise du worker (12 §8.2) : il lit `plan_result`, exécute les actions d'agent acceptées, puis ferme
+  `propose_actions` par un `tool_result` portant les états et les sorties ; le tour continue (`running`).
+- Une action exécutée par l'agent suit §5 : `executing` jamais relancé, `unknown_outcome`.
+- Au plus 3 plans consécutifs par tour, sinon `failed` `plan_limit`.
+- **Retrait du mode autonome** (PC40, 12 §11.4) : les conversations restent en régime `runtime`, en
+  pause, et reprennent en mode plan au prochain dépôt de délégation ; mécanique provisoire (QP3) :
+  `queued` / `running` → `awaiting_key`, `awaitingKey = "delegation:<runtimeId>"`, sortie vers `queued`
+  au dépôt, `key_timeout` au-delà de `keyTimeoutSecs`. C'est la seule révocation qui ne fait pas sortir
+  du régime `runtime` (ligne « tout état `runtime` » ci-dessus).
 
 ## 3. Sortie du mode runtime
 
@@ -200,6 +221,7 @@ constate et l'écrit.
 | `confirmation_timeout` | `failed` | Décision attendue trop longtemps (09 §3) |
 | `key_timeout` | `failed` | Clé attendue trop longtemps (09 §3) |
 | `worker_crash_loop` | `failed` | §5.5 |
+| `plan_limit` | `failed` | Plus de 3 plans d'action consécutifs dans un tour (L00f, 12 §7.3) |
 | `tool_failed` | (pas de changement) | Un outil a échoué ; son résultat d'erreur est donné au modèle |
 | `revoked` | régime `client` | Délégation, autorisation ou runtime révoqués |
 | `internal` | `failed` | Erreur interne |
@@ -211,6 +233,7 @@ constate et l'écrit.
 | `queued` | « En attente » (et « runtime injoignable » si le runtime est hors ligne) |
 | `running` | « En cours » + flux direct |
 | `awaiting_confirmation` | « Confirmation demandée » + `PendingActionBar` |
+| `awaiting_confirmation` avec `propose_actions` | « N actions à valider » + carte du plan (L12, L13 ; C1 §3) ; « en cours sur votre autre appareil » si un autre appareil a le claim |
 | `awaiting_user` | « Réponse attendue » |
 | `awaiting_key` | « Ouvrez Synco pour donner accès » |
 | `idle` | « Terminé » |

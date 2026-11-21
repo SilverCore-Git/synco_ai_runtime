@@ -104,6 +104,8 @@ pub struct MockState {
     pub resets: Vec<Value>,
     /// Taille de page (0 = tout sur une page).
     pub resets_page: usize,
+    /// Nombre de pages vides (avec un `nextCursor` non nul) servies avant les vrais items.
+    pub resets_empty: usize,
     /// Statut d'erreur à servir (route absente : 404).
     pub resets_fail: Option<u16>,
     /// Requêtes reçues (chemin + requête).
@@ -352,7 +354,17 @@ async fn channel(
                 return error(status, "not_found");
             }
             let param = |k: &str| query.split('&').find_map(|p| p.strip_prefix(&format!("{k}=")).map(str::to_owned));
-            let start: usize = param("cursor").and_then(|c| c.parse().ok()).unwrap_or(0);
+            let raw = param("cursor");
+            if st.resets_empty > 0 {
+                let k = match raw.as_deref() {
+                    None => 0,
+                    Some(c) => c.strip_prefix('e').and_then(|n| n.parse().ok()).unwrap_or(usize::MAX),
+                };
+                if k < st.resets_empty {
+                    return axum::Json(json!({ "items": [], "nextCursor": format!("e{}", k + 1) })).into_response();
+                }
+            }
+            let start: usize = raw.and_then(|c| c.parse().ok()).unwrap_or(0);
             let size = if st.resets_page == 0 { st.resets.len().max(1) } else { st.resets_page };
             let page: Vec<Value> = st.resets.iter().skip(start).take(size).cloned().collect();
             let next = (start + page.len() < st.resets.len()).then(|| (start + page.len()).to_string());

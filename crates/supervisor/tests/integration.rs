@@ -1317,6 +1317,26 @@ async fn relecture_api_paginee_et_verifiee_localement() {
     synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }
 
+/// PC31 : une page vide avec un `nextCursor` non nul est suivie jusqu'au curseur nul.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn relecture_api_suit_les_pages_vides_jusqu_au_curseur_nul() {
+    let env = setup().await;
+    let rt = Arc::clone(&env.running.runtime);
+    wait_until_async(&rt, |st| st.vault.get(USER).is_some()).await;
+    remember_thread(&rt, THREAD, USER, "d-good").await;
+    env.api.with(|st| {
+        st.resets_empty = 3;
+        st.resets = vec![json!({ "threadId": THREAD, "userId": USER, "delegationId": "d-good", "resetAt": "2026-11-21T10:00:00.000Z" })];
+        st.resets_requests.clear();
+    });
+    let env = restart(env, |_| ()).await;
+    wait_until("enveloppe reposée après trois pages vides", || reposes(&env).len() == 1).await;
+    let requests = env.api.with(|st| st.resets_requests.clone());
+    assert_eq!(requests.len(), 4, "3 pages vides, puis la page des items (curseur nul) : {requests:?}");
+    assert!(requests[3].contains("cursor=e3"), "{requests:?}");
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+}
+
 /// PC31 : la relecture API ne s'arrête pas au plafond des items **vus** mais à celui des items
 /// **entrés dans la file** : plus de `MAX_REPAIRS` items refusés localement (salons étrangers) ne
 /// cachent pas la vraie réparation qui les suit.

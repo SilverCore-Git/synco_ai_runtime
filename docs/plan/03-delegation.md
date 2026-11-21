@@ -517,8 +517,10 @@ fois par salon, au plus 32 par worker (`created_key_unknown_thread`, `created_ke
 du superviseur ne remplace jamais une clé différente déjà ouverte. **Écart assumé** : le superviseur
 n'a que la délégation *courante* du propriétaire, pas le `delegationId` de l'autorisation de session ;
 s'ils diffèrent, l'API refuse (signature `400`, entrée `out_of_scope`) : échec fermé, le salon reste
-en TOFU. Les clés RSA publiques des membres utilisées pour sceller la clé du salon ne sont **pas
-épinglées** (borne ≥ 2048 bits seulement) : question ouverte (00 §6, Q25).
+en TOFU. Les clés RSA publiques des membres utilisées pour sceller la clé du salon sont **épinglées en TOFU
+par le superviseur** (L05b, 2026-11-21, Q25) : une clé changée sans chaîne de transitions d'identité
+valide (§4, étape 2) bloque la création de tout salon (06 §4.3). Limite : la clé RSA du
+**propriétaire** n'est pas liée à son mandat (le format du mandat est inchangé ; question 00 §6, Q25).
 
 ## 11. Salon créé par un autre membre en l'absence de l'utilisateur
 

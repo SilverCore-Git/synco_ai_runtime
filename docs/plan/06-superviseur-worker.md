@@ -195,6 +195,43 @@ seul le worker détient. Une trame de plus de 1 Mio est remplacée par `ready { 
 (05 §2). Source : `crates/supervisor/src/client_ws.rs:ready_plan`, `register` ; `workers.rs:341-364` ;
 `docs/journal.md` (L05, écart 2, correction 10). Décision de l'orchestrateur : acceptés.
 
+### 4.3 Annuaire des clés des membres : épinglage TOFU par le superviseur (L05b, 2026-11-21, Q25)
+
+Le worker n'a pas de disque ; le superviseur, qui relaie `GET /api/runtime/v1/e2ee/members/keys`
+(04 §4.3), tient l'épinglage. **Aucun message de pipe nouveau** : le contrôle porte sur la réponse
+relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pins.rs`,
+`workers.rs:member_keys_gate`.
+
+- **Identité épinglée** : `SHA-256` de la `SubjectPublicKeyInfo` DER (`rsaEncryption`), recalculée
+  depuis `n` et `e` (zéros de tête sans effet ; vecteur WebCrypto `exportKey('spki')` en test). Est
+  aussi gardée l'empreinte RFC 7638 (`SHA-256` du JWK canonique), la même que
+  `computeKeyFingerprint` de l'app, pour l'affichage et la comparaison hors bande.
+- **Stockage** : `<state_dir>/member-rsa-pins.json`, données publiques (empreintes, jamais la clé),
+  `{ "v": 1, "orgs": { org: { userId: { fingerprint, thumbprint, firstSeen, previous[], pending? } } } }`,
+  écriture atomique. Absent : vide ; illisible : le superviseur ne démarre pas (pas de remise à zéro
+  silencieuse).
+- **Règle**, pour chaque membre de la réponse dont la clé est lisible et dans les bornes (sinon le
+  worker l'écarte, `skippedRecipients`) : première vue du couple (org, utilisateur) → épinglée ;
+  même empreinte → acceptée ; empreinte différente → **rotation** acceptée seulement si la chaîne
+  de transitions d'identité (`GET /users/:userId/sign-key`, au plus 8 vérifications par réponse)
+  suivie depuis la plus ancienne clé de signature épinglée de l'utilisateur (`user-pins.json`),
+  **passant par la clé de signature épinglée courante**, aboutit exactement à cette clé RSA (les
+  transitions signent la nouvelle clé RSA, 03 §4) ; sinon **refus**.
+- **Refus global** : la réponse entière est remplacée par `409 {"error":"member_key_changed"}` ;
+  `create_thread` rend `member_key_changed` (§9) sans créer ni sceller quoi que ce soit, y compris
+  pour un salon d'espace (choix le plus sûr : un salon créé sans un membre serait surprenant, et un
+  annuaire où une clé a été substituée n'est plus digne de confiance). La clé refusée est mise en
+  attente (`pending`) ; alerte `member_rsa_key_changed` (vue d'ensemble du dashboard, journal sans
+  clé, empreinte ni identifiant).
+- **Acceptation manuelle** : la vue d'ensemble liste les clés refusées (empreintes épinglée et
+  proposée au format de l'app) ; l'admin du runtime, après comparaison hors bande avec le membre,
+  accepte **la clé affichée** (`POST /api/member-keys/accept { userId, fingerprint }`, session +
+  origine + CSRF ; une autre empreinte → `409 no_pending_key`). Pas de commande en ligne : le
+  fichier est tenu en mémoire par le superviseur en marche.
+- **Limites** : la première vue vient de l'API (TOFU) ; un membre qui n'a jamais délégué au runtime
+  n'a pas de clé de signature épinglée et `sign-key` ne le sert pas (04 §4.1) : sa rotation légitime
+  n'est acceptée que par l'admin. La clé RSA du propriétaire n'est pas liée à son mandat (00 §6, Q25).
+
 ## 5. Métriques (sans contenu, P9)
 
 ```json
@@ -249,6 +286,7 @@ Résultats d'outil `{"error": code}` donnés au modèle (le code n'est pas un `l
 | `too_many_recipients` | `create_thread` : plus de **300** destinataires de clé RSA (corps du canal ≤ 256 Kio, 04 §4.3) ; aucun salon créé pour cet élément (champ `max`) |
 | `too_many_threads` | `create_thread` : plus de 10 salons par appel |
 | `no_recipient_key` | `create_thread` : aucune clé de membre exploitable |
+| `member_key_changed` | `create_thread` : le superviseur a refusé l'annuaire des membres, une clé RSA a changé sans preuve (§4.3, Q25) ; aucun salon créé, rien de scellé (champ `note`) |
 | `unknown_outcome` | Issue inconnue d'un outil mutant (08 §5) |
 
 Avertissements de `create_thread` (champ `warning` du résultat, le salon existe) : `key_envelope_unavailable`,

@@ -180,6 +180,35 @@ commentaires d'énumération sont complétés ici) :
 - `AiConversationKey.creatorId` = l'utilisateur, posé par l'API à la bascule ; `commitment` et
   `signature` facultatifs (03 §6.2).
 
+### 3.1 `ThreadKey` : champs ajoutés par L03d, et `AiThreadEnvelopeEvent` (révisé après L03d, 2026-11-21)
+
+`ThreadKey` (modèle existant de `synco_api`, hors des modèles ci-dessus) reçoit trois champs facultatifs
+(Q21 ; `schema.prisma`, `prisma db push`, pas de migration) :
+
+| Champ | Sens |
+|---|---|
+| `envelopeResetAt` | Dernière réinitialisation de l'enveloppe `rt1` du salon (admin de l'org ou délégant) ; `null` = jamais. Visible des clients : une enveloppe épinglée qui change n'est jamais acceptée en silence |
+| `envelopeResetBy` | Utilisateur qui l'a réinitialisée |
+| `envelopeDelegationId` | Délégation dont le runtime a signé l'enveloppe `rt1` **courante**. `creatorId` ne change jamais (`rt1:<délégation de création>`) ; après une nouvelle pose par une délégation plus récente, ce champ désigne le mandat à vérifier. `null` = pas d'enveloppe `rt1`, ou posée avant ce champ (alors la délégation de `creatorId`) |
+
+Nouveau modèle `AiThreadEnvelopeEvent` (journal sans contenu des réinitialisations et reposes ;
+`@@map("ai_thread_envelope_events")`, index `(threadId, createdAt)` et `(orgId, createdAt)`) :
+
+| Champ | Sens |
+|---|---|
+| `id` | cuid |
+| `threadId`, `orgId` | salon et org |
+| `type` | `reset` \| `repose` |
+| `actor` | `user` (réinitialisation) \| `runtime` (nouvelle pose) |
+| `actorId` | `userId` de l'auteur (`reset`) ou `runtimeId` (`repose`) |
+| `delegationId` | délégation signataire (`repose`) ; `null` pour un `reset` |
+| `keys` | nombre de `ThreadKey` modifiées |
+| `createdAt` | horodatage |
+
+Écrit dans la **même transaction** que la modification des `ThreadKey` (04 §4.3). **Aucune rétention
+n'est définie** : la purge d'`AiThreadEnvelopeEvent` est **ouverte** (PC27, non tranchée). Source :
+`synco_api/prisma/schema.prisma`, `SYNCOAI_REFONTE_FEATURE.md` §14.8.
+
 ## 4. Extension de `AiChatSession` et bail
 
 ```prisma
@@ -311,6 +340,7 @@ model AiChatSessionEvent {
   createdAt DateTime @default(now())
 
   @@index([sessionId, createdAt])
+  @@index([createdAt])  // L03d (Q20) : purge à 90 jours
   @@map("ai_chat_session_events")
 }
 ```
@@ -326,8 +356,13 @@ ni l'état ni le réveil (`conversationLifecycle.ts:398-460`). Journal : l'API �
 de `PUT …/transcript` et `POST …/status` (04 §4.2) : lignes `actor = "runtime"`, `fromState` /
 `toState` nuls, `code` = nom d'outil ou epoch (`^[a-z0-9_]{1,64}$`), écrites seulement si l'écriture
 qui les porte réussit (dans sa transaction). Un worker qui a perdu le bail ne peut pas écrire son
-propre `lease_lost` : c'est le worker suivant qui le constate. Aucune rétention : les lignes ne
-disparaissent qu'avec la conversation (`onDelete: Cascade`). Source :
+propre `lease_lost` : c'est le worker suivant qui le constate. **Rétention de 90 jours (L03d, Q20 /
+PC22)** : `purgeOldSessionEvents` supprime les `AiChatSessionEvent` de plus de 90 jours à chaque passe
+de maintenance, **par lots** (au plus 5 lots de 1 000 par passe, les plus anciens d'abord), appuyée sur
+`@@index([createdAt])` (`prisma db push`) ; les lignes disparaissent aussi avec la conversation
+(`onDelete: Cascade`). Les autres limites de `SYNCOAI_REFONTE_FEATURE.md` §13.6 bis (M4 : `lease_lost`
+écrit par le worker suivant ; M5 : ticket `sgt1` possible jusqu'à 15 s après un bannissement dont la
+révocation a échoué) restent **documentées sans code**. Source :
 `synco_api/src/services/aiRuntime/conversationLease.ts:186-228`, `SYNCOAI_REFONTE_FEATURE.md` §13.6.
 
 ## 6. Politique runtime de l'org
@@ -355,10 +390,10 @@ Dans `Organization.activeModules.aiConfig` (JSON lisible par les membres, édit�
 | `members` / `memberIds` | `all`, ou liste des membres autorisés à basculer (sélecteur cherchable côté app) | — |
 | `maxDelegationDays` | Durée maximale d'une délégation | D4 (09 §1) |
 | `toolPolicy` | Politique par outil en l'absence de l'utilisateur | D5 |
-| `limits` | Plafonds de l'org, bornés par ceux du runtime ; contient aussi `confirmationTimeoutSecs` (`awaiting_confirmation` et `awaiting_user` → `failed` `confirmation_timeout`) et `keyTimeoutSecs` (`awaiting_key` → `failed` `key_timeout`) : entiers ≥ 1, défaut **604 800** (7 j), **abaissables seulement**, ancien format sans ces champs = 7 j (Q14 a = A ; révisé après L03c, 2026-11-20) | D6 (09 §2), 09 §3 |
+| `limits` | Plafonds de l'org, bornés par ceux du runtime ; contient aussi `confirmationTimeoutSecs` (`awaiting_confirmation` et `awaiting_user` → `failed` `confirmation_timeout`) et `keyTimeoutSecs` (`awaiting_key` → `failed` `key_timeout`) : entiers, défaut **604 800** (7 j), **abaissables seulement**, **plancher de 3 600 (1 h)** : une valeur valide sous 3 600 est **ramenée à 3 600**, à l'écriture (`normalizeStoredRuntimePolicy`, donc `PUT` / `PATCH` de la config IA) **et** à l'application (la maintenance reborne [1 h, 7 j] toute valeur lue, y compris une ancienne valeur en base) ; valeur invalide (< 1, non entière) → défaut 7 j ; ancien format sans ces champs = 7 j (Q14 a = A, Q19 tranchée par L03d ; `RUNTIME_WAIT_TIMEOUT_MIN_SECS`) | D6 (09 §2), 09 §3 |
 
 Lecture tolérante (règle des formats rétrocompatibles) : `runtime` absent = mode runtime désactivé ;
-champs absents = valeurs par défaut de 09. Normalisé par `normalizeAiConfig` (`orgAiConfig.ts:81`), qui conserve ces deux champs de `limits` ; la maintenance lit les délais de chaque org (politique illisible → défaut) et `GET /llm-policy` les renvoie dans `runtime.limits` (04 §4.1). Un délai de 1 s est admis (question ouverte : minimum, 00 §6 Q19).
+champs absents = valeurs par défaut de 09. Normalisé par `normalizeAiConfig` (`orgAiConfig.ts:81`), qui conserve ces deux champs de `limits` ; la maintenance lit les délais de chaque org (politique illisible → défaut) et `GET /llm-policy` les renvoie dans `runtime.limits` (04 §4.1). Le minimum est de 1 h (Q19 tranchée, L03d, PC21).
 
 ## 7. Notifications
 
@@ -366,7 +401,9 @@ Ajouts à `enum NotificationType` (`schema.prisma:1189`) : `AI_TURN_DONE`, `AI_A
 `AI_AWAITING_KEY`, `AI_AWAITING_USER`, `AI_FAILED`. Titre et corps construits par l'API à partir du
 type et du **titre** de la conversation… qui est chiffré : le corps reste générique (« Synco AI a
 terminé », « Synco AI attend votre confirmation »), `data` = `{ orgId, sessionId }` pour ouvrir la
-conversation. Aucun contenu.
+conversation. Aucun contenu. **Révisé après L03d (2026-11-21, Q19 / PC21)** : une notification par
+**entrée** dans l'état annoncé et plafond de 6 / min par conversation (04 §4.2, « Notifications ») ;
+l'évènement socket `notification:push` est émis, `data` portant aussi `type`.
 
 ## 8. Relations à ajouter sur les modèles existants
 

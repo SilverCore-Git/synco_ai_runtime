@@ -213,7 +213,7 @@ relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pi
   réponse n'est rendue au worker qu'après l'écriture (échec : refus fermé `member_pins_unavailable`
   et alerte `member_pins_not_saved`, l'état complet est réécrit à la prochaine occasion). Absent :
   vide ; illisible ou de version inconnue (`v` ≠ 1, revue M5) : le superviseur ne démarre pas (pas de
-  remise à zéro silencieuse). **Bornes** (revue I3) : 2 000 épingles par org (au-delà, refus
+  remise à zéro silencieuse). **Bornes** (revue I3 ; PC28 les remplacera au lot L05c, ci-dessous) : 2 000 épingles par org (au-delà, refus
   fermé `member_pins_limit` et alerte), 16 empreintes précédentes par membre, 100 clés en attente
   par org (au-delà, le refus reste fermé sans être mémorisé). Mesure : 2 000 premières vues dans une
   réponse en 0,12 s, verrou d'état tenu au plus 16 ms (`integration.rs::cles_rsa_charge_et_plafond`).
@@ -257,6 +257,14 @@ relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pi
   l'accueil. L'épinglage ne protège que les membres déjà vus ; un membre qui n'a jamais délégué au runtime
   n'a pas de clé de signature épinglée et `sign-key` ne le sert pas (04 §4.1) : sa rotation légitime
   n'est acceptée que par l'admin. La clé RSA du propriétaire n'est pas liée à son mandat (00 §6, Q25).
+
+**Décisions PC27 (2026-11-21), reportées en 03 §10.1** : (a) l'app affichera l'empreinte RFC 7638 de la clé
+RSA locale du membre (L10 / L11), ce qui rendra possible la comparaison hors bande qu'**interdit** l'état
+actuel (revue I4 ci-dessus) ; (b) un mandat v2 liera l'empreinte SPKI de la clé RSA du propriétaire, le
+runtime lisant v1 et v2 ; (d) une réinitialisation E2EE sans transition signée bloque la création de
+salons jusqu'à l'acceptation par l'admin du runtime (v1, comportement actuel) ; (e) refus global en v1, avec
+un raffinement `scope=owner` plus tard ; (c) la route « chaîne de transitions » est reportée. Bornes
+de `member-rsa-pins.json` : **PC28 (2026-11-21), épingles hybrides : décidé, implémentation au lot L05c ; le code actuel applique encore 2 000 par org (`member_pins_limit`)**. Cible : plafond de sécurité de **50 000 par org**, réglable dans la configuration ; épingles **inactives depuis plus de 180 jours archivées en compact** (empreinte seule, toujours détectées au retour du membre) ; **éviction de la plus ancienne archive** en cas de débordement ; **alerte du dashboard à 80 %**. Limite de 1 000 membres par org (PC30) : voir 00 §6. Purge d'`AiThreadEnvelopeEvent` : 1 an (PC29, 07 §5).
 
 ## 5. Métriques (sans contenu, P9)
 
@@ -315,6 +323,10 @@ Résultats d'outil `{"error": code}` donnés au modèle (le code n'est pas un `l
 | `member_key_changed` | `create_thread` : le superviseur a refusé l'annuaire des membres, une clé RSA a changé sans preuve (§4.3, Q25) ; aucun salon créé, rien de scellé (champ `note`) |
 | `unknown_outcome` | Issue inconnue d'un outil mutant (08 §5) |
 
+`answer` et `upload` sont acceptés même si l'état lu est `queued` (l'API passe l'état à `queued` au dépôt,
+08 §2.1) : le contrôle du worker porte sur l'appel en attente (`pendingToolCall`), pas sur l'état lu
+(`docs/journal.md`, L07, écart 9 ; `crates/worker/src/agent.rs`).
+
 Avertissements de `create_thread` (champ `warning` du résultat, le salon existe) : `key_envelope_unavailable`,
 `key_envelope_not_posted`, `delegation_entry_not_posted` — le salon reste accepté en TOFU (03 §10.1).
 Les membres dont la clé RSA publique est illisible ou **de moins de 2048 bits** sont écartés et
@@ -339,24 +351,34 @@ Erreurs de l'interface LLM (`LlmError`, `crates/worker/src/provider/mod.rs`), co
 **Adaptateurs** (L07b ; interface inchangée ; `adapter_for`) : `openai`, `gateway`, `custom` =
 dialecte compatible OpenAI ; `mistral` (`provider/mistral.rs`) ; `gemini` (`provider/gemini.rs`).
 Les flux de Mistral et Gemini sont écrits d'après la documentation et des retours publiés, **jamais
-testés contre les vrais fournisseurs** (recette manuelle).
+testés contre les vrais fournisseurs** (recette manuelle : un flux coupé réel ; `reasoning_effort: high`
+accepté par `mistral-small-2603` et `mistral-medium-3-5`).
 
 - **Gemini** par l'endpoint **compatible OpenAI** (`base_url` du runtime
   `https://generativelanguage.googleapis.com/v1beta/openai`) : l'API native est refusée par la liste
   blanche du mandataire (10 §4, `POST /chat/completions` seulement). Pas de `include_thoughts` (Google
-  refuserait `reasoning_effort` combiné à `thinking_config`, d'après un retour tiers) : le
-  raisonnement n'est lu que si le serveur le rend (`extra_content.google.thought`, `<thought>`) ;
+  refuserait `reasoning_effort` combiné à `thinking_config`, d'après un retour tiers) ; **raisonnement
+  Gemini désactivé jusqu'à un test réel avec une clé** (**L07c, PC11, Q28 tranchée**) : rien n'est activé de
+  plus. Lecture de PC11 par L07c : « ne pas demander les pensées », `reasoning_effort` (L07b) inchangé ;
+  l'autre lecture (ne plus envoyer `reasoning_effort` à Gemini) est une question de l'orchestrateur restée
+  **ouverte**. Le raisonnement n'est lu que si le serveur le rend (`extra_content.google.thought`, `<thought>`) ;
   `reasoning_tokens` seulement si `completion_tokens_details.reasoning_tokens` est présent (non
   documenté), sinon absent ; `max_tokens` = `maxOutputTokensPerCall` ; pas de `parallel_tool_calls`.
 - **Mistral** (`base_url` `https://api.mistral.ai/v1`) : les identifiants d'appel d'outil du worker
   (`call_<24 hex>`) sont **traduits** en 9 caractères alphanumériques **dans la requête seulement**
   (hachage FNV-1a en base 62, sans collision dans la requête) ; l'historique garde l'identifiant du
   worker. Pas de `stream_options` ; `parallel_tool_calls: false` quand des outils sont fournis ; `usage` attendu dans le dernier morceau (non garanti par la documentation lue : sans lui, la boucle estime les tokens).
-- **Flux coupé** (fermé sans `finish_reason` ni `[DONE]`) : `BadStream` (donc nouvel essai) pour
-  **Mistral et Gemini** ; pour `openai`, `custom` et `gateway`, fin silencieuse `stop` comme le TS
-  (écart de comportement entre adaptateurs : **question ouverte**, voir 00 §6).
+- **Flux coupé** (fermé sans `finish_reason` ni `[DONE]`) : `BadStream` (donc nouvel essai) pour **tous**
+  les adaptateurs, `openai`, `custom` et `gateway` compris (**L07c, décision PC9 du 2026-11-21, Q26
+  tranchée** ; le décodeur OpenAI est désormais strict, `strict_end`). **Écart volontaire avec le TS**, qui
+  terminait en `stop`. Le nouvel essai n'a lieu que si rien n'a été diffusé (politique inchangée de
+  `agent.rs` : 1 essai + 3 nouveaux essais) ; après du texte déjà diffusé : pas de nouvel essai,
+  `provider_error`, aucune réponse enregistrée.
 - **`reasoning_effort` limité aux modèles qui l'acceptent** : passerelle : toujours envoyé (champ de sa
   liste blanche) ; OpenAI : modèles à raisonnement (`o1`, `o3`, `o4`, `gpt-5`) ; `custom` : jamais ; Gemini : préfixes `gemini-2.5`, `gemini-3`, `gemini-4`
-  (jamais `minimal`, `none`, `xhigh`) ; Mistral : `mistral-large-4*` seulement (`low|medium|high`).
-  Les autres modèles Mistral n'acceptent que `high|none` : **aucun effort** n'est envoyé (la
-  correspondance avec l'effort de l'org est une décision produit non prise, **question ouverte**).
+  (jamais `minimal`, `none`, `xhigh`) ; Mistral (**L07c, PC10, Q27 tranchée**) : `mistral-large-4*` :
+  effort transmis tel quel (`low|medium|high`) ; `mistral-small-2603*` et `mistral-medium-3-5*` (qui
+  n'acceptent que `high|none`) : `reasoning_effort = high` si l'effort de l'org est `medium` ou `high`,
+  **rien** sinon ; tous les autres modèles, **alias `*-latest` compris** (modèle réel inconnu) : rien.
+  Question de l'orchestrateur restée **ouverte** : faut-il aussi couvrir les alias `mistral-*-latest`
+  (recommandation : non, risque de `400`) ?

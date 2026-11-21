@@ -80,8 +80,14 @@ Uniquement ce que le superviseur reçoit déjà : `metrics` du pipe (06 §5 : co
 µ€ calculé par le worker depuis `pricing`, latences), `status` (liste fermée d'états de 08 §1 et de
 codes de 08 §6, sinon `other`), `done`, code de sortie, consommation du cgroup (`memory.current`,
 `memory.peak`, `cpu.stat`, lue toutes les 5 s), identifiant d'utilisateur et de conversation tels que
-l'API les a donnés au superviseur (**pas de nom** : l'API n'en fournit pas au runtime), fournisseur et
-modèle de la configuration. Le stockage est **typé** : aucun champ libre, donc aucune voie pour du
+l'API les a donnés au superviseur, fournisseur et modèle de la configuration. **Noms d'affichage (PC17,
+L03d, 2026-11-21)** : l'API fournit désormais au runtime `displayName` (`string | null`) dans
+`GET /delegations` et `GET /authorizations` (04 §4.1) : `User.name`, sinon `User.pseudo`, en écartant toute
+valeur qui contient `@` ou égale l'e-mail, 128 caractères au plus, sinon `null` ; **jamais l'e-mail**. Le
+dashboard doit afficher ce nom, et l'**identifiant quand `displayName` est `null`**. **Non réalisé à ce
+jour** : le superviseur ne lit pas encore `displayName` (`DelegationRecord` ne le porte pas) et le
+dashboard affiche l'identifiant seul ; adoption **ouverte** (PC17 : « L03d + dashboard »). Tout nom reçu
+reste une donnée de l'API, jamais du texte de conversation. Le stockage est **typé** : aucun champ libre, donc aucune voie pour du
 texte de conversation. Ni `event`, ni `log`, ni `signed_request` ne sont lus par le dashboard.
 
 **Ajout L05b (2026-11-21, Q25)** : la vue d'ensemble liste aussi les **clés RSA de membres refusées**
@@ -113,11 +119,19 @@ UTC, le coût étant attribué au jour où la mesure est arrivée.
 
 ## 7. Questions ouvertes (L08, reportées le 2026-11-20 ; non tranchées, 00 §6, Q29)
 
+**Décisions du 2026-11-21 (porte C, PC13 à PC15), reportées sans changement de code** : (a) **PC13** : mot de
+passe local seul en v1, pas de connexion par ticket Synco ; (b) **PC14** : pas de compteur par outil ; l'usage
+est présenté comme des analytics de ressources par session et par utilisateur ; **PC15** : mot de passe créé par
+la commande `dashboard-password`, comme prévu (l'idée d'un `.env` est abandonnée). Le point (c) reste non
+tranché. Les puces ci-dessous gardent leur texte d'origine pour mémoire. **PC28** : le dashboard affichera une
+alerte à 80 % du plafond d'épingles RSA (lot L05c, non réalisé).
+
 - **(a) Connexion par ticket Synco** des admins de l'org, **en complément** du mot de passe local
   (jamais à sa place, §1) : demande une nouvelle route de `synco_api` et un rôle.
 - **(b) Compteur d'appels par outil** dans `metrics` (06 §5) : évolution du protocole et de
-  `crates/worker`, nécessaire pour nommer l'outil dans la chronologie (§5). Même remarque pour
-  l'affichage d'un nom d'utilisateur à la place de l'identifiant (l'API n'en donne pas au runtime).
+  `crates/worker`, nécessaire pour nommer l'outil dans la chronologie (§5). L'affichage d'un
+  nom d'utilisateur à la place de l'identifiant n'est plus bloqué par l'API (`displayName`, §5, L03d) ;
+  reste l'adoption par le superviseur et le dashboard.
 - **(c) Dashboard désactivé tant qu'aucun mot de passe n'existe** (aujourd'hui : pas de page « aucun
   mot de passe », §1) : à confirmer ou à remplacer.
 

@@ -114,9 +114,10 @@ Le mandataire (`sandbox/proxy.rs`) :
   résolveur écarte toute adresse non publique (`PublicOnlyResolver`, pas de mandataire HTTP
   système). Une `base_url` configurée pour `gateway` dans le runtime l'emporte ;
 - fournisseur inconnu ou absent de la configuration, ou URL de passerelle refusée : **aucun worker**
-  n'est lancé, la conversation passe en `failed` avec `provider_error` (code le plus proche accepté
-  par l'API, 08 §6 ; un code `provider_not_configured` n'existe pas côté API : **question ouverte**,
-  00 §6, Q30 ; la cause exacte, `llm_provider_not_configured` ou `llm_gateway_url_refused`, est
+  n'est lancé, la conversation passe en `failed` avec `provider_error` (code écrit aujourd'hui par le
+  superviseur, `workers.rs:130`). **Depuis L03d (2026-11-21, Q30 / PC16)** l'API accepte
+  `provider_not_configured` (08 §6) : c'est le code prévu pour ce cas, **non encore adopté** par le
+  superviseur (ouvert) ; la cause exacte, `llm_provider_not_configured` ou `llm_gateway_url_refused`, est
   au journal du runtime) et le bail est rendu ;
 - pour `openai`, `mistral`, `gemini`, `custom` : l'`authorization` du worker est retiré et remplacé
   par `Bearer <clé>` ; la clé **ne passe plus par le pipe** (`WorkerLauncher::injects_llm_credentials`,

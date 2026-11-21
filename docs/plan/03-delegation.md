@@ -111,6 +111,41 @@ l'ouverture de §3 ; tout refus y est `delegation_unusable`. La variante
 l'ouverture d'une enveloppe : une API malveillante peut garder le mandat authentique et son hash,
 et servir une autre enveloppe scellée vers `kex` avec une `DK` qu'elle connaît.
 
+### 4.1 Mandat v2 (figé par L00f, 2026-11-21 ; PC27 b, PC35)
+
+```
+mandateBytes v2 = "synco-rt-mandate-v2|" userId "|" orgId "|" runtimeId "|" delegationId "|" scope "|" iat "|" exp
+                  "|" fprHex "|" b64u(SHA-256(utf8(wrap))) "|" ownerRsaSpkiHex "|" mode
+signature       = ECDSA-P256-SHA256(clé de signature d'identité de l'utilisateur, utf8(mandateBytes v2))   (P1363, b64)
+```
+
+- Les neuf premiers champs sont ceux du v1, dans le même ordre et avec les mêmes contrôles (§4).
+- `ownerRsaSpkiHex` = `hex(SHA-256(SPKI DER))` de la clé publique RSA d'identité de l'utilisateur, celle
+  que l'app exporte par `exportKey('spki')` : même empreinte que `fingerprint` de `member-rsa-pins.json`
+  (06 §4.3). Exactement 64 caractères `[0-9a-f]`, sinon refus avant vérification.
+- `mode` ∈ `plan`, `auto` (12 §10) ; toute autre valeur est refusée.
+- Une délégation dont le mode change reçoit un **nouvel** `delegationId`, donc de nouvelles AAD (12 §10.1).
+
+**Lecture (règle des formats rétrocompatibles ; le v1 a été livré dans la refonte).** Le lecteur reçoit
+avec la délégation `mandateVersion` (absent = `1`) et, pour le v2, `mode` et `ownerRsaSpkiHex` :
+
+| `mandateVersion` | Octets reconstruits | Mode retenu |
+|---|---|---|
+| `1` ou absent | v1 (§4) ; tout `mode` servi est **ignoré** | `plan` (échec fermé : une délégation existante ne devient jamais autonome) |
+| `2` | v2 ci-dessus, avec `ownerRsaSpkiHex` et `mode` servis | `mode` signé |
+| autre | — | refus `delegation_unusable` |
+
+Le runtime se fie au mode du mandat **vérifié**, jamais au champ servi seul ; la signature d'une version
+présentée comme l'autre échoue. Tout refus est `delegation_unusable` (§4, étape 3). Les clients
+n'écrivent plus que le v2 ; l'API accepte encore un dépôt v1 (lu comme `plan`), et le runtime lit v1 et
+v2. Vecteurs : `docs/plan/vectors/mandate-v2.json`. Usage de l'empreinte par le superviseur : 12 §15,
+QP4 (ouverte).
+
+**Côté API.** Le dépôt (§7.1) porte `mandateVersion?`, `mode?`, `ownerRsaSpkiHex?` (12 §12.1) ;
+`AiRuntimeDelegation` les stocke en clair (07 §3) : `mode` sert au second verrou et aux conditions
+`auto` (12 §10.4), jamais à la place du mandat côté runtime. Une délégation sans `mode` en base vaut
+`plan`.
+
 ## 5. Entrées
 
 ```
@@ -340,6 +375,7 @@ remplacement par une nouvelle délégation (`superseded`).
 | Utilisateur banni de la plateforme (`User.bannedAt`, Q17 = C) | `POST /api/admin/users/:id/ban` → `onUserBanned(userId)`, filet `sweepBannedUserDelegations` | `revoked` / `user_banned` : **toutes** ses délégations actives, dans toutes ses orgs |
 | Expiration | maintenance (07 §9) | `expired` / `revokedReason = null` ; `delegation.revoked.reason = "expired"` |
 | Remplacement | nouveau dépôt (§7.1) | `superseded` / `superseded` (pas de `delegation.revoked` : `delegation.updated`) |
+| **Retrait du mode autonome** (L00f, PC40 ; 12 §11.4) | `isFeatureAllowed(autonomous_mode)` devient faux (politique, liste, opt-in retiré) ; délégations `mode = auto` seulement | `revoked` / `autonomy_withdrawn` ; **exception aux effets communs** : les conversations ne repassent pas en local, elles sont mises en pause puis reprennent en mode plan (12 §15, QP3) |
 
 Effets communs (`revokeDelegations`, `delegationService.ts:366-439`) : statut changé par `updateMany`
 conditionné (`status = active`), `activeKey = null` ; chaque conversation autorisée par la
@@ -448,7 +484,10 @@ Vérification par un client à jour (L10), pour `creatorId` commençant par `rt1
 
 1. `GET /api/orgs/:orgId/ai/runtime/delegations/:delegationId/mandate` (tout membre de l'org) →
    `{ delegationId, userId, orgId, runtimeId, scope, iat, exp, wrapHash, signature, certificate }`
-   (`wrapHash` = `b64u(SHA-256(utf8(wrap)))`, l'enveloppe elle-même n'est pas servie).
+   (`wrapHash` = `b64u(SHA-256(utf8(wrap)))`, l'enveloppe elle-même n'est pas servie). **Ajout L00f** :
+   `version`, `mode` (`plan` pour un v1) et `ownerRsaSpkiHex` (`null` pour un v1) ; le mandat se vérifie
+   selon §4.1 et **une enveloppe `rt1` n'est valide que sous un mandat v2 `mode = auto`** (sous un v2
+   `plan` elle est refusée comme fausse ; sous un v1, TOFU avec avertissement : 12 §10.2).
 2. Certificat vérifié comme en 01 §6.3 étapes 1–3 (pas de défi : il s'agit d'une vérification hors
    ligne) ; `fprHex` recalculée depuis les clés du certificat.
 3. Mandat vérifié avec la clé de signature de `userId` (`verifyWithSignKeys`, résultat `trusted`), en
@@ -566,8 +605,9 @@ réalisée dans le code à ce jour sauf mention) :
   elle ne l'affiche pas (06 §4.3, revue I4) : l'admin ne peut pas comparer d'empreintes.
 - **(b) Mandat v2** : un mandat v2 inclura l'**empreinte SPKI de la clé RSA du propriétaire**, en priorité ;
   le runtime lira **v1 et v2** (règle des formats rétrocompatibles). Changement côté app (L10) et côté
-  API (champ de version). **Format exact du mandat v2 : ouvert** (L05b a seulement proposé, comme
-  hypothèse, `synco-rt-mandate-v2|…|hex(SHA-256(SPKI))` ; non fixé ici). Le mandat v1 de §4 est inchangé.
+  API (champ de version). **Format figé par L00f (2026-11-21) : §4.1**, qui y ajoute le `mode` du mode
+  autonome (PC35). Le mandat v1 de §4 est inchangé. Réalisation : L01c (crate et TS), L03g (API), L08d
+  (runtime).
 - **(d) Réinitialisation E2EE sans transition signée** (`/e2ee/v4/reset`, v3 : aucune preuve possible) :
   **bloque la création de salons jusqu'à l'acceptation par l'admin du runtime** (v1). C'est le
   comportement déjà réalisé par L05b (06 §4.3).
@@ -659,3 +699,6 @@ vérifient mais ne se reproduisent pas à l'octet près.
 | `ai_disabled` | API 403 | Module IA coupé ou org bannie |
 | `envelope_exists` | API 409 | Une `ThreadKey` `rt1:` du salon porte déjà une enveloppe différente, à la pose comme à la nouvelle pose (§10.1 ; révisé après L03c et L03d) |
 | `envelope_not_set` / `repose_unavailable` | API 409 (route utilisateur de réinitialisation) | Aucune enveloppe à réinitialiser / runtime créateur désappairé ou sans délégation active du délégant (§10.1, 04 §4.3 ; L03d) |
+| `autonomy_required` | API 403, superviseur | Création ou pose `rt1` sous une délégation, ou un mandat vérifié, qui n'est pas `auto` (L00f, 12 §10) |
+| `feature_not_allowed` | API 403 | Dépôt `mode = auto` ou route `rt1` alors que la politique d'org ou l'opt-in ne le permet pas (12 §11) |
+| `autonomy_withdrawn` | raison de révocation | Retrait du mode autonome (§8.1, 12 §11.4) |

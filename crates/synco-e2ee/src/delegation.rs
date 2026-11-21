@@ -1,5 +1,6 @@
 //! Délégation des clés au runtime (docs/plan/03-delegation.md) : enveloppe de tête `srd1`, mandat
-//! signé par l'utilisateur et entrées `sre1`.
+//! signé par l'utilisateur (v1, et v2 avec l'empreinte RSA du propriétaire et le mode, 03 §4.1) et
+//! entrées `sre1`.
 //!
 //! Ordre de vérification côté runtime (03 §9) : mandat ([`verify_mandate`]) → enveloppe de tête
 //! ([`open_delegation`]) → entrées ([`open_entry`]). Tout refus est [`Error::DelegationUnusable`]
@@ -307,6 +308,203 @@ pub fn accept_delegation(
     ctx.check_time(now, me.max_lifetime_secs)?;
     verify_mandate(user_sign_key, ctx, me.fpr_hex, wrap, mandate_signature)?;
     open_delegation(ctx, me.kex, wrap)
+}
+
+/// Mode signé par un mandat v2 (03 §4.1, 12 §10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MandateMode {
+    /// Plan d'action (défaut ; tout mandat v1 est lu ainsi).
+    Plan,
+    /// Mode autonome.
+    Auto,
+}
+
+impl MandateMode {
+    /// Valeur signée.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Plan => "plan",
+            Self::Auto => "auto",
+        }
+    }
+
+    /// Lecture stricte : `plan` ou `auto`.
+    pub fn parse(value: &str) -> Result<Self> {
+        match value {
+            "plan" => Ok(Self::Plan),
+            "auto" => Ok(Self::Auto),
+            _ => Err(Error::InvalidInput),
+        }
+    }
+}
+
+/// Version des octets signés d'un mandat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MandateVersion {
+    /// `synco-rt-mandate-v1` (03 §4), lu comme [`MandateMode::Plan`].
+    V1,
+    /// `synco-rt-mandate-v2` (03 §4.1).
+    V2,
+}
+
+/// `ownerRsaSpkiHex` = `hex(SHA-256(SPKI DER))` de la clé RSA d'identité du propriétaire (03 §4.1).
+#[must_use]
+pub fn owner_rsa_spki_hex(spki_der: &[u8]) -> String {
+    crate::encoding::hex(&sha256(spki_der))
+}
+
+impl DelegationContext {
+    /// `mandateBytes v2` (03 §4.1) : les neuf champs du v1, puis `ownerRsaSpkiHex` (64 caractères
+    /// `[0-9a-f]`) et le mode.
+    pub fn mandate_bytes_v2(
+        &self,
+        fpr_hex: &str,
+        wrap_hash: &str,
+        owner_rsa_spki_hex: &str,
+        mode: MandateMode,
+    ) -> Result<String> {
+        let v1 = self.mandate_bytes(fpr_hex, wrap_hash)?;
+        check_fpr_hex(owner_rsa_spki_hex)?;
+        let tail = v1.strip_prefix("synco-rt-mandate-v1|").ok_or(Error::InvalidInput)?;
+        Ok(format!("synco-rt-mandate-v2|{tail}|{owner_rsa_spki_hex}|{}", mode.as_str()))
+    }
+}
+
+/// Signe un mandat v2 (seule version écrite par les clients, 03 §4.1).
+pub fn sign_mandate_v2(
+    user_sign_key: &EcSigningKey,
+    ctx: &DelegationContext,
+    fpr_hex: &str,
+    wrap: &str,
+    owner_rsa_spki_hex: &str,
+    mode: MandateMode,
+) -> Result<String> {
+    let bytes = ctx.mandate_bytes_v2(fpr_hex, &wrap_hash(wrap), owner_rsa_spki_hex, mode)?;
+    Ok(b64(&user_sign_key.sign(bytes.as_bytes())))
+}
+
+/// Champs servis avec la délégation (03 §4.1, tableau « Lecture ») : `mandateVersion` (absent = 1),
+/// `mode` et `ownerRsaSpkiHex`. Ils ne valent rien tant que la signature n'est pas vérifiée.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ServedMandate<'a> {
+    /// `mandateVersion` servi.
+    pub version: Option<u64>,
+    /// `mode` servi (ignoré pour un v1).
+    pub mode: Option<&'a str>,
+    /// `ownerRsaSpkiHex` servi (ignoré pour un v1).
+    pub owner_rsa_spki_hex: Option<&'a str>,
+}
+
+/// Mandat dont la signature a été vérifiée : seule source du mode retenu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedMandate {
+    /// Version des octets vérifiés.
+    pub version: MandateVersion,
+    /// Mode signé (`plan` pour un v1 : échec fermé).
+    pub mode: MandateMode,
+    /// Empreinte RSA signée du propriétaire (v2 seulement), épingle de 12 §10.3 (PC46).
+    pub owner_rsa_spki_hex: Option<String>,
+}
+
+/// Vérification d'un mandat v1 ou v2 (03 §4.1) sur l'enveloppe de tête **elle-même** (hash recalculé
+/// depuis `wrap`). Le mode rendu est celui des octets vérifiés, jamais le champ servi seul.
+pub fn verify_mandate_versioned(
+    user_sign_key: &EcPublicKey,
+    ctx: &DelegationContext,
+    fpr_hex: &str,
+    wrap: &str,
+    signature: &str,
+    served: &ServedMandate<'_>,
+) -> Result<VerifiedMandate> {
+    verify_mandate_versioned_offline_from_wrap_hash(user_sign_key, ctx, fpr_hex, &wrap_hash(wrap), signature, served)
+}
+
+/// Variante **hors ligne** de [`verify_mandate_versioned`] à partir d'un `wrapHash` servi (client qui
+/// vérifie une enveloppe `rt1`, 12 §10.2). Mêmes réserves que
+/// [`verify_mandate_offline_from_wrap_hash`] : ne conditionne jamais l'ouverture d'une enveloppe.
+pub fn verify_mandate_versioned_offline_from_wrap_hash(
+    user_sign_key: &EcPublicKey,
+    ctx: &DelegationContext,
+    fpr_hex: &str,
+    wrap_hash: &str,
+    signature: &str,
+    served: &ServedMandate<'_>,
+) -> Result<VerifiedMandate> {
+    let fail = Error::DelegationUnusable;
+    let (bytes, verified) = match served.version {
+        None | Some(1) => {
+            // Mode et empreinte servis ignorés : une délégation v1 ne devient jamais autonome.
+            let bytes = ctx.mandate_bytes(fpr_hex, wrap_hash).map_err(|_| fail)?;
+            (bytes, VerifiedMandate { version: MandateVersion::V1, mode: MandateMode::Plan, owner_rsa_spki_hex: None })
+        }
+        Some(2) => {
+            let owner = served.owner_rsa_spki_hex.ok_or(fail)?;
+            let mode = MandateMode::parse(served.mode.ok_or(fail)?).map_err(|_| fail)?;
+            let bytes = ctx.mandate_bytes_v2(fpr_hex, wrap_hash, owner, mode).map_err(|_| fail)?;
+            (bytes, VerifiedMandate { version: MandateVersion::V2, mode, owner_rsa_spki_hex: Some(owner.to_owned()) })
+        }
+        Some(_) => return Err(fail),
+    };
+    let sig = from_b64(signature).map_err(|_| fail)?;
+    if user_sign_key.verify(bytes.as_bytes(), &sig) { Ok(verified) } else { Err(fail) }
+}
+
+/// [`accept_delegation`] pour un mandat v1 ou v2 : mêmes contrôles et même ordre, puis ouverture ;
+/// rend aussi le mandat vérifié (mode signé, empreinte RSA du propriétaire).
+pub fn accept_delegation_versioned(
+    me: &RuntimeSelf<'_>,
+    now: u64,
+    ctx: &DelegationContext,
+    user_sign_key: &EcPublicKey,
+    wrap: &str,
+    mandate_signature: &str,
+    served: &ServedMandate<'_>,
+) -> Result<(DelegationKey, VerifiedMandate)> {
+    let fail = Error::DelegationUnusable;
+    ctx.validate().map_err(|_| fail)?;
+    if ctx.runtime_id != me.runtime_id || ctx.org_id != me.org_id || ctx.scope != Scope::Org {
+        return Err(fail);
+    }
+    ctx.check_time(now, me.max_lifetime_secs)?;
+    let mandate = verify_mandate_versioned(user_sign_key, ctx, me.fpr_hex, wrap, mandate_signature, served)?;
+    Ok((open_delegation(ctx, me.kex, wrap)?, mandate))
+}
+
+/// Sort d'une enveloppe `rt1` chez un client à jour (12 §10.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rt1Verdict {
+    /// Mandat v2 `auto` et enveloppe valide.
+    Verified,
+    /// Enveloppe fausse, mandat illisible, ou mandat v2 `plan`.
+    Rejected,
+    /// Mandat v1 (hors production, PC32) et enveloppe valide : acceptée avec avertissement.
+    TofuWarning,
+}
+
+impl Rt1Verdict {
+    /// Valeur des vecteurs (`verified`, `rejected`, `tofu_warning`).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Verified => "verified",
+            Self::Rejected => "rejected",
+            Self::TofuWarning => "tofu_warning",
+        }
+    }
+}
+
+/// Règle de 12 §10.2 : `mandate` = mandat **vérifié** (`None` s'il est illisible).
+#[must_use]
+pub fn rt1_verdict(mandate: Option<&VerifiedMandate>, envelope_valid: bool) -> Rt1Verdict {
+    match (mandate, envelope_valid) {
+        (Some(m), true) => match (m.version, m.mode) {
+            (MandateVersion::V2, MandateMode::Auto) => Rt1Verdict::Verified,
+            (MandateVersion::V2, MandateMode::Plan) => Rt1Verdict::Rejected,
+            (MandateVersion::V1, _) => Rt1Verdict::TofuWarning,
+        },
+        _ => Rt1Verdict::Rejected,
+    }
 }
 
 /// Type de clé délégable (03 §2). Toute autre valeur (`dm`, `support`, `ai`, `org`, `account`,

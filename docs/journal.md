@@ -1030,12 +1030,12 @@ Forme des routes et trames : spec API §14 (lecture seule). Un commit par point 
    `envelope_reset_foreign_thread`). Aucun déploiement ne les concerne à ce jour.
 2. Le lot décrit le contrôle comme « ThreadKey `rt1:<délégation>` de ce runtime et de ce `userId` ». Le runtime ne reçoit pas le
    `creatorId` (trame sans lui, aucune route pour le lire) : le contrôle repose sur le registre + la délégation de la trame.
-3. Contrainte de §14.8 non traitée : si la clé n'est plus dans le coffre (délégation renouvelée sans l'entrée, redémarrage avant
-   synchro), la trame est ignorée (`envelope_reset_key_missing`), sans reprise automatique à l'arrivée de l'entrée.
-   Une reprise ferait garder les trames en attente : non faite, à décider.
-4. L'API compare « même enveloppe » (200 `updated: 0`) ; la signature ECDSA étant aléatoire, un rejeu envoie une signature
-   différente pour le même `commitment`. Le mock traite `commitment` seul ; à vérifier côté API (si elle compare la signature, le
-   rejeu reçoit `envelope_exists`, géré sans boucle).
+3. Contrainte de §14.8 : si la clé n'est plus dans le coffre (délégation renouvelée sans l'entrée, redémarrage avant
+   synchro), la trame est ignorée (`envelope_reset_key_missing`). *Reprise automatique ajoutée par L08c (PC31), voir plus bas.*
+4. L'API compare « même enveloppe » (200 `updated: 0`). *Correction L08c : la signature ECDSA `rt1` du runtime est
+   **déterministe** (RFC 6979), pas aléatoire ; un rejeu avec la même délégation envoie donc exactement la même signature et
+   reçoit 200 `updated: 0`. Seule une délégation différente change la signature (elle est dans les octets signés) et reçoit
+   `envelope_exists`, géré sans boucle. Le mock compare désormais aussi la signature.*
 5. `GET /authorizations` renvoie aussi `displayName` : non exploité (PC17 s'appuie sur `GET /delegations`).
 
 **Mutations faites** : registre ignoré → `enveloppe_rt1_reposee_apres_reinitialisation` échoue ; utilisateur du registre non
@@ -1044,3 +1044,51 @@ redondante avec l'effacement du coffre à la révocation (défense en profondeur
 
 **Vérifié à la fin** : hôte, `sandbox-host.sh` vert (11 tests) puis `aller_retour_avec_bac_a_sable ... ok` ; test croisé
 Rust → TS : OK ; `synco_app` et `synco_api` non modifiés.
+
+## 2026-11-21 — L08c : suites de la revue L08b (PC31 à PC33, constats mineurs)
+
+À la suite de `77e98ce`. `fmt`, `clippy -D warnings` et `cargo test --workspace` avant chaque commit.
+
+- **PC31, file persistante** (`be09900`, `repair_queue.rs`, `repairs.rs`) : `thread.envelope_reset` ne lance plus une tâche par trame.
+  La trame est contrôlée tout de suite contre le registre (salon étranger : jamais dans la file) puis rangée dans
+  `envelope_repairs.json` (salon, utilisateur, délégation ; 10 000 au plus, dédupliquée, abandonnée après 30 jours). Un
+  travailleur unique la rejoue, quatre réparations de front au plus (`REPAIR_CONCURRENCY`), à l'arrivée d'entrées, à l'ouverture
+  d'une délégation, au rechargement des délégations et à chaque reconnexion. **Chaque essai refait toutes les vérifications locales**
+  (`Runtime::try_repair` : registre + utilisateur, délégation ouverte non expirée non révoquée, clé détenue) ; une délégation
+  pas encore chargée ou une clé absente laisse l'entrée en file, une panne réseau aussi (rejeu à la reconnexion), un refus
+  définitif de l'API (`envelope_exists`, `forbidden`, `not_found`…) la retire.
+- **PC31, relecture API** : à chaque reconnexion, `GET /api/runtime/v1/e2ee/threads/envelope-resets?limit=&cursor=` (S seule,
+  100 par page, 100 pages au plus, curseur qui ne progresse pas = arrêt). Chaque item passe par `submit_repair`, donc par le registre
+  local, puis par `try_repair` : l'API ne choisit jamais seule ce qui se signe. Route absente (L03f en cours) : relecture silencieuse
+  (journal `debug`). Testée avec un mock, **pas contre la vraie route L03f**.
+- **PC33, MAC** (`c66678b`, `sealed_file.rs`) : `created_threads.json` et `envelope_repairs.json` sont scellés
+  (`{ "v": 2, "body": "<JSON en texte>", "mac": "<base64url HMAC-SHA256>" }`). Clé : HKDF-SHA256 (`hkdf32` de `synco-e2ee`, sel
+  `synco-ai-runtime/state-mac/v1`, info `file:<nom>`) du matériel de `keys.sealed` (`RuntimeKeys::to_secret_bytes`) : une clé par
+  fichier, jamais écrite. Aucune dépendance nouvelle (`hmac`/`hkdf` étaient déjà derrière `synco-e2ee`). MAC invalide, fichier modifié
+  ou illisible : registre/file **vide**, fichier mis de côté en `.rejected`, alerte `created_threads_tampered` /
+  `envelope_repairs_tampered`, le runtime continue. Ancien format de L08b (JSON nu) : lu une fois, réécrit scellé.
+  **Limite assumée** : le registre accepte l'ancien format sans MAC (règle de rétrocompatibilité) ; quelqu'un qui peut écrire dans
+  `state_dir` peut donc déposer un fichier sans MAC et le faire adopter une fois. La protection vaut contre une modification du
+  fichier scellé, pas contre un maître du répertoire d'état. La file, nouvelle, n'a pas d'ancien format et refuse tout fichier sans MAC.
+- **Constat 5** (`c66678b`) : l'écriture du registre ne tient plus le verrou d'état (photo `Snapshot` sous le verrou, écriture par
+  `spawn_blocking`, comme `member_pins` ; échec : alerte `created_threads_not_saved`).
+- **Constat 7** (`c66678b`) : au désappairage, le registre et la file sont **supprimés** en premier ; si la suppression échoue,
+  `forget_org` renvoie une erreur sans rien oublier d'autre et la boucle principale retente toutes les 5 s (alerte `unpair_erase_failed`).
+- **Constat 4** : une rafale de trames est bornée (une seule file, un travailleur, quatre appels de front) ; journaux à débit limité
+  (une ligne par code et par fenêtre de 10 s, avec le nombre de lignes tues : `LogGate`).
+- **Constat 8** (`4fcd10d`) : `api_code` journalisé restreint à `[a-z_]`, 48 caractères (`ApiError::loggable_code`).
+- **Constats 2 et 3** (`d9182d9`) : vecteur « repose avec délégation renouvelée » (`crates/supervisor/tests/fixtures/repose-delegation-renouvelee.json`),
+  relu par `verifyRt1Envelope` de synco_app (section 4 de `read-from-worker.ts`) et par un test Rust ; le mock de l'API compare la signature.
+- **Constat (c)** : commentaire du journal L08b corrigé (écart 4 ci-dessus).
+
+**PC32 — salons créés avant L08b : non réparables, à ne pas corriger.** Le registre n'existe que depuis L08b : un salon créé par
+ce runtime avant L08b n'y figure pas, et sa réinitialisation est ignorée (`envelope_reset_foreign_thread`) ; la file ne les accepte
+pas non plus. Aucun mécanisme de rattrapage n'est prévu (décision de l'utilisateur, 2026-11-21) ; aucun déploiement n'est concerné
+à ce jour. PC35 : ce mécanisme servira au « mode autonome » ; la politique de mode viendra d'un lot ultérieur, le comportement par défaut est inchangé.
+
+**Mutations faites** : MAC non vérifié (`valid = true`) → `registre_altere_ne_fait_rien_signer` échoue ; concurrence non bornée
+(`buffer_unordered(64)`) → `rafale_de_trames_bornee` échoue. Le contrôle du registre dans `submit_repair` est redondant avec celui de
+`try_repair` (défense en profondeur : supprimé seul, le test de relecture reste vert).
+
+**Non vérifié / recette manuelle** : la relecture contre la **vraie** route L03f (forme `{ items, nextCursor }` prise du lot) ; le
+comportement de la file sur un vrai redémarrage de service systemd.

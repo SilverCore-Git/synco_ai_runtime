@@ -424,9 +424,14 @@ impl MemberPinStore {
 
     /// Refus : la clé présentée est mise en attente (la dernière remplace la précédente) pour
     /// décision de l'admin du runtime. Journal sans clé ni empreinte.
-    pub fn refuse(&mut self, org_id: &str, user_id: &str, key: &MemberKey, now: u64) {
+    ///
+    /// Revue M4 : rien n'est mis en attente si l'épingle n'est plus `from_fingerprint` (changée
+    /// entre-temps) ni si la clé présentée est l'épinglée.
+    pub fn refuse(&mut self, org_id: &str, user_id: &str, from_fingerprint: &str, key: &MemberKey, now: u64) {
         let pending_count = self.pending(org_id).len();
         if let Some(pin) = self.file.orgs.get_mut(org_id).and_then(|m| m.get_mut(user_id))
+            && pin.fingerprint == from_fingerprint
+            && key.fingerprint != pin.fingerprint
             && (pin.pending.is_some() || pending_count < MAX_PENDING_PER_ORG)
         {
             pin.pending = Some(PendingKey {
@@ -518,11 +523,15 @@ mod tests {
         // Cloisonné par org.
         assert_eq!(s.check("o2", "u1", &key(2), 13), Verdict::Pinned);
         // Refus : mis en attente ; acceptation manuelle de CETTE clé seulement.
-        s.refuse("o1", "u1", &key(2), 14);
+        s.refuse("o1", "u1", &key(1).fingerprint, &key(2), 14);
         assert_eq!(s.pending("o1").len(), 1);
         assert!(!s.accept_pending("o1", "u1", &key(3).fingerprint), "autre empreinte que celle affichée");
         assert!(s.accept_pending("o1", "u1", &key(2).fingerprint));
         assert_eq!(s.check("o1", "u1", &key(2), 15), Verdict::Trusted);
+        assert!(s.pending("o1").is_empty());
+        // Revue M4 : refus périmé (épingle changée entre-temps) ou clé égale à l'épinglée : ignoré.
+        s.refuse("o1", "u1", &key(1).fingerprint, &key(3), 15);
+        s.refuse("o1", "u1", &key(2).fingerprint, &key(2), 15);
         assert!(s.pending("o1").is_empty());
         // L'ancienne clé ne revient pas.
         assert_eq!(s.check("o1", "u1", &key(1), 16), Verdict::Changed);
@@ -617,7 +626,7 @@ mod tests {
         assert_eq!(s.check("o", "u0", &k, 1), Verdict::Trusted, "les épinglés restent vérifiés");
         assert_eq!(s.check("autre", "nouveau", &k, 1), Verdict::Pinned, "plafond par org");
         for i in 0..=MAX_PENDING_PER_ORG {
-            s.refuse("o", &format!("u{i}"), &key(2), 2);
+            s.refuse("o", &format!("u{i}"), &k.fingerprint, &key(2), 2);
         }
         assert_eq!(s.pending("o").len(), MAX_PENDING_PER_ORG, "attente bornée");
         let mut s = MemberPinStore::in_memory();
@@ -652,7 +661,7 @@ mod tests {
             let mut s = MemberPinStore::open(dir.path()).unwrap();
             s.check("o1", "u1", &key(1), 1);
             assert_eq!(s.check("o1", "u1", &key(2), 2), Verdict::Changed);
-            s.refuse("o1", "u1", &key(2), 2);
+            s.refuse("o1", "u1", &key(1).fingerprint, &key(2), 2);
             s.flush().unwrap();
         }
         // « Redémarrage » : nouvelle ouverture du fichier.

@@ -423,7 +423,7 @@ pub async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> Result<(), &'st
             return Err(MEMBER_PINS_UNAVAILABLE);
         }
         if !(vouched && st.member_pins.rotate(&org, &user, &from, &key)) {
-            refused.push((user, key));
+            refused.push((user, key, from));
         }
     }
     let snapshot = {
@@ -431,8 +431,8 @@ pub async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> Result<(), &'st
         if st.org_id.as_deref() != Some(org.as_str()) {
             return Err(MEMBER_PINS_UNAVAILABLE);
         }
-        for (user, key) in &refused {
-            st.member_pins.refuse(&org, user, key, now);
+        for (user, key, from) in &refused {
+            st.member_pins.refuse(&org, user, from, key, now);
         }
         if !refused.is_empty() {
             st.alert(now, "member_rsa_key_changed");

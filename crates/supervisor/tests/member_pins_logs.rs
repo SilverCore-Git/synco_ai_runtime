@@ -48,7 +48,7 @@ fn journaux_sans_cle_ni_empreinte() {
         let mut s = MemberPinStore::open(dir.path()).unwrap();
         s.check("o1", user, &key(1), 1);
         s.check("o1", user, &key(2), 2);
-        s.refuse("o1", user, &key(2), 2);
+        s.refuse("o1", user, &key(1).fingerprint, &key(2), 2);
         assert!(s.accept_pending("o1", user, &key(2).fingerprint));
         assert!(s.rotate("o1", user, &key(2).fingerprint, &key(3)));
     });

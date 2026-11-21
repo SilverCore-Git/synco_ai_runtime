@@ -13,6 +13,11 @@
 //! 5. `POST /e2ee/threads/:threadId/key-envelope` ;
 //! 6. `POST /delegations/:delegationId/entries`.
 //!
+//! **Épinglage des clés RSA (Q25)** : le superviseur, qui relaie `GET /e2ee/members/keys`, compare
+//! chaque clé à son épinglage TOFU persistant avant que le worker voie la réponse ; une clé changée
+//! sans chaîne d'identité valide remplace la réponse entière par `409 member_key_changed` : refus
+//! global, rien n'est scellé (`crates/supervisor/src/member_pins.rs`, 06 §4.3).
+//!
 //! **Destinataires** : à l'accueil de l'org, tous les membres (comme l'app) ; dans un espace,
 //! **seulement le propriétaire** de la conversation, car le canal ne donne pas les membres d'un
 //! espace (l'app utilise `space.membersId`) et sceller la clé pour un non-membre la lui donnerait.
@@ -35,6 +40,8 @@ use crate::api::PREFIX;
 pub const MAX_THREADS_PER_CALL: usize = 10;
 /// Destinataires au plus (corps du canal ≤ 256 Kio, 04 §4.3).
 pub const MAX_RECIPIENTS: usize = 300;
+/// Annuaire refusé par le superviseur : clé d'un membre changée sans preuve (Q25, 06 §4.3).
+pub const MEMBER_KEY_CHANGED: &str = "member_key_changed";
 /// Taille minimale d'une clé RSA de membre.
 pub const MIN_RSA_BITS: usize = 2048;
 
@@ -120,6 +127,12 @@ pub async fn run(ctx: &ToolCtx<'_>, args: &Value) -> Outcome {
         return error("tool_failed");
     };
     if !members.ok() {
+        if members.code() == Some(MEMBER_KEY_CHANGED) {
+            // Q25 : le superviseur a refusé l'annuaire (clé d'un membre changée sans preuve) ; rien
+            // n'est scellé, aucun salon n'est créé.
+            return Outcome::Failed(json!({ "error": MEMBER_KEY_CHANGED,
+                "note": "La clé de chiffrement d'un membre a changé sans preuve : aucun salon n'a été créé. L'administrateur du runtime doit vérifier cette clé (tableau de bord) avant de réessayer." }));
+        }
         return api_failure(&members);
     }
     let listed = members.body.get("members").and_then(Value::as_array).map_or(0, Vec::len);

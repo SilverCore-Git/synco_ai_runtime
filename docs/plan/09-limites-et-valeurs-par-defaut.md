@@ -59,25 +59,28 @@ Source : `SYNCOAI_REFONTE_FEATURE.md` §13.5, §13.7.
 **Recommandation** : ces valeurs, à revoir après les mesures de L06 (coût d'un worker vide, temps de
 lancement) et les premiers essais de L07.
 
-## 3. Délais d'attente (révisé après L03c/L05, 2026-11-20)
+## 3. Délais d'attente (révisé après L03c/L05, 2026-11-20 ; après L03d, 2026-11-21)
 
 | Attente | Délai | Au-delà |
 |---|---|---|
-| `awaiting_confirmation`, `awaiting_user` | **7 jours** par défaut, abaissable par l'org (`limits.confirmationTimeoutSecs`) | `failed` `confirmation_timeout` (08 §2) — dépend aussi de D5 |
-| `awaiting_key` | **7 jours** par défaut, abaissable par l'org (`limits.keyTimeoutSecs`) | `failed` `key_timeout` |
+| `awaiting_confirmation`, `awaiting_user` | **7 jours** par défaut, abaissable par l'org (`limits.confirmationTimeoutSecs`), **dans [1 h, 7 j]** | `failed` `confirmation_timeout` (08 §2) — dépend aussi de D5 |
+| `awaiting_key` | **7 jours** par défaut, abaissable par l'org (`limits.keyTimeoutSecs`), **dans [1 h, 7 j]** | `failed` `key_timeout` |
 | `queued` (runtime hors ligne) | aucun | reste `queued` ; affiché « runtime injoignable » |
 | `hello` du WebSocket client | **5 s** (la spec proposait 10 s ; raccourci par L05 pour limiter les connexions inoccupées, `client_ws.rs:HELLO_TIMEOUT`) | fermeture `4408` |
 | Inactivité du WebSocket client | 60 s sans trame reçue | fermeture `1000` `idle_timeout` (05 §6.3, §7) |
 
 Réalisation (révisé après L03c, 2026-11-20 ; Q14 a = A) : l'API lit, pour chaque org,
-`aiConfig.runtime.limits.confirmationTimeoutSecs` et `keyTimeoutSecs` (entiers ≥ 1, défaut **604 800**,
-**abaissables seulement**, même normalisation que les autres `limits`, 07 §6) ; la maintenance les
+`aiConfig.runtime.limits.confirmationTimeoutSecs` et `keyTimeoutSecs` (entiers, défaut **604 800**,
+**abaissables seulement**, **plancher de 3 600 s**, même normalisation que les autres `limits`, 07 §6) ; la maintenance les
 compare strictement à `statusChangedAt` par une passe toutes les 60 s (résolution = une passe, 07 §9) ;
 politique illisible ou ancien format sans ces champs : 7 jours. Les champs figurent aussi dans
 `GET /api/runtime/v1/llm-policy` (`runtime.limits`, 04 §4.1). Source :
 `synco_api/src/services/aiRuntime/runtimeMaintenance.ts`, `runtimePolicy.ts`,
 `SYNCOAI_REFONTE_FEATURE.md` §13.5. Les 7 jours de `WAIT_TIMEOUT_MS` ne sont plus que la valeur par
-défaut. Un délai de 1 s est admis : minimum à fixer, 00 §6 Q19.
+défaut. **Q19 tranchée par L03d (2026-11-21, PC21)** : une valeur valide sous 3 600 est **ramenée à 3 600**
+(`RUNTIME_WAIT_TIMEOUT_MIN_SECS`), à l'écriture (`normalizeStoredRuntimePolicy`) **et** à l'application (la
+maintenance reborne [1 h, 7 j] toute valeur lue, y compris une ancienne valeur en base) ; une valeur invalide
+(< 1, non entière) donne le défaut de 7 jours. Source : `SYNCOAI_REFONTE_FEATURE.md` §14.6.
 
 ## 4. Débits et tailles
 
@@ -93,7 +96,7 @@ défaut. Un délai de 1 s est admis : minimum à fixer, 00 §6 Q19.
 | Ajout d'entrées (client) | 1 requête / 5 s, ≤ 500 entrées par requête |
 | Trames WebSocket client | 256 Kio (client → runtime), 1 Mio (runtime → client) ; 20 trames / 10 s par connexion ; 5 connexions par conversation |
 | Boîte de réception | 100 éléments non consommés par conversation ; 20 dépôts / 10 s |
-| Notifications push | 1 / 30 s par conversation |
+| Notifications push | une par **entrée** dans l'état annoncé ; plafond de **6 / min** par conversation (`429 rt_rate_limited`) ; état non courant ou doublon : `202 { sent: false }` (04 §4.2 ; L03d) |
 | `POST /metrics` | 1 / min |
 | Trames du pipe | charge de 1 Mio (JSON), 64 Kio (clés) ; la longueur en tête compte le genre en plus (06 §1) |
 | Synchro P11 (client) | regroupement 5 s ; backoff 30 s → 30 min ; 5 tentatives par session de l'app |
@@ -119,7 +122,8 @@ ci-dessus quand elles diffèrent ; un écart de fond est signalé en dernière c
 | Pagination | entrées de délégation : 1 à 500, 500 par défaut ; boîte : 100 par page ; messages d'un salon : 1 à 100, 50 par défaut ; clés manquantes : 5 000 au plus | `runtimeInternal/delegations.ts:42-45`, `conversationLease.ts:352-381`, `runtimeInternal/e2ee.ts:39-42` | ajout |
 | Historique écrit par le worker | ≤ 20 000 messages, ≤ 8 Mio sérialisés ; titre `gcm1:` ≤ 1 024 caractères ; `consumedInbox` ≤ 200 | `conversationValidation.ts:128-129`, `conversationLease.ts:179-193` | précision |
 | Boîte de réception | 100 éléments non consommés (`429 inbox_full`) ; dépôts : 20 / 10 s par conversation **pour le runtime** (`rt_rate_limited`) et 20 / 10 s **pour l'API** (`rate_limited`), compteurs distincts | `conversationValidation.ts:249`, `conversationRateLimit.ts:36` | précision |
-| Push | 1 / 30 s par conversation (`429 rt_rate_limited`) | `conversationRateLimit.ts:38` | — |
+| Push | **remplace « 1 / 30 s »** (L03d, Q19) : une notification par entrée dans l'état annoncé, plafond de sécurité **6 / min** par conversation (`429 rt_rate_limited`), `202 { sent: true \| false }` ; ordre : plafond, puis jeton « une fois » (un doublon rend sa place ; échec d'envoi : jeton et place rendus) | `SYNCOAI_REFONTE_FEATURE.md` §14.6 | remplace la limite de 1 / 30 s, qui perdait la notification d'une question posée moins de 30 s après une autre |
+| Synchro des clés (L03d, PC19) | routes `GET …/ai/runtime/delegations/current`, `GET …/current/missing`, `POST …/delegations/:delegationId/entries`, `POST …/delegations` (renouvellement à l'ouverture) **exemptées du limiteur global `/api`** (300 / 15 min / IP) ; à la place, échecs d'authentification (**401 seulement** : un 403 métier d'un utilisateur authentifié ne compte pas) **par IP** 300 / 15 min avant `authMiddleware`, puis **par utilisateur** 300 / 15 min après. Raison : une ouverture coûte 2 à 4 requêtes, un évènement de clé 2, et l'IP d'un bureau derrière un NAT n'est plus partagée. Les limites des services (dépôts 10 / h, ajout d'entrées 3 / 15 s, `aiLimiter` 120 / min) restent | `runtimeHttpPolicy.ts` (`isAiKeySyncRequest`), `index.ts` (`createAiKeySyncLimiters`) ; `SYNCOAI_REFONTE_FEATURE.md` §14.5 | ajout |
 | Routes utilisateur du mode runtime | compteur propre de 120 / min par utilisateur (séparé des 30 / min du chat), limiteur global `/api` inchangé | `runtimeHttpPolicy.ts:211-217` | ajout |
 | Maintenance | toutes les 60 s ; boîte consommée gardée 7 jours | `runtimeMaintenance.ts:24-26` | — |
 | Passerelle : corps | `SYNCO_MAX_BODY_BYTES`, **1 Mio** par défaut, configurable (`413 body_too_large`) ; lecture ≤ 30 s (`408`) ; l'app doit s'y aligner (images en base64) | `Synco_AI_Gateway/src/config.rs:6`, `src/app.rs:140` | ajout |

@@ -1173,6 +1173,33 @@ async fn file_valide_mais_registre_altere_ou_sans_entree_ne_signe_pas() {
     }
 }
 
+/// PC31 : `delegationId` est libre dans les trames. 10 000 demandes aux délégations inventées pour un
+/// même salon ne remplissent pas la file (une entrée par salon et utilisateur, la dernière gagne), et
+/// une délégation inventée est abandonnée au lieu d'attendre : la vraie réparation passe.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn file_non_saturable_par_des_delegations_inventees() {
+    let env = setup().await;
+    let rt = Arc::clone(&env.running.runtime);
+    wait_until_async(&rt, |st| st.vault.get(USER).is_some()).await;
+    remember_thread(&rt, THREAD, USER, "d-good").await;
+    for i in 0..10_000 {
+        rt.submit_repair(THREAD, USER, &format!("d-faux{i}")).await;
+    }
+    {
+        let st = rt.state.lock().await;
+        assert!(st.repairs.len() <= 1, "une seule entrée pour ce salon : {}", st.repairs.len());
+        assert!(!has_alert(&st, "envelope_repairs_full"), "file pas pleine");
+    }
+    wait_until_async(&rt, |st| st.repairs.is_empty()).await;
+    assert!(reposes(&env).is_empty(), "une délégation inventée ne signe rien");
+    // Autre salon, délégation inventée, puis la vraie : la dernière reçue gagne, la réparation passe.
+    rt.submit_repair(THREAD, USER, "d-faux-encore").await;
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    wait_until("vraie réparation", || reposes(&env).len() == 1).await;
+    assert_eq!(reposes(&env)[0].body["delegationId"], "d-good");
+    synco_ai_runtime::app::shutdown(&rt).await;
+}
+
 /// PC31 : la clé arrive pendant que le runtime tourne (`delegation.entries_added`) : rejeu immédiat.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn reparation_rejouee_a_l_arrivee_de_l_entree() {

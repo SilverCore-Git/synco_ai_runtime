@@ -1051,7 +1051,7 @@ Rust → TS : OK ; `synco_app` et `synco_api` non modifiés.
 
 - **PC31, file persistante** (`be09900`, `repair_queue.rs`, `repairs.rs`) : `thread.envelope_reset` ne lance plus une tâche par trame.
   La trame est contrôlée tout de suite contre le registre (salon étranger : jamais dans la file) puis rangée dans
-  `envelope_repairs.json` (salon, utilisateur, délégation ; 10 000 au plus, dédupliquée, abandonnée après 30 jours). Un
+  `envelope_repairs.json` (salon, utilisateur, délégation ; 10 000 au plus, dédupliquée sur (salon, utilisateur) avec la dernière délégation reçue, abandonnée après 30 jours). Un
   travailleur unique la rejoue, quatre réparations de front au plus (`REPAIR_CONCURRENCY`), à l'arrivée d'entrées, à l'ouverture
   d'une délégation, au rechargement des délégations et à chaque reconnexion. **Chaque essai refait toutes les vérifications locales**
   (`Runtime::try_repair` : registre + utilisateur, délégation ouverte non expirée non révoquée, clé détenue) ; une délégation

@@ -6,7 +6,7 @@
 //! délégation et à chaque reconnexion du flux. **Rien ici n'autorise une signature** : chaque rejeu
 //! refait toutes les vérifications locales (registre des salons créés, délégation, clé).
 //!
-//! Bornée ([`MAX_REPAIRS`]), dédupliquée, vieillie ([`MAX_AGE_SECS`]) et scellée par HMAC comme le
+//! Bornée ([`MAX_REPAIRS`]), dédupliquée sur (salon, utilisateur) (dernière délégation reçue), vieillie ([`MAX_AGE_SECS`]) et scellée par HMAC comme le
 //! registre ([`crate::sealed_file`]) : un fichier altéré donne une file vide et une alerte.
 //! Fichier `envelope_repairs.json` du répertoire d'état. Données non secrètes (identifiants).
 
@@ -26,8 +26,9 @@ pub const MAX_REPAIRS: usize = 10_000;
 /// Une réparation jamais satisfaite est abandonnée après 30 jours.
 pub const MAX_AGE_SECS: u64 = 30 * 86_400;
 
-/// Une réparation demandée : identité de la file (la date n'en fait pas partie).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// Une réparation demandée. Identité dans la file : (salon, utilisateur) ; la délégation est la
+/// dernière reçue (`delegationId` est libre dans les trames, il ne doit pas multiplier les entrées).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Repair {
     /// Salon.
     pub thread_id: String,
@@ -61,7 +62,8 @@ pub enum Push {
 #[derive(Debug)]
 pub struct RepairQueue {
     file: Option<SealedFile>,
-    items: BTreeMap<Repair, u64>,
+    /// (salon, utilisateur) → (délégation, date d'entrée).
+    items: BTreeMap<(String, String), (String, u64)>,
     tampered: bool,
 }
 
@@ -83,11 +85,8 @@ impl RepairQueue {
                 (Vec::new(), true)
             }
         };
-        let items = stored
-            .into_iter()
-            .take(MAX_REPAIRS)
-            .map(|s| (Repair { thread_id: s.thread_id, user_id: s.user_id, delegation_id: s.delegation_id }, s.at))
-            .collect();
+        let items =
+            stored.into_iter().take(MAX_REPAIRS).map(|s| ((s.thread_id, s.user_id), (s.delegation_id, s.at))).collect();
         Ok(Self { file: Some(file), items, tampered })
     }
 
@@ -103,22 +102,32 @@ impl RepairQueue {
         }
     }
 
-    /// Ajoute une réparation (dédupliquée sur salon + utilisateur + délégation).
+    /// Ajoute une réparation, dédupliquée sur (salon, utilisateur) : une nouvelle délégation pour la
+    /// même paire **remplace** la précédente (la dernière reçue gagne, la date d'entrée est gardée).
     pub fn push(&mut self, repair: Repair, now: u64) -> Push {
-        if self.items.contains_key(&repair) {
-            return Push::Known;
+        let key = (repair.thread_id, repair.user_id);
+        if let Some((delegation, _)) = self.items.get_mut(&key) {
+            if *delegation == repair.delegation_id {
+                return Push::Known;
+            }
+            *delegation = repair.delegation_id;
+            self.mark_dirty();
+            return Push::Added;
         }
         if self.items.len() >= MAX_REPAIRS {
             return Push::Full;
         }
-        self.items.insert(repair, now);
+        self.items.insert(key, (repair.delegation_id, now));
         self.mark_dirty();
         Push::Added
     }
 
-    /// Retire une réparation (faite, refusée pour de bon, ou plus d'actualité).
+    /// Retire une réparation (faite, refusée pour de bon, ou plus d'actualité) ; si une délégation
+    /// plus récente l'a remplacée entre-temps, elle reste.
     pub fn remove(&mut self, repair: &Repair) {
-        if self.items.remove(repair).is_some() {
+        let key = (repair.thread_id.clone(), repair.user_id.clone());
+        if self.items.get(&key).is_some_and(|(d, _)| *d == repair.delegation_id) {
+            self.items.remove(&key);
             self.mark_dirty();
         }
     }
@@ -126,7 +135,7 @@ impl RepairQueue {
     /// Abandonne les réparations trop anciennes.
     pub fn expire(&mut self, now: u64) {
         let before = self.items.len();
-        self.items.retain(|_, at| now.saturating_sub(*at) < MAX_AGE_SECS);
+        self.items.retain(|_, (_, at)| now.saturating_sub(*at) < MAX_AGE_SECS);
         if self.items.len() != before {
             self.mark_dirty();
         }
@@ -135,7 +144,10 @@ impl RepairQueue {
     /// Réparations en attente.
     #[must_use]
     pub fn items(&self) -> Vec<Repair> {
-        self.items.keys().cloned().collect()
+        self.items
+            .iter()
+            .map(|((t, u), (d, _))| Repair { thread_id: t.clone(), user_id: u.clone(), delegation_id: d.clone() })
+            .collect()
     }
 
     /// Nombre en attente.
@@ -155,10 +167,10 @@ impl RepairQueue {
         let stored: Vec<Stored> = self
             .items
             .iter()
-            .map(|(r, at)| Stored {
-                thread_id: r.thread_id.clone(),
-                user_id: r.user_id.clone(),
-                delegation_id: r.delegation_id.clone(),
+            .map(|((t, u), (d, at))| Stored {
+                thread_id: t.clone(),
+                user_id: u.clone(),
+                delegation_id: d.clone(),
                 at: *at,
             })
             .collect();
@@ -215,6 +227,23 @@ mod tests {
         assert_eq!(again.push(r("de-trop"), 100), Push::Full);
         again.expire(100 + MAX_AGE_SECS);
         assert!(again.is_empty(), "abandonnée après 30 jours");
+    }
+
+    #[test]
+    fn dedupe_sur_salon_et_utilisateur_derniere_delegation() {
+        let mut q = RepairQueue::in_memory();
+        let with = |d: &str| Repair { thread_id: "t".into(), user_id: "u".into(), delegation_id: d.into() };
+        assert_eq!(q.push(with("d1"), 100), Push::Added);
+        assert_eq!(q.push(with("d1"), 101), Push::Known);
+        for i in 0..MAX_REPAIRS {
+            assert_ne!(q.push(with(&format!("faux{i}")), 102), Push::Full, "une paire = une entrée");
+        }
+        assert_eq!(q.len(), 1);
+        assert_eq!(q.items(), vec![with(&format!("faux{}", MAX_REPAIRS - 1))], "la dernière reçue gagne");
+        q.remove(&with("d1"));
+        assert_eq!(q.len(), 1, "une délégation remplacée n'efface pas la nouvelle");
+        q.expire(100 + MAX_AGE_SECS);
+        assert!(q.is_empty(), "date d'entrée gardée malgré les remplacements");
     }
 
     #[test]

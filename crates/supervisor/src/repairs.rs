@@ -257,12 +257,20 @@ impl Runtime {
                 self.warn_limited("envelope_reset_unknown_delegation", "délégation révoquée");
                 return Verdict::Drop;
             }
-            let Some(delegation) = st.vault.get(user_id).filter(|d| d.delegation_id() == delegation_id.as_str()) else {
+            let Some(delegation) = st.vault.get(user_id) else {
                 // Pas (encore) chargée : la demande attend son chargement.
                 drop(st);
                 self.warn_limited("envelope_reset_unknown_delegation", "délégation pas encore chargée");
                 return Verdict::Pending;
             };
+            if delegation.delegation_id() != delegation_id.as_str() {
+                // `delegationId` est libre dans les trames : le coffre tient une autre délégation de
+                // cet utilisateur, l'entrée ne sera pas satisfaite par elle. Abandon (pas d'attente
+                // qui encombre la file) ; la relecture API à la reconnexion redemande la bonne.
+                drop(st);
+                self.warn_limited("envelope_reset_unknown_delegation", "délégation différente de celle du coffre");
+                return Verdict::Drop;
+            }
             if delegation.exp() <= now {
                 drop(st);
                 self.warn_limited("envelope_reset_unknown_delegation", "délégation expirée");

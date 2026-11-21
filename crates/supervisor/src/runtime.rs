@@ -34,6 +34,20 @@ const REVOCATION_TTL_SECS: u64 =
 const CRASH_WINDOW_SECS: u64 = 600;
 const CRASH_LIMIT: usize = 3;
 
+/// Longueur maximale (en caractères) d'un nom d'affichage conservé.
+const DISPLAY_NAME_MAX_CHARS: usize = 128;
+
+/// Nettoie un nom d'affichage venu de l'API (PC17) : l'API borne déjà la valeur, mais le serveur
+/// n'est pas de confiance pour l'affichage. Caractères de contrôle remplacés par une espace,
+/// 128 caractères au plus, bords retirés ; vide → `None` (le dashboard montre l'identifiant).
+#[must_use]
+pub fn clean_display_name(raw: &str) -> Option<String> {
+    let cleaned: String =
+        raw.chars().map(|c| if c.is_control() { ' ' } else { c }).take(DISPLAY_NAME_MAX_CHARS).collect();
+    let trimmed = cleaned.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_owned())
+}
+
 /// Attend que l'arrêt soit demandé (sans garder d'emprunt du canal au travers d'un `await`).
 pub async fn stopped(rx: &mut watch::Receiver<bool>) {
     let _ = rx.wait_for(|v| *v).await.map(|_| ());
@@ -136,6 +150,14 @@ impl Runtime {
     pub async fn load_delegations(self: &Arc<Self>) -> Result<(), crate::api::ApiError> {
         let records = self.api.delegations().await?;
         let listed: BTreeSet<String> = records.iter().map(|r| r.delegation_id.clone()).collect();
+        {
+            // Les noms suivent la liste : un délégant qui n'y figure plus disparaît de la table.
+            let names = records
+                .iter()
+                .filter_map(|r| Some((r.user_id.clone(), clean_display_name(r.display_name.as_deref()?)?)))
+                .collect();
+            self.state.lock().await.display_names = names;
+        }
         let stale: Vec<String> = {
             let st = self.state.lock().await;
             st.vault
@@ -436,6 +458,13 @@ impl Runtime {
                 if let Ok(records) = self.api.delegations().await
                     && let Some(r) = records.iter().find(|r| r.delegation_id == delegation_id)
                 {
+                    {
+                        let mut st = self.state.lock().await;
+                        match r.display_name.as_deref().and_then(clean_display_name) {
+                            Some(n) => st.display_names.insert(r.user_id.clone(), n),
+                            None => st.display_names.remove(&r.user_id),
+                        };
+                    }
                     let _ = self.open_delegation(r).await;
                 }
             }

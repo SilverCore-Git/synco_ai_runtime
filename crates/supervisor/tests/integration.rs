@@ -182,7 +182,8 @@ async fn setup_hops(
     let bad_key = EcSigningKey::generate(&mut OsRandom).unwrap();
     let kex = keys.public().kex.clone();
     let fpr = keys.fingerprint_hex().to_owned();
-    let (good, good_entries) = delegation_record(&kex, &fpr, keys.runtime_id(), USER, "d-good", &user_key, 0);
+    let (mut good, good_entries) = delegation_record(&kex, &fpr, keys.runtime_id(), USER, "d-good", &user_key, 0);
+    good["displayName"] = json!("Alice\u{7} Martin");
     let (bad, bad_entries) = delegation_record(&kex, &fpr, keys.runtime_id(), BAD_USER, "d-bad", &bad_key, 3_600);
     api.with(|st| {
         st.slow_entries_ms = slow_entries_ms;
@@ -834,6 +835,34 @@ async fn relais_signed_request_borne_et_decoupe() {
 
 async fn vault_has(env: &Env, user: &str) -> bool {
     env.running.runtime.state.lock().await.vault.get(user).is_some()
+}
+
+/// PC17 : le nom d'affichage de `GET /delegations` est conservé (nettoyé), absent → identifiant.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn noms_d_affichage_des_delegants() {
+    let env = setup().await;
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    {
+        let st = env.running.runtime.state.lock().await;
+        assert_eq!(st.display_names.get(USER).map(String::as_str), Some("Alice  Martin"));
+        assert!(!st.display_names.contains_key(BAD_USER), "sans nom : repli sur l'identifiant");
+    }
+    let base = format!("http://{}", env.running.dashboard_addr.expect("dashboard démarré"));
+    let c = reqwest::Client::new();
+    let login = c
+        .post(format!("{base}/api/login"))
+        .header("origin", &base)
+        .header("content-type", "application/json")
+        .body(json!({ "password": DASH_PW }).to_string())
+        .send()
+        .await
+        .unwrap();
+    let cookie = login.headers()["set-cookie"].to_str().unwrap().split(';').next().unwrap().to_owned();
+    let body = c.get(format!("{base}/api/names")).header("cookie", &cookie).send().await.unwrap().text().await.unwrap();
+    let names: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(names["names"][USER], "Alice  Martin");
+    assert!(names["names"].get(BAD_USER).is_none());
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }
 
 /// Scénario A : `delegation.revoked` arrive pendant le chargement des entrées.

@@ -336,6 +336,9 @@ pub struct State {
     /// Délégations révoquées (identifiant → expiration de l'entrée, s) : jamais réinstallées, même
     /// par un chargement commencé avant la révocation.
     pub revoked_delegations: HashMap<String, u64>,
+    /// Noms d'affichage des délégants (PC17) : identifiant → nom, tels que listés par l'API à la
+    /// dernière relecture. Affichage seulement, jamais une décision.
+    pub display_names: HashMap<String, String>,
 }
 
 impl State {
@@ -358,6 +361,7 @@ impl State {
             queued_seen: 0,
             generation: 0,
             revoked_delegations: HashMap::new(),
+            display_names: HashMap::new(),
         }
     }
 

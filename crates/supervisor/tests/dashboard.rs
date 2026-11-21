@@ -41,6 +41,11 @@ impl OverviewSource for Fake {
             }
         })
     }
+    fn display_names(&self) -> BoxFuture<'_, std::collections::BTreeMap<String, String>> {
+        Box::pin(async {
+            std::collections::BTreeMap::from([("u-nomme".to_owned(), "<img src=x onerror=alert(1)> Alice".to_owned())])
+        })
+    }
     fn accept_member_key(&self, user_id: String, fingerprint: String) -> BoxFuture<'_, bool> {
         Box::pin(async move { user_id == ACCEPT_USER && fingerprint == "ab".repeat(32) })
     }
@@ -506,4 +511,35 @@ async fn acceptation_d_une_cle_de_membre() {
     let unknown = json!({ "userId": ACCEPT_USER, "fingerprint": "cd".repeat(32) });
     assert_eq!(accept(unknown, Some(csrf.clone())).await, 409, "aucune clé en attente avec cette empreinte");
     assert_eq!(accept(good, Some(csrf)).await, 200);
+}
+
+#[tokio::test]
+async fn noms_d_affichage_servis_en_json_et_inseres_par_textcontent() {
+    let e = env().await;
+    let (token, _) = e.login().await;
+    let (s, n) = e.get("/api/names", &token).await;
+    assert_eq!(s, 200);
+    // Valeur brute : l'échappement est l'affaire du client, qui n'emploie que `textContent`.
+    assert_eq!(n["names"]["u-nomme"], "<img src=x onerror=alert(1)> Alice");
+    let js = e
+        .client
+        .get(e.url("/assets/app.js"))
+        .header("cookie", token.as_str())
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(!js.contains("innerHTML"));
+    assert!(js.contains("function userCell") && js.contains("title: id, text: who(id)"), "nom inséré par text");
+}
+
+#[test]
+fn nettoyage_du_nom_d_affichage() {
+    use synco_ai_runtime::runtime::clean_display_name;
+    assert_eq!(clean_display_name("  Alice Martin ").as_deref(), Some("Alice Martin"));
+    assert_eq!(clean_display_name("A\u{0}B\nC").as_deref(), Some("A B C"));
+    assert_eq!(clean_display_name("   "), None);
+    assert_eq!(clean_display_name(&"é".repeat(300)).map(|n| n.chars().count()), Some(128));
 }

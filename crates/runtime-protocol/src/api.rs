@@ -64,6 +64,10 @@ pub struct DelegationRecord {
     pub wrap: String,
     /// Signature du mandat (jamais journalisée).
     pub mandate_signature: String,
+    /// Nom d'affichage du délégant (PC17, spec API §14.2) : absent ou `null` → le dashboard montre
+    /// l'identifiant. Donnée du serveur : jamais une preuve d'identité.
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 /// Entrée de délégation.

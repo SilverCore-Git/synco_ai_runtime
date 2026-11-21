@@ -55,6 +55,7 @@ pub async fn start(
     let public_addr = listener.local_addr().map_err(|e| Error::Io(format!("adresse d'écoute : {}", e.kind())))?;
     let mut state = State::new(pins, auths);
     state.member_pins = crate::member_pins::MemberPinStore::open(&config.state_dir)?;
+    state.created_threads = crate::created_threads::CreatedThreadStore::open(&config.state_dir)?;
     let runtime = Runtime::new(Arc::new(config), keys, api, launcher, provider_secrets, state);
     {
         let rt = Arc::clone(&runtime);

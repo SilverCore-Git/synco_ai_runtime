@@ -339,6 +339,11 @@ pub struct State {
     /// Noms d'affichage des délégants (PC17) : identifiant → nom, tels que listés par l'API à la
     /// dernière relecture. Affichage seulement, jamais une décision.
     pub display_names: HashMap<String, String>,
+    /// Salons créés par ce runtime (Q21) : seuls ceux-là peuvent être réparés par `repose`.
+    pub created_threads: crate::created_threads::CreatedThreadStore,
+    /// Réparations d'enveloppe en cours (un salon à la fois : un rejeu de la trame n'ouvre pas une
+    /// seconde réparation).
+    pub repose_inflight: std::collections::HashSet<String>,
 }
 
 impl State {
@@ -362,6 +367,8 @@ impl State {
             generation: 0,
             revoked_delegations: HashMap::new(),
             display_names: HashMap::new(),
+            created_threads: crate::created_threads::CreatedThreadStore::in_memory(),
+            repose_inflight: std::collections::HashSet::new(),
         }
     }
 

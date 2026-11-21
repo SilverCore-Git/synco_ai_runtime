@@ -89,6 +89,11 @@ pub struct MockState {
     pub presences: u32,
     /// Salons créés par `POST /e2ee/threads`.
     pub threads_created: u32,
+    /// `POST /e2ee/threads/:id/key-envelope/repose` : réponse imposée (statut, code) ; sinon 200,
+    /// puis `envelope_exists` si l'enveloppe est différente de la première reçue.
+    pub repose_override: Option<(u16, String)>,
+    /// Première enveloppe reposée par salon (`commitment`).
+    pub reposed: BTreeMap<String, String>,
     /// `GET /authorizations` : taille de page (0 = tout sur une page).
     pub authorizations_page: usize,
     /// `GET /authorizations` : statut d'erreur à servir.
@@ -299,6 +304,20 @@ async fn channel(
             let s = json_body["status"].as_str().unwrap_or("?").to_owned();
             st.delegation_status.insert((*id).to_owned(), s);
             StatusCode::NO_CONTENT.into_response()
+        }
+        ("POST", ["e2ee", "threads", tid, "key-envelope", "repose"]) => {
+            if let Some((status, code)) = st.repose_override.clone() {
+                return error(status, &code);
+            }
+            let commitment = json_body["commitment"].as_str().unwrap_or_default().to_owned();
+            match st.reposed.get(*tid) {
+                Some(first) if *first != commitment => error(409, "envelope_exists"),
+                Some(_) => axum::Json(json!({ "threadId": tid, "updated": 0 })).into_response(),
+                None => {
+                    st.reposed.insert((*tid).to_owned(), commitment);
+                    axum::Json(json!({ "threadId": tid, "updated": 1 })).into_response()
+                }
+            }
         }
         ("GET", ["e2ee", "members", "keys"]) => axum::Json(json!({ "members": st.members })).into_response(),
         ("GET", ["users", id, "sign-key"]) => match st.sign_keys.get(*id) {

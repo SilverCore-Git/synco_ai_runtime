@@ -145,6 +145,12 @@ impl OpenDelegation {
         delegation::seal_entry(&self.dk, &self.ctx, EntryKind::Thread, thread_id, 1, key, &mut synco_e2ee::OsRandom)
     }
 
+    /// Clé de salon détenue (entrée `thread` de cette délégation), version donnée.
+    #[must_use]
+    pub fn thread_key(&self, thread_id: &str, version: u64) -> Option<&SymmetricKey> {
+        self.keys.get(&KeyId { kind: KeyKind::Thread, reference: thread_id.to_owned(), version })
+    }
+
     /// Identités des clés détenues.
     #[must_use]
     pub fn key_ids(&self) -> Vec<KeyId> {

@@ -356,6 +356,18 @@ impl ApiClient {
         Ok(None)
     }
 
+    /// `POST /e2ee/threads/:threadId/key-envelope/repose` (S seule, Q21, spec API §14.8) : nouvelle
+    /// pose de l'enveloppe `rt1` d'un salon réinitialisé. `body` est le corps JSON strict.
+    pub async fn repose_envelope(&self, thread_id: &str, body: Vec<u8>) -> Result<(), ApiError> {
+        self.no_content(
+            Method::Post,
+            &format!("/api/runtime/v1/e2ee/threads/{thread_id}/key-envelope/repose"),
+            Some(body),
+            None,
+        )
+        .await
+    }
+
     /// `GET /delegations/:id/entries`.
     pub async fn entries(&self, delegation_id: &str, after: Option<&str>) -> Result<wire::EntriesPage, ApiError> {
         let path = match after {

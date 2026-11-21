@@ -280,16 +280,22 @@ pub(crate) async fn created_key(
     let signed = synco_e2ee::keys::sign_rt1_envelope(rt.keys.csk(), key.as_bytes(), &ctx, 1, &delegation_id);
     let sealed = delegation.seal_created_thread_entry(&reference, &key);
     match (signed, sealed) {
-        (Ok(sig), Ok(ciphertext)) => pipe::CreatedKeyMsg {
-            reference,
-            envelope: Some(pipe::CreatedKeyEnvelope {
-                delegation_id,
-                commitment: sig.commitment,
-                signature: sig.signature,
-                ciphertext,
-            }),
-            error: None,
-        },
+        (Ok(sig), Ok(ciphertext)) => {
+            // Q21 : registre des salons créés ici (seuls réparables par `thread.envelope_reset`).
+            if !st.created_threads.record(&reference, user_id, &delegation_id) {
+                st.alert(now_secs(), "created_threads_full");
+            }
+            pipe::CreatedKeyMsg {
+                reference,
+                envelope: Some(pipe::CreatedKeyEnvelope {
+                    delegation_id,
+                    commitment: sig.commitment,
+                    signature: sig.signature,
+                    ciphertext,
+                }),
+                error: None,
+            }
+        }
         _ => created_key_error(&reference, "created_key_failed"),
     }
 }

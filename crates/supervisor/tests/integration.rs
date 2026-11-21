@@ -865,6 +865,109 @@ async fn noms_d_affichage_des_delegants() {
     synco_ai_runtime::app::shutdown(&env.running.runtime).await;
 }
 
+const THREAD: &str = "cm3threadexample000000001";
+
+fn reposes(env: &Env) -> Vec<common::Seen> {
+    env.api.with(|st| st.seen.iter().filter(|r| r.path.ends_with("/key-envelope/repose")).cloned().collect())
+}
+
+fn reset_frame(thread: &str, user: &str, delegation: &str) -> Value {
+    json!({ "type": "thread.envelope_reset", "threadId": thread, "userId": user, "delegationId": delegation })
+}
+
+/// Q21 : `thread.envelope_reset`. Chemin nominal (commitment recalculé depuis la clé réelle,
+/// signature `rt1` valide, S seule), puis refus silencieux : salon étranger, salon d'un autre
+/// utilisateur, délégation inconnue ; rejeu idempotent (pas de boucle) ; refus de l'API définitifs ;
+/// délégation inactive (révoquée).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn enveloppe_rt1_reposee_apres_reinitialisation() {
+    let env = setup().await;
+    let rt = Arc::clone(&env.running.runtime);
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    wait_until("flux ouvert", || env.api.with(|st| st.stream_hellos > 0)).await;
+    // La clé du salon est dans le coffre de USER, mais le registre ne le connaît pas (salon créé
+    // par l'utilisateur, non par ce runtime) : refus, même avec une délégation active.
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    env.api.push(reset_frame("cm3threadetranger00000001", USER, "d-good"));
+    wait_until("trames lues", || env.api.with(|st| st.stream_hellos > 0)).await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(reposes(&env).is_empty(), "salon absent du registre : rien n'est signé");
+    // Salon créé par ce runtime, mais pour un autre utilisateur : refus (clé et délégation de USER
+    // pourtant valides).
+    {
+        let mut st = rt.state.lock().await;
+        assert!(st.created_threads.record(THREAD, "cm3userautre0000000000001", "d-autre-user"));
+    }
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(reposes(&env).is_empty(), "salon créé pour un autre utilisateur : rien n'est signé");
+    // Le runtime a créé ce salon pour USER.
+    {
+        let mut st = rt.state.lock().await;
+        assert!(st.created_threads.record(THREAD, USER, "d-good"));
+    }
+    // Refusés : autre utilisateur, délégation inconnue (le coffre de USER n'a que `d-good`).
+    env.api.push(reset_frame(THREAD, BAD_USER, "d-bad"));
+    env.api.push(reset_frame(THREAD, BAD_USER, "d-good"));
+    env.api.push(reset_frame(THREAD, USER, "d-autre"));
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(reposes(&env).is_empty(), "délégation inconnue : rien n'est signé");
+    // Nominal.
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    wait_until("enveloppe reposée", || !reposes(&env).is_empty()).await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let first = reposes(&env);
+    assert_eq!(first.len(), 1, "seule la trame légitime a produit un appel : {first:?}");
+    assert_eq!(first[0].auth, None, "S seule : pas d'autorisation de session");
+    let body = &first[0].body;
+    assert_eq!(
+        body.as_object().unwrap().keys().map(String::as_str).collect::<std::collections::BTreeSet<_>>(),
+        ["commitment", "ctx", "delegationId", "signature", "version"].into_iter().collect()
+    );
+    assert_eq!(
+        (body["delegationId"].as_str(), body["ctx"].as_str(), body["version"].as_u64()),
+        (Some("d-good"), Some("thread:cm3threadexample000000001"), Some(1))
+    );
+    let envelope = synco_e2ee::keys::KeyEnvelopeSignature {
+        commitment: body["commitment"].as_str().unwrap().to_owned(),
+        signature: body["signature"].as_str().unwrap().to_owned(),
+    };
+    let csk = rt.keys.csk().public_key().unwrap();
+    synco_e2ee::keys::verify_rt1_envelope(
+        &csk,
+        &THREAD_KEY,
+        "thread:cm3threadexample000000001",
+        1,
+        "d-good",
+        &envelope,
+    )
+    .expect("signature rt1 valide, commitment de la vraie clé");
+
+    // Rejeu : un second appel, l'API répond `envelope_exists` ou `updated: 0` ; jamais de boucle.
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    wait_until("rejeu traité", || reposes(&env).len() == 2).await;
+    env.api.with(|st| st.repose_override = Some((409, "envelope_exists".into())));
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    wait_until("refus de l'API", || reposes(&env).len() == 3).await;
+    env.api.with(|st| st.repose_override = Some((403, "forbidden".into())));
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    wait_until("refus forbidden", || reposes(&env).len() == 4).await;
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    assert_eq!(reposes(&env).len(), 4, "aucun nouvel essai après un refus de l'API");
+    assert!(rt.state.lock().await.repose_inflight.is_empty());
+
+    // Délégation inactive (révoquée) : rien n'est signé.
+    env.api.push(
+        json!({ "type": "delegation.revoked", "userId": USER, "delegationId": "d-good", "reason": "user_revoked" }),
+    );
+    wait_until_async(&rt, |st| st.vault.get(USER).is_none()).await;
+    env.api.with(|st| st.repose_override = None);
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(reposes(&env).len(), 4, "délégation révoquée : pas de signature");
+    synco_ai_runtime::app::shutdown(&rt).await;
+}
+
 /// Scénario A : `delegation.revoked` arrive pendant le chargement des entrées.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn revocation_pendant_le_chargement() {
@@ -1256,6 +1359,14 @@ async fn created_key_reserve_aux_salons_crees_par_ce_worker() {
         let ok_count = r.first[3..].iter().filter(|(_, _, c)| c.envelope.is_some()).count();
         assert_eq!(ok_count, 31, "32 clés au plus (1 + 31)");
         assert_eq!(r.first[34].2.error.as_deref(), Some("created_key_limit"));
+    }
+    // Q21 : les salons dont la clé a été signée sont enregistrés (réparables), l'étranger non.
+    {
+        let st = rt.state.lock().await;
+        let signed: Vec<_> =
+            (0..40).filter(|i| st.created_threads.get(&format!("cm3threadmock{:012}", i + 1)).is_some()).collect();
+        assert_eq!(signed.len(), 32, "32 clés signées au plus, toutes enregistrées");
+        assert!(st.created_threads.get("cm3threadautre0000000001").is_none());
     }
     // Second worker : délégation retirée pendant qu'il travaille, puis trame interdite.
     env.api.push(json!({ "type": "conversation.wake", "sessionId": SESSION, "authId": AUTH, "reason": "inbox" }));

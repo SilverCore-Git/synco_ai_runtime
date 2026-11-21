@@ -284,6 +284,10 @@ pub(crate) async fn created_key(
             if !st.created_threads.record(&reference, user_id, &delegation_id) {
                 st.alert(now_secs(), "created_threads_full");
             }
+            // Écriture du registre hors du verrou d'état (pas de `fsync` sous le verrou).
+            let snapshot = st.created_threads.snapshot();
+            drop(st);
+            rt.save_created_threads(snapshot).await;
             pipe::CreatedKeyMsg {
                 reference,
                 envelope: Some(pipe::CreatedKeyEnvelope {

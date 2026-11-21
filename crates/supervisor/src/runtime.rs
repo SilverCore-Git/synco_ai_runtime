@@ -205,6 +205,21 @@ impl Runtime {
         saved
     }
 
+    /// Écrit une photo du registre des salons créés **hors** du verrou d'état. Échec : alerte
+    /// `created_threads_not_saved`, la prochaine photo réécrira tout.
+    pub async fn save_created_threads(&self, snapshot: crate::error::Result<Option<crate::sealed_file::Snapshot>>) {
+        let saved = match snapshot {
+            Ok(None) => return,
+            Ok(Some(snap)) => matches!(tokio::task::spawn_blocking(move || snap.write()).await, Ok(Ok(()))),
+            Err(_) => false,
+        };
+        if !saved {
+            let mut st = self.state.lock().await;
+            st.created_threads.mark_unsaved();
+            st.alert(now_secs(), "created_threads_not_saved");
+        }
+    }
+
     /// Ouvre une délégation : mandat (clé épinglée TOFU, 03 §4) → enveloppe de tête (03 §3), par
     /// `accept_delegation` uniquement → entrées (03 §5). Puis `status` à l'API (sans cause).
     pub async fn open_delegation(self: &Arc<Self>, record: &DelegationRecord) -> Result<(), DelegationFailure> {
@@ -813,22 +828,25 @@ impl Runtime {
     }
 
     /// Désappairage (01 §9) : arrêt des workers sans attendre, effacement des clés déléguées,
-    /// oubli de l'org et des autorisations. Les clés du runtime sont conservées.
-    pub async fn forget_org(self: &Arc<Self>) {
+    /// oubli de l'org et des autorisations. Les clés du runtime sont conservées. Le registre des salons
+    /// créés est effacé **en premier** : s'il ne peut pas l'être (fichier impossible à supprimer),
+    /// le désappairage échoue (rien d'autre n'est oublié) et l'appelant le retente.
+    pub async fn forget_org(self: &Arc<Self>) -> crate::error::Result<()> {
         let sessions: Vec<String> = self.state.lock().await.convs.keys().cloned().collect();
         for s in sessions {
             self.stop_conversation(&s, ShutdownReason::Unpaired, "revoked").await;
         }
         let mut st = self.state.lock().await;
+        st.created_threads.clear()?;
         st.generation = st.generation.saturating_add(1);
         st.vault.clear();
         st.auths.clear();
-        st.created_threads.clear();
         st.policy = None;
         st.org_id = None;
         st.tickets.revoked_users.clear();
         st.tickets.revoked_conversations.clear();
         st.alert(now_secs(), "runtime_unpaired");
+        Ok(())
     }
 
     /// Diffuse une trame à tous les clients d'une conversation ; un client trop lent est coupé.

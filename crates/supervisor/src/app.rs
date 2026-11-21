@@ -55,7 +55,11 @@ pub async fn start(
     let public_addr = listener.local_addr().map_err(|e| Error::Io(format!("adresse d'écoute : {}", e.kind())))?;
     let mut state = State::new(pins, auths);
     state.member_pins = crate::member_pins::MemberPinStore::open(&config.state_dir)?;
-    state.created_threads = crate::created_threads::CreatedThreadStore::open(&config.state_dir)?;
+    state.created_threads = crate::created_threads::CreatedThreadStore::open(&config.state_dir, &keys)?;
+    if state.created_threads.take_tampered() {
+        // PC33 : MAC invalide, le registre est considéré vide (rien n'est signé) ; le runtime continue.
+        state.alert(crate::clock::now_secs(), "created_threads_tampered");
+    }
     let runtime = Runtime::new(Arc::new(config), keys, api, launcher, provider_secrets, state);
     {
         let rt = Arc::clone(&runtime);
@@ -92,7 +96,17 @@ async fn main_loop(rt: Arc<Runtime>) {
             StreamEnd::Shutdown => break,
             StreamEnd::Unpaired => {
                 tracing::warn!(code = "runtime_unpaired", "désappairé : effacement des clés déléguées");
-                rt.forget_org().await;
+                // Effacement des fichiers d'état impossible : le désappairage échoue et se retente
+                // (rien d'autre n'est oublié tant que le registre n'est pas effacé).
+                while let Err(e) = rt.forget_org().await {
+                    tracing::error!(code = "unpair_erase_failed", error = %e, "désappairage incomplet, nouvel essai");
+                    rt.state.lock().await.alert(crate::clock::now_secs(), "unpair_erase_failed");
+                    let mut shutdown = rt.shutdown.subscribe();
+                    tokio::select! {
+                        () = tokio::time::sleep(Duration::from_secs(5)) => {}
+                        () = crate::runtime::stopped(&mut shutdown) => break,
+                    }
+                }
             }
         }
     }

@@ -63,6 +63,8 @@ struct Env {
     api: MockApi,
     running: synco_ai_runtime::app::Running,
     keys_secret: Zeroizing<Vec<u8>>,
+    /// Configuration TOML du superviseur (pour le redémarrer à l'identique).
+    config_text: String,
     /// Clé de signature d'identité de `USER` (transitions d'identité).
     user_key: EcSigningKey,
 }
@@ -198,7 +200,7 @@ async fn setup_hops(
         st.conversations.insert(SESSION.into(), common::Conversation { auth_id: AUTH.into(), ..Default::default() });
     });
 
-    let config = Config::parse(&format!(
+    let config_text = format!(
         r#"
 public_url = "{PUBLIC_URL}"
 api_url = "{}"
@@ -217,11 +219,25 @@ base_url = "{llm_base_url}"
 "#,
         api.url(),
         state_dir.display()
-    ))
-    .unwrap();
+    );
+    let config = Config::parse(&config_text).unwrap();
     let keys = seal::load(&state_dir, &backend()).unwrap().unwrap();
     let running = synco_ai_runtime::app::start(config, keys, launcher, BTreeMap::new()).await.unwrap();
-    Env { _dir: dir, state_dir, api, running, keys_secret, user_key }
+    Env { _dir: dir, state_dir, api, running, keys_secret, config_text, user_key }
+}
+
+/// Arrête le superviseur, laisse `between` agir sur le répertoire d'état, puis le relance avec les
+/// mêmes clés, la même configuration et la même API.
+async fn restart(env: Env, between: impl FnOnce(&std::path::Path)) -> Env {
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+    between(&env.state_dir);
+    let config = Config::parse(&env.config_text).unwrap();
+    let keys = seal::load(&env.state_dir, &backend()).unwrap().unwrap();
+    let hellos = env.api.with(|st| st.stream_hellos);
+    let running =
+        synco_ai_runtime::app::start(config, keys, Arc::new(InProcessStubLauncher), BTreeMap::new()).await.unwrap();
+    wait_until("flux rouvert", || env.api.with(|st| st.stream_hellos > hellos)).await;
+    Env { running, ..env }
 }
 
 async fn wait_until(what: &str, mut f: impl FnMut() -> bool) {
@@ -965,6 +981,105 @@ async fn enveloppe_rt1_reposee_apres_reinitialisation() {
     env.api.push(reset_frame(THREAD, USER, "d-good"));
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(reposes(&env).len(), 4, "délégation révoquée : pas de signature");
+    synco_ai_runtime::app::shutdown(&rt).await;
+}
+
+/// Enregistre un salon dans le registre et l'écrit (comme `created_key`).
+async fn remember_thread(rt: &Arc<synco_ai_runtime::runtime::Runtime>, thread: &str, user: &str, delegation: &str) {
+    let snapshot = {
+        let mut st = rt.state.lock().await;
+        assert!(st.created_threads.record(thread, user, delegation));
+        st.created_threads.snapshot()
+    };
+    rt.save_created_threads(snapshot).await;
+}
+
+fn has_alert(st: &synco_ai_runtime::state::State, code: &str) -> bool {
+    st.alerts.iter().any(|(_, c)| *c == code)
+}
+
+/// PC33 : un registre dont le MAC est altéré ne fait jamais signer ; alerte au dashboard ; le
+/// runtime continue (il enregistre de nouveau, scellé). Contrôle : le même registre intact signe.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn registre_altere_ne_fait_rien_signer() {
+    let env = setup().await;
+    wait_until_async(&env.running.runtime, |st| st.vault.get(USER).is_some()).await;
+    remember_thread(&env.running.runtime, THREAD, USER, "d-good").await;
+    let file = env.state_dir.join(synco_ai_runtime::created_threads::CREATED_THREADS_FILE);
+    assert!(std::fs::read_to_string(&file).unwrap().contains("\"mac\""), "registre scellé");
+
+    // Intact : un redémarrage garde le registre, la réparation est signée.
+    let env = restart(env, |_| ()).await;
+    wait_until_async(&env.running.runtime, |st| st.vault.get(USER).is_some()).await;
+    assert!(!has_alert(&*env.running.runtime.state.lock().await, "created_threads_tampered"));
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    wait_until("enveloppe reposée", || reposes(&env).len() == 1).await;
+
+    // Altéré : le fichier désigne un autre salon (MAC inchangé).
+    let env = restart(env, |dir| {
+        let f = dir.join(synco_ai_runtime::created_threads::CREATED_THREADS_FILE);
+        let text = std::fs::read_to_string(&f).unwrap();
+        assert!(text.contains(THREAD));
+        std::fs::write(&f, text.replace(THREAD, "cm3threadinjecte00000001")).unwrap();
+    })
+    .await;
+    wait_until_async(&env.running.runtime, |st| st.vault.get(USER).is_some()).await;
+    {
+        let st = env.running.runtime.state.lock().await;
+        assert!(has_alert(&st, "created_threads_tampered"), "alerte au dashboard");
+        assert!(st.created_threads.is_empty(), "registre considéré vide");
+    }
+    let before = reposes(&env).len();
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    env.api.push(reset_frame("cm3threadinjecte00000001", USER, "d-good"));
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert_eq!(reposes(&env).len(), before, "MAC altéré : rien n'est signé");
+    // Le runtime continue de tourner et réenregistre, scellé.
+    remember_thread(&env.running.runtime, THREAD, USER, "d-good").await;
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    wait_until("réparation après réenregistrement", || reposes(&env).len() > before).await;
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+}
+
+/// PC33 : l'ancien format de L08b (JSON nu, sans MAC) est lu une fois puis réécrit scellé.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ancien_registre_migre_et_scelle() {
+    let env = setup().await;
+    let file = env.state_dir.join(synco_ai_runtime::created_threads::CREATED_THREADS_FILE);
+    let env = restart(env, |dir| {
+        let legacy = json!({ THREAD: { "userId": USER, "delegationId": "d-good" } });
+        std::fs::write(dir.join(synco_ai_runtime::created_threads::CREATED_THREADS_FILE), legacy.to_string()).unwrap();
+    })
+    .await;
+    wait_until_async(&env.running.runtime, |st| st.vault.get(USER).is_some()).await;
+    assert!(!has_alert(&*env.running.runtime.state.lock().await, "created_threads_tampered"));
+    assert!(std::fs::read_to_string(&file).unwrap().contains("\"mac\""), "réécrit scellé");
+    env.api.push(reset_frame(THREAD, USER, "d-good"));
+    wait_until("réparation d'un salon de l'ancien registre", || reposes(&env).len() == 1).await;
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+}
+
+/// Revue L08b (7) : si le registre ne peut pas être effacé, le désappairage échoue (rien d'autre
+/// n'est oublié) au lieu de se contenter d'un journal ; une fois possible, il aboutit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn desappairage_efface_le_registre_ou_echoue() {
+    let env = setup().await;
+    let rt = Arc::clone(&env.running.runtime);
+    wait_until_async(&rt, |st| st.vault.get(USER).is_some()).await;
+    remember_thread(&rt, THREAD, USER, "d-good").await;
+    let file = env.state_dir.join(synco_ai_runtime::created_threads::CREATED_THREADS_FILE);
+    let saved = std::fs::read(&file).unwrap();
+    // Fichier impossible à supprimer : un dossier non vide à sa place.
+    std::fs::remove_file(&file).unwrap();
+    std::fs::create_dir(&file).unwrap();
+    std::fs::write(file.join("x"), b"x").unwrap();
+    assert!(rt.forget_org().await.is_err(), "effacement impossible : le désappairage échoue");
+    assert!(rt.state.lock().await.vault.get(USER).is_some(), "rien d'autre n'est oublié");
+    std::fs::remove_dir_all(&file).unwrap();
+    std::fs::write(&file, saved).unwrap();
+    rt.forget_org().await.expect("désappairage");
+    assert!(!file.exists(), "fichier supprimé");
+    assert!(rt.state.lock().await.vault.get(USER).is_none());
     synco_ai_runtime::app::shutdown(&rt).await;
 }
 

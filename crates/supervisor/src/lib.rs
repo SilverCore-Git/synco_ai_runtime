@@ -32,6 +32,7 @@ pub mod ratelimit;
 pub mod runtime;
 pub mod sandbox;
 pub mod seal;
+pub mod sealed_file;
 pub mod server;
 pub mod state;
 pub mod stream;

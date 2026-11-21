@@ -48,6 +48,16 @@ impl ApiError {
         }
     }
 
+    /// Code machine **sûr à journaliser** : seulement `[a-z_]`, 48 caractères au plus ; autre chose
+    /// (majuscules, chiffres, ponctuation, contrôles : texte libre d'un serveur qui n'est pas de
+    /// confiance) devient `-`.
+    #[must_use]
+    pub fn loggable_code(&self) -> &str {
+        self.code()
+            .filter(|c| !c.is_empty() && c.len() <= 48 && c.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'))
+            .unwrap_or("-")
+    }
+
     /// Statut HTTP, s'il y en a un.
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
@@ -470,6 +480,16 @@ impl ApiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn code_journalise_restreint() {
+        let status = |c: &str| ApiError::Status { status: 409, code: Some(c.to_owned()) };
+        assert_eq!(status("envelope_exists").loggable_code(), "envelope_exists");
+        for bad in ["Envelope", "a1", "a b", "a\nb", "<script>", "", &"a".repeat(49)] {
+            assert_eq!(status(bad).loggable_code(), "-", "{bad:?}");
+        }
+        assert_eq!(ApiError::Network.loggable_code(), "-");
+    }
 
     #[test]
     fn chemins() {

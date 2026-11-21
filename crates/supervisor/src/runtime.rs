@@ -602,11 +602,9 @@ impl Runtime {
         self.state.lock().await.repose_inflight.remove(thread_id);
         match outcome {
             Ok(()) => tracing::info!(code = "envelope_reposed", "enveloppe rt1 reposée"),
-            Err(e) => tracing::warn!(
-                code = "envelope_repose_refused",
-                api_code = e.code().unwrap_or("-"),
-                "enveloppe non reposée"
-            ),
+            Err(e) => {
+                tracing::warn!(code = "envelope_repose_refused", api_code = e.loggable_code(), "enveloppe non reposée")
+            }
         }
     }
 

@@ -21,7 +21,7 @@ Les tensions relevées et non tranchées sont les questions Q11 à Q17 (§6).
 | [07-modele-de-donnees.md](07-modele-de-donnees.md) | Modèles Prisma ajoutés ou étendus, bail par `updateMany` conditionné |
 | [08-etats-conversation.md](08-etats-conversation.md) | Machine à états d'une conversation, transitions, plantages |
 | [09-limites-et-valeurs-par-defaut.md](09-limites-et-valeurs-par-defaut.md) | Propositions chiffrées pour D4 et D6, autres plafonds |
-| [12-plan-action.md](12-plan-action.md) | Plan d'action (format, chiffrement, types d'action, validation, états, exécution, verrou `ask`), mode autonome, politiques d'org des fonctionnalités IA ; figé par L00f (C1, PC34 à PC43), amendé par PC44 à PC48 |
+| [12-plan-action.md](12-plan-action.md) | Plan d'action (format, chiffrement, types d'action, validation, états, exécution, verrou `ask`), mode autonome, politiques d'org des fonctionnalités IA ; figé par L00f (C1, PC34 à PC43), amendé par PC44 à PC48 puis PC54 à PC58 |
 | [vectors/README.md](vectors/README.md) | Vecteurs de test à produire par L01 et L02 ; vecteurs figés par L00f (`mandate-v2.json`, `action-plan.json`) |
 | [exemples/](exemples/) | Exemples calculés (non normatifs) qui illustrent chaque format |
 
@@ -75,7 +75,7 @@ reçoit l'enveloppe de l'AK, le runtime jamais.
 | **Bail** | Droit exclusif et temporaire d'un worker d'écrire une conversation, pris et renouvelé par `updateMany` conditionné (07 §4). |
 | **Bascule** | Passage explicite d'une conversation du mode local au mode runtime, ou retour. |
 | **Régime** | Où tourne la boucle d'une conversation : `client`, `server` ou `runtime` (02_architecture §2). |
-| **Plan d'action** | Liste fermée d'actions proposée par l'agent (outil interne `propose_actions`), chiffrée sous `CK`, que l'utilisateur accepte en tout ou en partie et que **son appareil** exécute avec ses clés ; les actions serveur sont exécutées par l'agent après acceptation, en **phases** alternées appareil / agent selon les dépendances (PC44, 12 §8.1). |
+| **Plan d'action** | Liste fermée d'actions proposée par l'agent (outil interne `propose_actions`), chiffrée sous `CK`, que l'utilisateur accepte en tout ou en partie et que **son appareil** exécute avec ses clés ; les actions serveur sont exécutées par l'agent après acceptation, selon un graphe de dépendances explicite : chaque action prête s'exécute aussitôt, en parallèle, sur l'appareil ou chez l'agent (PC44, PC58, 12 §8.1). |
 | **Mode autonome** | Option de l'utilisateur, autorisée par la politique de l'org, où le runtime crée lui-même les salons avec sa signature `rt1` ; consentement signé dans le mandat v2 (`mode = auto`, 03 §4.1). Défaut : mode plan. |
 | **Politique de fonctionnalité** | Réglage de l'org (tout le monde / personne / personne sauf) d'une fonctionnalité IA « pratique mais moins sûre », que chacun active ensuite lui-même (12 §11). |
 
@@ -257,6 +257,16 @@ d'enveloppe du créateur, `autonomy.allowed`) est repris tel quel dans 12.
 | PC46 | QP4 : l'empreinte `ownerRsaSpkiHex` du mandat v2 vérifié prime sur l'épingle TOFU ; écart → `409 member_key_changed` et alerte ; v1 : TOFU actuel | 12 §10.3, 03 §4.1 |
 | PC47 | QP2 : condensat de `JCS({tool, args, argsRefs})` (`argsRefs` omis s'il est absent) ; l'appel porte `args` non résolus et `refs` résolues ; l'API vérifie le condensat puis chaque `ref` contre la sortie qu'elle a enregistrée en créant l'objet (en-tête `X-Synco-Plan` pour l'appareil), sans rien lire de chiffré | 12 §8.4, §8.5 ; 04 §5, 07 §10 |
 | PC48 | QP5 : détails ratifiés tels quels, sauf `AiFeaturePolicyEvent` **conservé 1 an** avec une purge bornée (RGPD) | 12 §15, 07 §9, §10, 09 |
+
+### Second amendement du plan d'action (tranché le 2026-11-21, 12 §15)
+
+| # | Décision retenue | Où |
+|---|---|---|
+| PC54 | **Échec** : seules les dépendantes transitives (`after`, qui couvre `argsRefs`) de l'action en échec sont ignorées ; les actions indépendantes continuent, dans toutes les phases (remplace l'arrêt total du premier amendement) | 12 §7.1, §7.3 ; 04, 07, 08 |
+| PC55 | **Message pendant un plan accepté** : le plan continue, le message est traité au tour qui suit la clôture de `propose_actions` ; arrêt explicite par la route « Arrêter le plan » (`POST …/plans/:planId/stop`, statut `stopped`, élément `plan_decision` `stop`) | 12 §8.6, §9, §12.1 ; 07, 08 |
+| PC56 | **Lien objet ← plan / action** (`X-Synco-Plan`, colonne `output`) : conservé le temps du plan, effacé à la clôture, purge bornée de rattrapage ; inscrit au catalogue RGPD | 12 §8.5 ; 07 §9, §11 |
+| PC57 | **Mode autonome** : l'absence de recontrôle API des `refs` du `thread.create` autonome est un risque accepté | 12 §8.4, §10.6, §15 |
+| PC58 | **Graphe et parallélisme, façon GitHub Actions** : `after` = `needs`, `groups` de présentation, `category.create` et `categoryId` ; actions prêtes exécutées en parallèle (concurrence 4, maximum 8, des deux côtés), `429` réessayé 3 fois ; consigne au modèle ; présentation en graphe par niveaux (repli en liste sur mobile). **Ajustement de PC44** : phases dynamiques (séances par exécutant qui peuvent se chevaucher) au lieu de phases précalculées strictement alternées | 12 §3, §4, §8.1 à §8.3, §8.7, §17 ; 04, 07, 08, 09 |
 
 ## 5 bis. Analyse des décisions (pour mémoire)
 

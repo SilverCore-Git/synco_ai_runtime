@@ -88,7 +88,7 @@ maintenance reborne [1 h, 7 j] toute valeur lue, y compris une ancienne valeur e
 |---|---|
 | Ticket | 2 048 octets ; `srt1` 300 s émis / 600 s max ; `sgt1` 300 s / 900 s max ; tolérance 30 s |
 | `POST <url>/v1/challenge` | 10 / min par adresse IP, 60 / min au total |
-| Canal interne (par runtime) | 50 requêtes / s, rafale 200 ; corps 256 Kio (8 Mio pour `PUT …/transcript`) |
+| Canal interne (par runtime) | 50 requêtes / s, rafale 200 ; corps 256 Kio (8 Mio pour `PUT …/transcript`, 1 Mio pour `POST …/plans`, PC61) |
 | Fenêtre des requêtes internes | ±60 s ; nonces gardés 120 s |
 | Historique d'une conversation (`messages`) | 8 Mio sérialisés ; au-delà, refus d'écriture (`invalid_body`) et `failed` `internal` — compaction hors v1 |
 | Entrées par délégation | 5 000 |
@@ -100,7 +100,7 @@ maintenance reborne [1 h, 7 j] toute valeur lue, y compris une ancienne valeur e
 | `POST /metrics` | 1 / min |
 | Trames du pipe | charge de 1 Mio (JSON), 64 Kio (clés) ; la longueur en tête compte le genre en plus (06 §1) |
 | Synchro P11 (client) | regroupement 5 s ; backoff 30 s → 30 min ; 5 tentatives par session de l'app |
-| Plan d'action (L00f, 12) | 20 actions ; clair canonique ≤ 64 Kio (65 536 octets) ; 3 plans consécutifs par tour (`plan_limit`) ; expiration = `confirmationTimeoutSecs` de l'org (7 j par défaut, [1 h, 7 j]) ; claim 5 min **par phase d'appareil**, prolongé par `progress` ; phases dynamiques, au plus 20 par exécutant, expiration commune au plan entier (PC44, PC58) ; concurrence : 4 actions en cours par défaut, 8 au plus, sur l'appareil (constante de l'app) comme chez l'agent (`plan.concurrency`, [1, 8]) ; `429` : 3 nouveaux essais au plus (`Retry-After` plafonné à 30 s, sinon 1, 2, 4 s ± 20 %), concurrence divisée par 2 ; `groups` : 1 à 20, `label` ≤ 100 (PC58) ; lien objet ↔ action effacé à la clôture, rattrapage de 1 000 lignes par passe (PC56) ; `expiresAt` contrôlé par l'API à `maintenant + délai + 300 s` au plus |
+| Plan d'action (L00f, 12) | **100 actions**, 2 000 entrées d'`after` au total, clair canonique ≤ 256 Kio (262 144 octets), corps de `POST …/plans` ≤ 1 Mio ; au-delà `plan_too_large`, l'agent découpe (PC61) ; groupes : 1 à 50, repliés par défaut au-delà de 30 actions ; 3 plans consécutifs par tour (`plan_limit`) ; expiration = `confirmationTimeoutSecs` de l'org (7 j par défaut, [1 h, 7 j]) ; claim 5 min **par phase d'appareil**, prolongé par `progress` ; phases dynamiques, au plus 20 par exécutant, expiration commune au plan entier (PC44, PC58) ; concurrence : 4 actions en cours par défaut, 8 au plus, sur l'appareil (constante de l'app) comme chez l'agent (`plan.concurrency`, [1, 8]) ; `429` : 3 nouveaux essais au plus (`Retry-After` plafonné à 30 s, sinon 1, 2, 4 s ± 20 %), concurrence divisée par 2 ; `label` de groupe ≤ 100 (PC58) ; lien objet ↔ action effacé à la clôture, rattrapage de 1 000 lignes par passe (PC56) ; `expiresAt` contrôlé par l'API à `maintenant + délai + 300 s` au plus |
 | Politiques d'org (L00f, 12 §11) | ajouts et retraits de membres : 1 à 100 par requête ; pages de 1 à 100 ; liste ≤ 1 000 membres (PC30) ; `AiFeaturePolicyEvent` conservé 1 an, purge bornée à 1 000 lignes par passe (PC48) |
 
 ### 4.1 Valeurs réelles après la vague B (révisé après la vague B, 2026-11-19 ; complété après L05, 2026-11-20)

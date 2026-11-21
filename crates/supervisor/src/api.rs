@@ -332,6 +332,30 @@ impl ApiClient {
         self.json(Method::Get, "/api/runtime/v1/delegations", None, None).await
     }
 
+    /// `GET /authorizations?state=active` (Q18), toutes les pages. `Ok(None)` si la liste est
+    /// incomplète ou incohérente (curseur qui ne progresse pas, trop de pages) : l'appelant ne doit
+    /// alors rien conclure d'une absence.
+    pub async fn active_authorizations(&self) -> Result<Option<Vec<wire::ActiveAuthorization>>, ApiError> {
+        /// Garde-fou : 500 par page, donc 100 000 autorisations au plus.
+        const MAX_PAGES: usize = 200;
+        let mut all = Vec::new();
+        let mut after: Option<String> = None;
+        for _ in 0..MAX_PAGES {
+            let path = match &after {
+                Some(a) => format!("/api/runtime/v1/authorizations?state=active&after={a}&limit=500"),
+                None => "/api/runtime/v1/authorizations?state=active&limit=500".to_owned(),
+            };
+            let page: wire::AuthorizationsPage = self.json(Method::Get, &path, None, None).await?;
+            all.extend(page.authorizations);
+            match page.next {
+                None => return Ok(Some(all)),
+                Some(next) if Some(&next) != after.as_ref() => after = Some(next),
+                Some(_) => return Ok(None),
+            }
+        }
+        Ok(None)
+    }
+
     /// `GET /delegations/:id/entries`.
     pub async fn entries(&self, delegation_id: &str, after: Option<&str>) -> Result<wire::EntriesPage, ApiError> {
         let path = match after {

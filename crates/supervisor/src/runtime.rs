@@ -541,35 +541,35 @@ impl Runtime {
         }
     }
 
-    /// Réconcilie les autorisations persistées avec l'API (démarrage, reconnexion du flux) : aucune
-    /// route ne liste les autorisations actives de l'org ; la plus proche est
-    /// `GET /conversations/:sessionId` (S+A), qui refuse une autorisation révoquée, expirée ou d'une
-    /// délégation inactive. Une erreur réseau garde l'entrée.
+    /// Réconcilie les autorisations persistées avec l'API (démarrage, reconnexion du flux, Q18) : un
+    /// seul appel `GET /authorizations?state=active` (spec API §14.1) ; une autorisation connue et
+    /// absente de la réponse est révoquée, expirée ou d'une délégation inactive : elle est retirée.
+    /// Une erreur ou une liste incomplète garde tout. Seules les autorisations connues **avant**
+    /// l'appel sont candidates : une autorisation notifiée pendant l'appel n'est jamais retirée.
     pub async fn reconcile_authorizations(self: &Arc<Self>) {
         let entries = self.state.lock().await.auths.entries();
+        if entries.is_empty() {
+            return;
+        }
+        let active = match self.api.active_authorizations().await {
+            Ok(Some(list)) => list,
+            Ok(None) => {
+                tracing::warn!(code = "authorizations_incomplete", "liste des autorisations incomplète");
+                return;
+            }
+            Err(e) => {
+                tracing::warn!(code = "authorizations_unavailable", error = %e, "autorisations non relues");
+                return;
+            }
+        };
+        let live: BTreeSet<(&str, &str)> = active.iter().map(|a| (a.session_id.as_str(), a.auth_id.as_str())).collect();
         for (session, auth) in entries {
-            let gone = match self.api.conversation_head(&session, &auth.auth_id).await {
-                Ok(_) => false,
-                Err(e) => {
-                    e.status() == Some(404)
-                        || matches!(
-                            e.code(),
-                            Some(
-                                "auth_invalid"
-                                    | "auth_revoked"
-                                    | "auth_expired"
-                                    | "delegation_expired"
-                                    | "delegation_revoked"
-                                    | "out_of_scope"
-                            )
-                        )
-                }
-            };
-            if gone {
-                let mut st = self.state.lock().await;
-                if st.auths.get(&session).is_some_and(|a| a.auth_id == auth.auth_id) {
-                    st.auths.remove(&session);
-                }
+            if live.contains(&(session.as_str(), auth.auth_id.as_str())) {
+                continue;
+            }
+            let mut st = self.state.lock().await;
+            if st.auths.get(&session).is_some_and(|a| a.auth_id == auth.auth_id) {
+                st.auths.remove(&session);
             }
         }
     }

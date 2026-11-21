@@ -121,6 +121,35 @@ pub struct SignKeyResponse {
     pub transitions: Vec<TransitionRecord>,
 }
 
+/// Élément de `GET /authorizations?state=active` (spec API §14.1).
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveAuthorization {
+    /// Autorisation.
+    pub auth_id: String,
+    /// Conversation.
+    pub session_id: String,
+    /// Propriétaire.
+    pub user_id: String,
+    /// Délégation.
+    pub delegation_id: String,
+    /// Expiration (s Unix).
+    pub exp: u64,
+    /// Nom d'affichage du délégant, s'il en a un.
+    #[serde(default)]
+    pub display_name: Option<String>,
+}
+
+/// Page de `GET /authorizations?state=active` : `next = null` marque la fin (une page peut avoir
+/// moins d'éléments que `limit`).
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct AuthorizationsPage {
+    /// Autorisations de la page.
+    pub authorizations: Vec<ActiveAuthorization>,
+    /// Curseur suivant.
+    pub next: Option<String>,
+}
+
 /// Élément de `GET /conversations?state=pending`.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

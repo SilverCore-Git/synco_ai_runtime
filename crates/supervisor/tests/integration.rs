@@ -975,6 +975,53 @@ async fn autorisations_purgees_et_reconciliees() {
     synco_ai_runtime::app::shutdown(&rt).await;
 }
 
+/// Q18 : un seul `GET /authorizations?state=active` (paginé), plus un appel par conversation ; une
+/// autorisation absente est retirée, une erreur de l'API garde tout.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn reconciliation_par_la_liste_des_autorisations_actives() {
+    const S2: &str = "1f0e0d0c-0b0a-4908-8706-050403020100";
+    const S3: &str = "2f0e0d0c-0b0a-4908-8706-050403020100";
+    const A2: &str = "ae8d7c6b-5a49-4382-9170-6f5e4d3c2b1a";
+    const A3: &str = "be8d7c6b-5a49-4382-9170-6f5e4d3c2b1a";
+    let env = setup().await;
+    let rt = Arc::clone(&env.running.runtime);
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    env.api.with(|st| {
+        st.authorizations_page = 1;
+        st.conversations.insert(S2.into(), common::Conversation { auth_id: A2.into(), ..Default::default() });
+        st.conversations.insert(S3.into(), common::Conversation { auth_id: A3.into(), ..Default::default() });
+    });
+    for (s, a) in [(SESSION, AUTH), (S2, A2), (S3, A3)] {
+        rt.remember_authorization(s, USER, a).await;
+    }
+    // Panne de l'API : rien n'est retiré.
+    env.api.with(|st| st.authorizations_fail = Some(500));
+    rt.reconcile_authorizations().await;
+    assert_eq!(rt.state.lock().await.auths.entries().len(), 3, "erreur : on garde");
+    // S2 n'est plus dans la liste (révoquée) ; la liste est paginée (1 par page).
+    env.api.with(|st| {
+        st.authorizations_fail = None;
+        st.authorizations_omitted = vec![S2.into()];
+        st.seen.clear();
+    });
+    rt.reconcile_authorizations().await;
+    {
+        let st = rt.state.lock().await;
+        assert!(st.auths.get(S2).is_none(), "autorisation absente = révoquée");
+        assert!(st.auths.get(SESSION).is_some() && st.auths.get(S3).is_some());
+    }
+    env.api.with(|st| {
+        let pages = st.seen.iter().filter(|r| r.path.contains("/authorizations?state=active")).count();
+        assert_eq!(pages, 2, "deux pages de 1 sur 2 autorisations actives");
+        assert!(
+            st.seen.iter().all(|r| !r.path.contains("/conversations/")),
+            "plus d'appel par conversation : {:?}",
+            st.seen.iter().map(|r| r.path.clone()).collect::<Vec<_>>()
+        );
+    });
+    synco_ai_runtime::app::shutdown(&rt).await;
+}
+
 async fn wait_until_async(
     rt: &Arc<synco_ai_runtime::runtime::Runtime>,
     f: impl Fn(&synco_ai_runtime::state::State) -> bool,

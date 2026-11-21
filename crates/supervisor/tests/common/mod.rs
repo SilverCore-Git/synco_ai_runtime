@@ -89,6 +89,12 @@ pub struct MockState {
     pub presences: u32,
     /// Salons créés par `POST /e2ee/threads`.
     pub threads_created: u32,
+    /// `GET /authorizations` : taille de page (0 = tout sur une page).
+    pub authorizations_page: usize,
+    /// `GET /authorizations` : statut d'erreur à servir.
+    pub authorizations_fail: Option<u16>,
+    /// `GET /authorizations` : conversations dont l'autorisation est omise (révoquée).
+    pub authorizations_omitted: Vec<String>,
     /// `GET /llm-policy` remplacé (défaut : `openai`, `gpt-test`).
     pub policy: Option<Value>,
 }
@@ -259,7 +265,7 @@ async fn channel(
         if body.is_empty() { Value::Null } else { serde_json::from_slice(&body).unwrap_or(Value::Null) };
     st.seen.push(Seen { method: method.to_string(), path: path.clone(), auth: auth.clone(), body: json_body.clone() });
     let route = path.trim_start_matches("/api/runtime/v1");
-    let (route_path, _query) = route.split_once('?').unwrap_or((route, ""));
+    let (route_path, query) = route.split_once('?').unwrap_or((route, ""));
     let segs: Vec<&str> = route_path.trim_start_matches('/').split('/').collect();
     match (method.as_str(), segs.as_slice()) {
         ("POST", ["register"]) => {
@@ -302,6 +308,36 @@ async fn channel(
             }
             None => error(404, "not_found"),
         },
+        ("GET", ["authorizations"]) => {
+            if let Some(status) = st.authorizations_fail {
+                return error(status, "internal");
+            }
+            if !query.contains("state=active") {
+                return error(400, "invalid_body");
+            }
+            let after = query.split('&').find_map(|p| p.strip_prefix("after=")).map(str::to_owned);
+            let all: Vec<(String, String)> = st
+                .conversations
+                .iter()
+                .filter(|(sid, _)| !st.authorizations_omitted.contains(sid))
+                .map(|(sid, c)| (sid.clone(), c.auth_id.clone()))
+                .collect();
+            let start = match &after {
+                Some(a) => all.iter().position(|(_, auth)| auth == a).map_or(all.len(), |i| i + 1),
+                None => 0,
+            };
+            let size = if st.authorizations_page == 0 { all.len().max(1) } else { st.authorizations_page };
+            let page: Vec<&(String, String)> = all.iter().skip(start).take(size).collect();
+            let next = (start + page.len() < all.len()).then(|| page.last().map(|(_, a)| a.clone())).flatten();
+            let items: Vec<Value> = page
+                .iter()
+                .map(|(sid, auth)| {
+                    json!({ "authId": auth, "sessionId": sid, "userId": "66666666-7777-4888-9999-aaaaaaaaaaaa",
+                        "delegationId": "d-good", "exp": 4_000_000_000_u64, "displayName": null })
+                })
+                .collect();
+            axum::Json(json!({ "authorizations": items, "next": next })).into_response()
+        }
         ("GET", ["conversations"]) => axum::Json(Value::Array(st.pending.clone())).into_response(),
         (m, ["conversations", sid, rest @ ..]) => {
             let sid = (*sid).to_owned();

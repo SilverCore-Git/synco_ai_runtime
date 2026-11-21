@@ -250,7 +250,11 @@ relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pi
   de la date de l'alerte), et n'accepter que sur confirmation. Afficher l'empreinte de sa propre clé
   dans l'app est une question posée à l'utilisateur. Pas de commande en ligne : le fichier est tenu
   en mémoire par le superviseur en marche.
-- **Limites** : la première vue vient de l'API (TOFU) ; un membre qui n'a jamais délégué au runtime
+- **Limites** : la première vue vient de l'API (TOFU). En particulier (revue I5, inhérent au
+  TOFU, non bloquant) : à la première vue, une API malveillante peut **injecter un destinataire**
+  inconnu (un faux membre avec une clé qu'elle détient) ou servir sa propre clé pour un membre que
+  le runtime n'a encore jamais vu ; elle est alors épinglée et reçoit la clé des salons créés à
+  l'accueil. L'épinglage ne protège que les membres déjà vus ; un membre qui n'a jamais délégué au runtime
   n'a pas de clé de signature épinglée et `sign-key` ne le sert pas (04 §4.1) : sa rotation légitime
   n'est acceptée que par l'admin. La clé RSA du propriétaire n'est pas liée à son mandat (00 §6, Q25).
 

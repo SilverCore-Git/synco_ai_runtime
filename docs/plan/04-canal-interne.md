@@ -223,8 +223,9 @@ reconstruit le mandat selon 03 §4.1 et se fie au mode **vérifié**.
 | `POST /conversations/:sessionId/tools/:name/execute` | S+A | Outil `server` (§5), corps **`{ leaseEpoch, args? }`** | L03 |
 | `POST /conversations/:sessionId/push` | S+A | `{ type }` ∈ `AI_TURN_DONE`, `AI_AWAITING_CONFIRMATION`, `AI_AWAITING_KEY`, `AI_AWAITING_USER`, `AI_FAILED` ; titre et corps construits par l'API, **sans contenu** ; **une notification par entrée dans l'état annoncé**, plafond de sécurité 6 / min par conversation (`429 rt_rate_limited`) → `202 { sent: true \| false }` (voir « Notifications » ci-dessous ; révisé par L03d, Q19) | L03, L03d |
 | `POST /tickets/llm` | S+A | Ticket `sgt1` pour l'utilisateur de l'autorisation, `rt` renseigné (02 §4) → `{ ticket, expiresAt, url }` ; `409 gateway_not_configured` | L02 |
-| `POST /conversations/:sessionId/plans` | S+A | **Ajoutée par L00f (12 §12.2).** Écrit le transcript (statut `awaiting_confirmation`, `pendingToolCall` `propose_actions`, 12 §3.4) **et** crée la ligne `AiActionPlan` dans une transaction : `{ leaseEpoch, baseRev, messages, title?, pendingToolCall, consumedInbox, events?, plan: { planId, toolCallId, actionCount, createdAt, expiresAt, serverDigests: [{ n, sha256Hex }] } }` → `201 { rev, planId }` ; `400 invalid_body`, `409 plan_exists`, `rev_conflict`, `lease_conflict` | L03g |
-| `GET /conversations/:sessionId/plans/:planId` | S+A | **Ajoutée par L00f.** `PlanView` (12 §12.1), sans contenu | L03g |
+| `POST /conversations/:sessionId/plans` | S+A | **Ajoutée par L00f (12 §12.2).** Écrit le transcript (statut `awaiting_confirmation`, `pendingToolCall` `propose_actions`, 12 §3.4) **et** crée la ligne `AiActionPlan` dans une transaction : `{ leaseEpoch, baseRev, messages, title?, pendingToolCall, consumedInbox, events?, plan: { planId, toolCallId, actionCount, createdAt, expiresAt, actions: [{ n, executor, phase }], serverDigests: [{ n, sha256Hex }] } }` → `201 { rev, planId }` ; `400 invalid_body` (dont phases mal formées, 12 §8.1), `409 plan_exists`, `rev_conflict`, `lease_conflict` (amendé par PC44 : `actions`) | L03g |
+| `GET /conversations/:sessionId/plans/:planId` | S+A | **Ajoutée par L00f.** `PlanView` (12 §12.1), sans contenu en clair | L03g |
+| `POST /conversations/:sessionId/plans/:planId/agent-result` | S+A, bail | **Ajoutée par l'amendement PC44 (12 §8.3, §12.2).** Fin d'une phase d'agent suivie d'une autre phase : `{ leaseEpoch, baseRev, phase, value }` (`plan_agent_result:<k>` chiffré sous `CK`) → `200 { rev, status, currentPhase }` ; l'API range la valeur, ouvre la phase suivante, repasse la conversation `awaiting_confirmation` et envoie le push ; `expiresAt` passé : `status: "expired"`, conversation inchangée ; `400 invalid_body`, `404 not_found`, `409 plan_phase_mismatch`, `409 plan_not_executing`, `rev_conflict`, `lease_conflict` | L03g |
 
 Contraintes des écritures du worker (révisé après la vague B, 2026-11-19 ;
 `synco_api/src/services/aiRuntime/conversationLease.ts:172-207`, `conversationValidation.ts:44-68`) :
@@ -421,13 +422,14 @@ corps de 256 Kio limite `POST /e2ee/threads` à environ 300 destinataires de cl�
   que prendra le runtime (superviseur ou worker). Lot d'adoption (PC23 : « runtime lot ultérieur ») :
   **ouvert**, non planifié dans ce report.
 
-**Compléments de L00f (2026-11-21 ; 12 §10.4, §8.3)** : `POST /e2ee/threads` (créateur `rt1:`),
+**Compléments de L00f (2026-11-21 ; 12 §10.4, §8.4)** : `POST /e2ee/threads` (créateur `rt1:`),
 `POST /e2ee/threads/:threadId/key-envelope` et `POST /e2ee/threads/:threadId/key-envelope/repose` exigent
 en plus une délégation `mode = auto` (celle de l'autorisation, ou le `delegationId` du corps pour la
 repose ; sinon `403 autonomy_required`) et `isFeatureAllowed(autonomous_mode)` (sinon
 `403 feature_not_allowed`), contrôlés après les contrôles existants et avant toute écriture.
-`POST /e2ee/threads` accepte `plan?: { planId, n }` et applique le verrou de 12 §8.3 quand la politique
-effective de `create_thread` est `ask` (`403 action_not_accepted`, `409 action_state_conflict`). En mode
+`POST /e2ee/threads` accepte `plan?: { planId, n }` et applique le verrou de 12 §8.4 quand la politique
+effective de `create_thread` est `ask` (`403 action_not_accepted`, `409 action_state_conflict`,
+`409 plan_phase_mismatch`) ; le salon créé est enregistré comme sortie de l'action (12 §8.5). En mode
 plan, le runtime ne crée aucun salon : c'est l'appareil (12 §4).
 
 Extensions prévues (à spécifier ici par L14/L15 avant d'être codées) : lecture de fichiers (ticket
@@ -453,13 +455,17 @@ membre de l'org (`403 forbidden`), outil connu de catégorie `server` avec `exec
 `404 not_found`). Réponse `200` : `{ "ok": true, "data": … }`, ou `{ "ok": false, "status": <n>,
 "message": "…" }` pour une erreur métier destinée au modèle.
 
-**Verrou des actions `ask` (L00f, PC38 ; 12 §8.3).** Corps étendu : **`{ leaseEpoch, args?, plan?: { planId, n } }`**.
+**Verrou des actions `ask` (L00f, PC38, PC47 ; 12 §8.4).** Corps étendu : **`{ leaseEpoch, args?, argsRefs?, refs?, plan?: { planId, n } }`**.
 Après `checkToolGate`, si la politique effective de l'outil est `ask` (`toolPolicy[name]`, sinon `ask`
 pour un outil `mutating` : même règle que le worker), `plan` est obligatoire et vérifié (ligne de cette
-conversation et de cet utilisateur, statut `accepted` ou `executing`, action `n` acceptée et `pending`,
-`serverDigests[n]` = SHA-256 de `JCS({ tool: name, args })`) ; sinon **`403 action_not_accepted`**, sans
-exécution. L'action passe `executing` (`updateMany` conditionné, sinon `409 action_state_conflict`), puis
-`done` (`ok: true`) ou `failed` (`ok: false`) dans la même requête ; `AiChatSessionEvent`
+conversation et de cet utilisateur, statut `accepted` ou `executing`, action `n` acceptée, `pending`,
+d'exécutant `agent` et de phase `currentPhase`, `serverDigests[n]` = SHA-256 de
+`JCS({ tool: name, args, argsRefs })` sur `args` **non résolus**, `argsRefs` omis s'il est absent, puis
+chaque `refs[f]` égal à la sortie enregistrée de l'action visée par `argsRefs[f]`, 12 §8.5) ; sinon
+**`403 action_not_accepted`**, sans exécution. Arguments exécutés : `args` ∪ `refs`. L'action passe
+`executing` (`updateMany` conditionné, sinon `409 action_state_conflict` ; hors phase courante :
+`409 plan_phase_mismatch`), puis `done` (`ok: true`, sortie enregistrée) ou `failed` (`ok: false`) dans
+la même requête ; `AiChatSessionEvent`
 `type: "plan_action"`, `actor: "runtime"`, `code: "<planId>.<n>"`. Auparavant l'API n'appliquait que `deny`.
 
 Route de bascule (côté utilisateur, L03), rappelée ici car elle crée l'autorisation :
@@ -527,8 +533,8 @@ client a épinglé, et qu'un runtime fautif pourrait remplacer en boucle ; la s�
 la nouvelle enveloppe reste signée par la `csk` du runtime certifié et les clients vérifient `commitment` ;
 un serveur malveillant peut seulement réinitialiser (déni de service), jamais forger.
 
-**Compléments de L00f** : `conversation.wake.reason = "decision"` couvre aussi `plan_decision` (refus) et
-`plan_result` (12 §9) ; `delegation.revoked.reason` peut valoir `autonomy_withdrawn` (12 §11.4).
+**Compléments de L00f** : `conversation.wake.reason = "decision"` couvre aussi `plan_decision` (refus, ou
+acceptation dont la première phase est d'agent) et chaque `plan_result:<k>` (12 §9) ; `delegation.revoked.reason` peut valoir `autonomy_withdrawn` (12 §11.4).
 
 - **Runtime → API** : uniquement `{ "v": 1, "type": "pong" }` et `{ "v": 1, "type": "presence", "workers": <n> }` (≤ 1 / 30 s).
 - Présence : le runtime est « en ligne » tant que la connexion est ouverte (`AiRuntime.lastSeenAt`
@@ -613,8 +619,10 @@ et `conversationResult.ts` (L03).
 | `inbox_full` | 429 | 100 éléments non consommés dans la boîte |
 | `rate_limited` | 429 | Refus de débit d'un service HTTP partagé (création de salon, envoi CDN) |
 | `upgrade_required` | 426 | `GET /stream` sans mise à niveau WebSocket |
-| `action_not_accepted` | 403 | Outil `ask` (ou `create_thread` `ask`) appelé sans action acceptée par l'utilisateur, ou condensat différent (L00f, 12 §8.3) |
+| `action_not_accepted` | 403 | Outil `ask` (ou `create_thread` `ask`) appelé sans action acceptée par l'utilisateur, condensat ou `refs` différents (L00f, PC47 ; 12 §8.4) |
 | `action_state_conflict` | 409 | Action déjà exécutée ou non `pending` (12 §7.2) |
+| `plan_phase_mismatch` | 409 | Action ou résultat hors de la phase courante, ou mauvais exécutant (PC44 ; 12 §8) |
 | `autonomy_required` | 403 | Route `rt1` sous une délégation qui n'est pas `mode = auto` (12 §10.4) |
 | `feature_not_allowed` | 403 | Politique d'org `autonomous_mode` (12 §11) |
 | `plan_exists` | 409 | `POST …/plans` avec un `planId` déjà utilisé |
+| `plan_not_executing` | 409 | `POST …/plans/:planId/agent-result` sur un plan terminé (dont `failed`) (PC44 ; 12 §12.2) |

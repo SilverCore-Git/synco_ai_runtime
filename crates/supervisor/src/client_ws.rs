@@ -310,6 +310,7 @@ const fn frame_type(f: &ClientFrame) -> &'static str {
         ClientFrame::Confirm(_) => "confirm",
         ClientFrame::Answer(_) => "answer",
         ClientFrame::Upload(_) => "upload",
+        ClientFrame::PlanResult(_) => "plan_result",
         ClientFrame::Cancel(_) => "cancel",
         ClientFrame::Ping(_) => "ping",
     }

@@ -116,6 +116,9 @@ pub enum ClientFrame {
     Answer(AnswerItem),
     /// Référence d'une image envoyée.
     Upload(UploadItem),
+    /// Résultat d'une phase d'appareil d'un plan d'action (12 §9).
+    #[serde(rename = "plan_result")]
+    PlanResult(PlanResultItem),
     /// Annulation du tour.
     Cancel(CancelItem),
     /// Maintien.
@@ -181,6 +184,18 @@ pub struct UploadItem {
     pub reference: String,
 }
 
+/// `plan_result` : phase `phase` d'un plan, valeur chiffrée sous `CK` (AAD `sessionId:planId:plan_result:<k>`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PlanResultItem {
+    /// Plan.
+    pub plan_id: String,
+    /// Numéro de la phase d'appareil (≥ 1).
+    pub phase: u64,
+    /// `gcm1:` chiffré.
+    pub value: String,
+}
+
 /// `cancel`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -228,6 +243,9 @@ impl ClientFrame {
             Self::Confirm(c) => is_identifier(&c.tool_call_id),
             Self::Answer(a) => is_identifier(&a.tool_call_id) && gcm1(&a.value),
             Self::Upload(u) => is_identifier(&u.tool_call_id) && (1..=512).contains(&u.reference.len()),
+            Self::PlanResult(r) => {
+                is_identifier(&r.plan_id) && (1..=crate::ids::MAX_SAFE_INTEGER).contains(&r.phase) && gcm1(&r.value)
+            }
             Self::Cancel(c) => is_identifier(&c.id),
             Self::Ping(_) => true,
         }
@@ -243,6 +261,7 @@ impl ClientFrame {
             Self::Confirm(c) => format!("confirm:{}", c.tool_call_id),
             Self::Answer(a) => format!("answer:{}", a.tool_call_id),
             Self::Upload(u) => format!("upload:{}", u.tool_call_id),
+            Self::PlanResult(r) => format!("plan:{}:{}", r.plan_id, r.phase),
             Self::Cancel(c) => format!("cancel:{}", c.id),
             Self::Hello(_) | Self::Ping(_) => return None,
         };
@@ -378,6 +397,11 @@ mod tests {
         let c = ClientFrame::parse(r#"{"v":1,"t":"confirm","toolCallId":"call_1","decision":"accept"}"#).unwrap();
         assert_eq!(c.inbox_item().unwrap().id, "confirm:call_1");
         assert!(ClientFrame::parse(r#"{"v":1,"t":"ping"}"#).is_ok());
+        let r =
+            ClientFrame::parse(r#"{"v":1,"t":"plan_result","planId":"p-1","phase":2,"value":"gcm1:AAAA"}"#).unwrap();
+        let item = r.inbox_item().unwrap();
+        assert_eq!(item.id, "plan:p-1:2");
+        assert_eq!(item.body["t"], "plan_result");
     }
 
     #[test]
@@ -391,6 +415,10 @@ mod tests {
             r#"{"v":1,"t":"message","id":"a|b","content":"gcm1:AA","createdAt":"x"}"#,
             r#"{"v":1,"t":"message","id":"a","content":"en clair","createdAt":"x"}"#,
             r#"{"v":1,"t":"confirm","toolCallId":"c","decision":"maybe"}"#,
+            r#"{"v":1,"t":"plan_result","planId":"p|1","phase":1,"value":"gcm1:AAAA"}"#,
+            r#"{"v":1,"t":"plan_result","planId":"p","phase":0,"value":"gcm1:AAAA"}"#,
+            r#"{"v":1,"t":"plan_result","planId":"p","phase":1,"value":"en clair"}"#,
+            r#"{"v":1,"t":"plan_result","planId":"p","phase":1,"value":"gcm1:AAAA","x":1}"#,
             r#"[]"#,
             "pas du json",
         ] {

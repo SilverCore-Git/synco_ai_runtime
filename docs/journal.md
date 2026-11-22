@@ -1333,6 +1333,6 @@ Rust et TS rendent le même verdict sur les mêmes octets ; règle la plus stric
   `tofu_warning` hors production seulement.
 - **Identifiants** : `check_id` en tête de `decrypt_field`, `decrypt_plan`, `decrypt_phase_result`
   (`invalid_input` avant l'AAD) ; le cas « séparateur | » de `conversation-fields.json` attend `invalid_input`.
-- **Vecteurs** : `action-plan.json` passe de 107 à 145 vérifications (sections `clearCases`, `boundCases`, plus
+- **Vecteurs** : `action-plan.json` passe de 107 à 143 vérifications (sections `clearCases`, `boundCases`, plus
   des cas de validation, de chiffrement et du verrou) ; `mandate-v2.json` à 8 cas `rt1Policy`. Rejoués en Rust et en
   TS, test croisé OK.

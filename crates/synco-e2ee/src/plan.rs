@@ -179,8 +179,8 @@ pub fn encrypt_plan(ck: &SymmetricKey, plan: &Value, rng: &mut impl RandomSource
     session::encrypt_field(ck, session_id, plan_id, &FieldName::Plan, &clear, rng)
 }
 
-/// Lecture stricte d'un clair de plan ou de résultat de phase : JSON de `serde_json` (demi-paires de
-/// substitution refusées), puis nombres **entiers** sûrs seulement, écrits sans fraction ni exposant
+/// Lecture stricte d'un clair de plan ou de résultat de phase : JSON de `serde_json` (demi-paire de
+/// substitution `"\ud800"` refusée, BOM initial refusé), puis nombres **entiers** sûrs seulement, écrits sans fraction ni exposant
 /// (`1.0`, `1e2` et `-0` sont des flottants pour `serde_json`), profondeur ≤ 64, comme [`jcs`]. Tout
 /// écart est [`Error::FieldInvalidJson`], comme le parseur strict de l'app (`parseJsonStrict`).
 fn parse_clear(clear: &str) -> Result<Value> {

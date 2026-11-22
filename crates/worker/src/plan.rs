@@ -277,7 +277,7 @@ impl PlanView {
 /// servi doit être plausible pour le `kind` (12 §4) et l'`after` servi égal à celui du plan (règle 8,
 /// même contrôle que l'appareil). `None` : incohérent (`tool_call_unverified`).
 #[must_use]
-pub fn graph_from(plan: &Value, view: &PlanView) -> Option<PlanGraph> {
+pub fn graph_from(plan: &Value, view: &PlanView, mode: PlanMode) -> Option<PlanGraph> {
     let actions = plan.get("actions")?.as_array()?;
     if actions.len() != view.actions.len() {
         return None;
@@ -288,7 +288,11 @@ pub fn graph_from(plan: &Value, view: &PlanView) -> Option<PlanGraph> {
         let kind = ActionKind::parse(a.get("kind")?.as_str()?).ok()?;
         let plausible = match kind {
             ActionKind::ServerCall => served.executor == Executor::Agent,
-            ActionKind::ThreadCreate => true,
+            // `thread.create` : appareil en mode `plan`, agent seulement en `auto` (12 §4).
+            ActionKind::ThreadCreate => match mode {
+                PlanMode::Plan => served.executor == Executor::Device,
+                PlanMode::Auto => matches!(served.executor, Executor::Agent | Executor::Device),
+            },
             _ => served.executor == Executor::Device,
         };
         let mut after: Vec<u64> = match a.get("after") {
@@ -412,6 +416,19 @@ mod tests {
         let v = view.with_local(&BTreeMap::from([(1, ActionState::Failed)]));
         let states: Vec<(u64, &str)> = v.actions.iter().map(|a| (a.n, a.state.as_str())).collect();
         assert_eq!(states, [(1, "failed"), (2, "skipped"), (3, "skipped"), (4, "pending")]);
+    }
+
+    #[test]
+    fn executant_de_thread_create_selon_le_mode() {
+        let plan = json!({ "actions": [{ "n": 1, "kind": "thread.create", "args": {} }] });
+        let served = |executor: &str| {
+            PlanView::parse(&json!({ "status": "accepted", "actions": [
+                { "n": 1, "executor": executor, "after": [], "ready": false, "state": "pending", "output": null } ] }))
+            .unwrap()
+        };
+        assert!(graph_from(&plan, &served("device"), PlanMode::Plan).is_some());
+        assert!(graph_from(&plan, &served("agent"), PlanMode::Plan).is_none(), "agent interdit en mode plan");
+        assert!(graph_from(&plan, &served("agent"), PlanMode::Auto).is_some());
     }
 
     #[test]

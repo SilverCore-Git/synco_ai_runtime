@@ -1389,3 +1389,46 @@ Docs seulement (aucun code runtime).
   d'appareil `executing` d'un plan `stopped` passent `unknown_outcome` par la maintenance de l'API après le délai des
   actions d'agent.
 - Conséquence pour L01c / L08 / L12 : l'app (L12) doit recalculer et envoyer les empreintes à la décision.
+
+## 2026-11-22 — L08d, corrections de la revue de sécurité et abandons (PC74)
+
+Un commit par point, chacun avec un test qui échoue sans lui.
+
+- **Bloquants** : (1) `agent_phase` part de la vue superposée dès l'entrée : une action déjà `failed` /
+  `unknown_outcome` sur place ne repart plus après un `Retry` (08 §5) ; (2) le résultat d'agent reprend toutes les
+  actions d'agent devenues finales et absentes des `plan_agent_result` déjà déposés (relus à chaque reprise), et le bilan
+  retrouve leurs sorties (celles de la vue de l'API pour une action exécutée juste avant une reprise) ; (3) PC70 : un
+  `cancel` arrivé pendant un plan non `proposed` est consommé (la conversation n'est pas annulée), la vue (`stopped`)
+  est relue et `propose_actions` est clos avec le bilan.
+- **Importants** : (4) `plan_result` d'un autre `planId` consommé et ignoré (`stale_decision`), seule une AAD fausse sur
+  le même plan donne `tool_call_unverified` ; (5) cascade `skipped` locale jusqu'au point fixe, dans l'ordre de `n` ;
+  (6) un outil `ask` masqué par le plan (ou d'appareil) que le modèle appelle quand même est refusé
+  (`use_propose_actions`), jamais de confirmation outil par outil.
+- **Mineurs** : (7) `created_key` refuse (`autonomy_required`) sans délégation vérifiée avant de consommer
+  `created_threads` (`is_none_or`) ; `delegation_unavailable` n'y est plus atteint dans ce cas ; (8) `graph_from` : l'exécutant
+  de `thread.create` est `device` en mode `plan`, `agent` seulement en `auto` (le mode est celui de `init.plan`, vu au
+  lancement ; un plan `auto` repris par un worker `plan` devient `tool_call_unverified`, plus `autonomy_required`) ;
+  (9) formulation corrigée plus haut : les `refs` d'une action d'agent reposent sur les réponses de l'API (§8.5) ;
+  (10) `Retry-After` : le superviseur le relaie (secondes entières seulement, en-tête `retry-after` de
+  `signed_request_response`), le worker l'attend plafonné à 30 s (sinon 1, 2, 4 s ± 20 %) pour les `429` de
+  `server.call` ; le `429` de `thread.create` (route `/e2ee/threads`, passe par `tools::threads`) garde 1, 2, 4 s.
+- **Abandons (PC74)** : spec amendée (12 §8.3 étape 3, §8.7, §9, §12.2, §14, §15 ; 00 : ligne PC74). Choix de
+  rédaction : les abandons figurent dans `outcomes` du `plan_agent_result` chiffré sous la forme `{ n, state, code }`
+  (`code` accepté par `check_phase_result`, seulement avec `failed` / `unknown_outcome`, jamais avec `output`) ;
+  `value` est facultatif seulement si les abandons rendent le plan terminal, et rangée si elle est donnée. Vecteurs :
+  `abandonCases` (8 cas, rejoués par `PlanRun::abandon`, nouvelle fonction pure de `synco-e2ee`) dans
+  `action-plan.json`. **Runtime** : `agent-result` porte `abandoned` ; sont abandonnées les actions locales
+  `failed` / `unknown_outcome` que l'API garde `pending` : `rate_limited`, `refs_inconsistent`, `autonomy_required`,
+  `action_not_accepted` (verrou refusé, ou erreur de préparation hors liste), `key_unavailable` ; une issue inconnue
+  sans code propre est déclarée `unknown_outcome` avec `action_not_accepted` (la liste fermée n'a pas de code adapté) ;
+  `tool_call_unverified` abandonne toutes les actions d'agent `pending` (`action_not_accepted`) avant la clôture.
+  La fin du plan ne se décide plus que sur la vue de l'API (`with_local` ne sert plus qu'à ne jamais relancer une
+  action et au bilan) ; réponse `200 { status }` terminale : relecture puis bilan. `plan_aborted` reste pour un
+  plan introuvable ou expiré, une incohérence d'état de l'API (`plan_phase_mismatch`…) et une issue locale sans code
+  déclarable. Les écarts 1, 2 et 4 de l'entrée L08d précédente sont ainsi levés (API à adapter : faux serveur
+  de `tests/common/mod.rs` en attendant).
+- **Ouvert** : l'API (`abandoned`, `code` dans `outcomes`) et synco_app (`aiActionPlan.ts` : `code` accepté dans les
+  résultats de phase) doivent suivre ; plan non terminal après `tool_call_unverified` (branche d'appareil `pending`) :
+  il reste jusqu'à `expiresAt` ; le `429` de `thread.create` ne relaie pas `Retry-After`.
+- **Vérifié** : `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` : 305 réussis, 10 ignorés (hôte) ; test croisé TS `read-from-worker.ts` : OK.

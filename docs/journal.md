@@ -1374,3 +1374,16 @@ Rust et TS rendent le même verdict sur les mêmes octets ; règle la plus stric
   4. `refs` ou plan incohérent à la reprise (résultat de phase illisible, graphe servi différent) : `tool_call_unverified`.
   5. Le mode (`init.plan.mode`) est celui de la délégation au lancement du worker ; un changement en cours de
      route n'est vu qu'au prochain lancement (une action `thread.create` d'agent hors `auto` échoue `autonomy_required`).
+
+## 2026-11-22 — L03g, revue de sécurité : décisions PC69 et PC70 reportées dans la spec
+
+Docs seulement (aucun code runtime).
+
+- **PC69** : la décision de l'utilisateur porte, pour chaque action `server.call` acceptée, l'empreinte recalculée par
+  l'app depuis le plan déchiffré (`JCS({tool,args,argsRefs})`) ; l'API refuse toute empreinte différente de
+  `serverDigests` par `409 plan_digest_mismatch` ; `serverDigests` est exposé dans la vue du plan. Reporté en
+  `12-plan-action.md` §8.4, §12.1, §14, §15 et dans la liste des décisions de `00-vue-ensemble.md`.
+- **PC70** : un `cancel` de la conversation pendant un plan accepté vaut `stop` du plan (§7.1, §8.6) ; les actions
+  d'appareil `executing` d'un plan `stopped` passent `unknown_outcome` par la maintenance de l'API après le délai des
+  actions d'agent.
+- Conséquence pour L01c / L08 / L12 : l'app (L12) doit recalculer et envoyer les empreintes à la décision.

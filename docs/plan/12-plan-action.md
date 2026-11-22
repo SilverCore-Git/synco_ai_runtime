@@ -218,7 +218,9 @@ proposed ──decision accept──▶ accepted ──1re action démarrée─�
   **avant la décision** (le worker clôt `propose_actions` avec `superseded_by_user_message`, 08 §2).
   Après l'acceptation, un message **n'arrête pas** le plan (PC55, §8.6).
 - `stopped` (PC55, §8.6) : l'utilisateur arrête un plan `accepted` ou `executing` ; les actions `pending`
-  passent `skipped`, celles qui sont `executing` vont à leur terme.
+  passent `skipped`, celles qui sont `executing` vont à leur terme (PC70 : un `cancel` de la conversation pendant un
+  plan accepté vaut `stop` du plan, §8.6). Les actions d'appareil restées `executing` d'un plan `stopped` (claim
+  libéré) passent `unknown_outcome` par la maintenance, avec le délai des actions d'agent (10 min).
 - `expired` : l'expiration vaut pour **le plan entier** : **aucune action ne démarre après
   `expiresAt`**. À `expiresAt`, les actions `pending` passent `skipped` ; celles qui sont `executing` vont
   à leur terme ; le plan est `expired` quand il n'en reste plus. Plan jamais décidé (`proposed`) : la
@@ -365,6 +367,9 @@ porter `plan: { planId, n }`. L'API vérifie, sinon **`403 action_not_accepted`*
    - `serverDigests[n]` = SHA-256 (`hex`) de `JCS({ tool: name, args, argsRefs })` calculé sur l'appel
      **reçu** : `args` non résolus et `argsRefs` tels que dans le plan ; `argsRefs` est **omis** de
      l'objet s'il est absent (le condensat d'une action sans référence est celui de C1) ;
+   - PC69 : cette empreinte a déjà été confrontée, **à la décision**, à celle que l'app a recalculée depuis le plan
+     **déchiffré** (§12.1) ; un runtime qui aurait déposé à la création l'empreinte d'une autre action que celle
+     du plan est donc arrêté avant toute exécution ;
    - `refs` a exactement les clés d'`argsRefs` ; pour chaque champ `f` avec `argsRefs[f] = "$m.x"`,
      l'action `m` est `done` et `refs[f]` = la sortie `x` **enregistrée par l'API** (§8.5), qu'`m` soit
      une action d'agent ou d'appareil ;
@@ -420,6 +425,11 @@ chiffrés et dans le `tool_result` du transcript (chiffré). Le lien figure au c
   nouveau message de l'utilisateur dans le transcript, et le modèle reçoit ainsi le bilan avant la
   question. L'app l'annonce sous le message (« sera traité à la fin du plan ; Arrêter le plan pour le
   traiter maintenant »).
+- **Annulation de la conversation (PC70)** : un `cancel` de la conversation pendant un plan accepté
+  (`accepted`, `executing`) **vaut `stop` du plan** : même effet que « Arrêter le plan » ci-dessous (aucune
+  nouvelle action, les `executing` vont à leur terme, bilan, `stop:<planId>` déposé), la conversation n'est pas
+  annulée mais repasse `queued` pour le bilan. Après l'arrêt, les messages en attente ne sont plus retenus :
+  ils sont traités au tour qui suit le bilan.
 - **Arrêter le plan** : route `POST …/plans/:planId/stop` (U-prop, §12.1), seule façon d'arrêter un plan
   accepté. Dans une transaction : plan `stopped`, actions `pending` → `skipped`, claim libéré, dépôt de
   l'élément `plan_decision` `{ decision: "stop" }` (`id = stop:<planId>`, API seule) ; la conversation
@@ -627,13 +637,21 @@ comme les autres. Lecture : `GET /ai/feature-policies/:feature/events` (U-admin)
 | Méthode et chemin | Auth | Corps | Succès | Refus |
 |---|---|---|---|---|
 | `GET /plans/:planId` | U-prop | — | `200 PlanView` | `404 not_found` |
-| `POST /plans/:planId/decision` | U-prop | `{ "decision": "accept", "accepted": [1,3,4,5] }` ou `{ "decision": "reject", "reason"?: "plan_invalid" }` | `200 PlanView` ; même décision rejouée : `200` | `400 invalid_body` (`accepted` vide, hors `1..actionCount`, doublon), `404 not_found`, `409 plan_not_pending` (déjà décidé autrement, expiré), `409 not_runtime` |
+| `POST /plans/:planId/decision` | U-prop | `{ "decision": "accept", "accepted": [1,3,4,5], "serverDigests": [{ "n": 3, "sha256Hex": "<hex>" }] }` ou `{ "decision": "reject", "reason"?: "plan_invalid" }` | `200 PlanView` ; même décision rejouée : `200` | `400 invalid_body` (`accepted` vide, hors `1..actionCount`, doublon), `404 not_found`, `409 plan_not_pending` (déjà décidé autrement, expiré), `409 not_runtime`, `409 plan_digest_mismatch` (PC69) |
 | `POST /plans/:planId/claim` | U-prop | `{ "deviceId": "<id>", "phase": <k> }` | `200 { phase, claimExpiresAt }` (prise ou prolongation) | `404`, `409 plan_claimed` (autre appareil, claim valide), `409 plan_phase_mismatch` (`k` ≠ phases d'appareil closes + 1, ou aucune action d'appareil prête), `409 plan_not_claimable` (statut ∉ `accepted`, `executing`, ou `expiresAt` passé) |
 | `POST /plans/:planId/progress` | U-prop | `{ "deviceId", "n", "state": "executing" \| "done" \| "failed" }` | `200 PlanView` (claim prolongé) ; même état rejoué : `200` (§8.7) | `400 invalid_body` (action d'agent, `n` hors plage), `404`, `409 plan_claim_lost`, `409 plan_phase_mismatch` (action non prête), `409 plan_not_executing` (`executing` après `expiresAt` ou arrêt), `409 action_state_conflict`, `409 action_output_missing` (`done` sans sortie enregistrée, §8.5) |
 | `POST /plans/:planId/stop` | U-prop | `{}` | `200 PlanView` (plan `stopped`, §8.6) ; rejeu : `200` | `404`, `409 plan_not_executing` (statut ∉ `accepted`, `executing`, `stopped`) ; un plan `proposed` se refuse par `decision` |
 | `POST /inbox` (existante) | U-prop | `{ "t": "plan_result", "id": "plan:<planId>:<k>", "planId", "phase": <k>, "value": "gcm1:…" }` | `201` / `200` doublon (05 §6.2) | existants + `409 plan_not_executing`, `409 plan_phase_mismatch`, `404 not_found` |
 
-`PlanView` = `{ planId, sessionId, toolCallId, status, actionCount, createdAt, expiresAt, decidedAt,
+**PC69 — `serverDigests` de la décision.** Pour chaque action `server.call` **acceptée** (après la cascade), le
+corps porte l'empreinte `sha256Hex` = SHA-256 de `JCS({ tool, args, argsRefs })` **recalculée par l'app depuis le
+plan déchiffré** (§8.4, point 4). L'API la compare à `serverDigests[n]` déposé par le runtime à la création :
+une empreinte absente pour une action `server.call` acceptée, en double, d'une autre action, ou différente refuse
+la décision en `409 plan_digest_mismatch` (corps `{ "error": "plan_digest_mismatch" }`), sans rien écrire. Une
+action acceptée qui n'est pas un `server.call` n'a pas d'empreinte ; `reject` n'en porte pas (`400 invalid_body`).
+`serverDigests` est exposé dans la `PlanView` (`{ "<n>": "<hex>" }`) pour que l'app compare à ce qu'elle recalcule.
+
+`PlanView` = `{ planId, sessionId, toolCallId, status, actionCount, serverDigests, createdAt, expiresAt, decidedAt,
 devicePhases, agentPhases, claim: { deviceId, phase, expiresAt } | null, actions: [{ n, executor, after,
 level, ready, state, output }], agentResults: [{ phase, value }] }` (dates ISO 8601 ; `executor` ∈
 `device`, `agent` ; `devicePhases` / `agentPhases` = phases closes ; `output` = sortie enregistrée,
@@ -714,6 +732,7 @@ phases, le claim et les résultats de phase d'agent (chiffrés). **Aucun contenu
 | `plan_exists` | API 409 | `planId` déjà utilisé |
 | `plan_not_pending` | API 409 | Décision sur un plan déjà décidé autrement ou expiré |
 | `plan_claimed` / `plan_not_claimable` / `plan_claim_lost` | API 409 | Phase réclamée par un autre appareil / statut ou expiration ne permettant pas le claim / claim expiré ou repris |
+| `plan_digest_mismatch` | API 409 | Décision : empreinte d'une action `server.call` acceptée différente de `serverDigests` déposé par le runtime, absente, en double ou en trop (PC69) |
 | `plan_not_executing` | API 409 | Plan terminé, arrêté ou expiré : aucune action ne démarre plus |
 | `plan_phase_mismatch` | API 409 | Action non prête, mauvais exécutant, numéro de phase inattendu, ou phase close alors qu'il reste une action prête (§8, §9) |
 | `action_state_conflict` | API 409 | Transition d'action invalide (dont seconde exécution) |
@@ -755,6 +774,13 @@ après la livraison ; le texte qui en dépendait (« provisoire ») est réécri
 | **PC60** | Concurrence 4 par défaut, 8 au plus ; 3 nouveaux essais sur `429` : validés | §8.7 |
 | **PC61** | Plan de **100 actions** au plus (était 20), 2 000 dépendances, clair ≤ 256 Kio, corps de `POST …/plans` ≤ 1 Mio ; au-delà l'agent découpe (`plan_too_large`) ; groupes repliés au-delà de 30 actions | §3, §5, §12.2, §14, §17 |
 | **PC62** | Un plan accepté qui expire relance la conversation pour un bilan : validé | §7.1 |
+
+### Revue de sécurité de L03g (PC69, PC70)
+
+| Décision | Contenu | Où |
+|---|---|---|
+| **PC69** | La décision porte, pour chaque action serveur acceptée, l'empreinte recalculée par l'app depuis le plan déchiffré ; l'API refuse toute empreinte différente de `serverDigests` (`409 plan_digest_mismatch`) ; `serverDigests` est exposé dans la vue du plan | §8.4, §12.1, §14 |
+| **PC70** | Un `cancel` de la conversation pendant un plan accepté vaut `stop` du plan : plus de nouvelle action, les `executing` vont à leur terme, bilan, messages plus retenus après l'arrêt | §7.1, §8.6 |
 
 **Risques acceptés** : (1) références du `thread.create` autonome non recontrôlées par l'API (PC57,
 §10.6) ; (2) pendant un plan, l'API sait quel objet créé correspond à quelle action (métadonnée sans

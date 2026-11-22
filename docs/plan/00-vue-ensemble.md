@@ -271,6 +271,8 @@ d'enveloppe du créateur, `autonomy.allowed`) est repris tel quel dans 12.
 | PC60 | Concurrence 4 par défaut, 8 au plus ; 3 nouveaux essais sur `429` : validés | 12 §8.7, 09 |
 | PC61 | Plan de **100 actions** au plus (était 20) ; 2 000 dépendances, clair ≤ 256 Kio, corps de `POST …/plans` ≤ 1 Mio ; au-delà, l'agent découpe en plusieurs plans (`plan_too_large`, consigne de 12 §3.1) ; groupes repliés par défaut au-delà de 30 actions | 12 §3, §5, §12.2, §14, §17 ; 04, 07, 09 |
 | PC62 | Un plan accepté qui expire relance la conversation pour un bilan : validé | 12 §7.1, 08 |
+| PC69 | **Empreintes à la décision** : pour chaque action serveur acceptée, la décision porte l'empreinte recalculée par l'app depuis le plan déchiffré ; l'API refuse toute empreinte différente de `serverDigests` (`409 plan_digest_mismatch`) ; `serverDigests` exposé dans la vue du plan | 12 §8.4, §12.1, §14 |
+| PC70 | **`cancel` pendant un plan accepté** vaut `stop` du plan (plus de nouvelle action, `executing` jusqu'au terme, bilan, messages plus retenus après l'arrêt) | 12 §7.1, §8.6 |
 
 ## 5 bis. Analyse des décisions (pour mémoire)
 

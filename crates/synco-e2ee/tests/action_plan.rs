@@ -437,7 +437,7 @@ fn vecteurs_du_plan_d_action() {
     }
 
     println!("action-plan.json : {checks} vérifications rejouées");
-    assert_eq!(checks, 2 + 4 + 4 + 4 + 12 + 20 + 20 + 4 + 45 + 6 + 7 + 2 + 7, "un cas n'a pas été rejoué");
+    assert_eq!(checks, 2 + 4 + 4 + 4 + 12 + 23 + 20 + 7 + 45 + 6 + 7 + 2 + 7, "un cas n'a pas été rejoué");
 }
 
 /// Protections propres au code (hors vecteurs) : chacune échoue sans la règle qu'elle couvre.

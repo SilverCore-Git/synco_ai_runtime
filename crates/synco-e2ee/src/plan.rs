@@ -199,8 +199,11 @@ fn parse_clear(clear: &str) -> Result<Value> {
 }
 
 /// Déchiffre `pendingToolCall.args` d'un `propose_actions` (stricte) et vérifie que le clair porte
-/// ce `sessionId` et ce `planId` ([`Error::PlanInvalid`] sinon). La validation (§5) reste à faire.
+/// ce `sessionId` et ce `planId` ([`Error::PlanInvalid`] sinon). Identifiants non conformes :
+/// [`Error::InvalidInput`], avant l'AAD. La validation (§5) reste à faire.
 pub fn decrypt_plan(ck: &SymmetricKey, session_id: &str, plan_id: &str, value: &str) -> Result<Value> {
+    check_id(session_id)?;
+    check_id(plan_id)?;
     check_value_len(value)?;
     let aad_field = FieldName::Plan.to_aad_part()?;
     let clear = session::decrypt_field(ck, session_id, plan_id, &aad_field, value)?;
@@ -329,6 +332,8 @@ pub fn decrypt_phase_result(
     graph: &PlanGraph,
     value: &str,
 ) -> Result<Value> {
+    check_id(session_id)?;
+    check_id(plan_id)?;
     let field = executor.result_field(phase).to_aad_part()?;
     check_value_len(value)?;
     let clear = session::decrypt_field(ck, session_id, plan_id, &field, value)?;

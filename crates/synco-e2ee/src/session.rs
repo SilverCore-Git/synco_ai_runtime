@@ -168,9 +168,10 @@ pub fn encrypt_json_field(
     encrypt_field(key, session_id, message_id, field, &plaintext, rng)
 }
 
-/// Déchiffre une valeur `gcm1:`. **Stricte** : une valeur sans préfixe est une erreur
-/// ([`Error::FieldUnknownVersion`]). `field_name` est la partie brute de l'AAD : la lecture reste
-/// tolérante aux identifiants historiques.
+/// Déchiffre une valeur `gcm1:`. **Stricte** : `sessionId` et `messageId` conformes à 00 §3.2
+/// ([`Error::InvalidInput`] avant de construire l'AAD, qu'un `:` rendrait ambiguë), puis une valeur
+/// sans préfixe est une erreur ([`Error::FieldUnknownVersion`]). `field_name` est la partie brute de
+/// l'AAD : la lecture reste tolérante aux noms de champ historiques.
 pub fn decrypt_field(
     key: &SymmetricKey,
     session_id: &str,
@@ -178,6 +179,8 @@ pub fn decrypt_field(
     field_name: &str,
     wire_value: &str,
 ) -> Result<String> {
+    check_id(session_id)?;
+    check_id(message_id)?;
     let encoded = wire_value.strip_prefix(VERSION_PREFIX).ok_or(Error::FieldUnknownVersion)?;
     let raw = crate::encoding::from_b64(encoded).map_err(|_| Error::FieldInvalidBase64)?;
     if raw.len() < IV_LENGTH.saturating_add(TAG_LENGTH) {

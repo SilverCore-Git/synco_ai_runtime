@@ -81,7 +81,23 @@ struct Env {
     user_key: EcSigningKey,
 }
 
+/// Mandat de la délégation de `USER` (03 §4.1).
+#[derive(Clone, Copy)]
+enum Mandate {
+    /// Mandat v1 (lu comme `plan`).
+    V1,
+    /// Mandat v2 avec ce mode et l'empreinte RSA du propriétaire.
+    V2(delegation::MandateMode, &'static str),
+}
+
+/// Empreinte RSA du propriétaire signée dans les mandats v2 de test (clé synthétique de seed 1).
+fn owner_pin() -> &'static str {
+    static PIN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    PIN.get_or_init(|| spki(1))
+}
+
 /// Délégation : mandat signé par `signer`, enveloppe vers `kex`, entrées `conv` et `thread`.
+#[allow(clippy::too_many_arguments, reason = "paramètres indépendants d'un banc d'essai")]
 fn delegation_record(
     kex: &synco_e2ee::ec::EcPublicKey,
     fpr: &str,
@@ -90,6 +106,7 @@ fn delegation_record(
     delegation_id: &str,
     signer: &EcSigningKey,
     served_exp_shift: u64,
+    mandate: Mandate,
 ) -> (Value, Vec<Value>) {
     let iat = now() - 60;
     let ctx = DelegationContext {
@@ -103,7 +120,10 @@ fn delegation_record(
     };
     let dk = DelegationKey::generate(&mut OsRandom).unwrap();
     let wrap = delegation::seal_delegation(&ctx, kex, &dk, &mut OsRandom).unwrap();
-    let sig = delegation::sign_mandate(signer, &ctx, fpr, &wrap).unwrap();
+    let sig = match mandate {
+        Mandate::V1 => delegation::sign_mandate(signer, &ctx, fpr, &wrap).unwrap(),
+        Mandate::V2(mode, pin) => delegation::sign_mandate_v2(signer, &ctx, fpr, &wrap, pin, mode).unwrap(),
+    };
     let entry = |kind: EntryKind, r: &str, k: [u8; 32], id: &str| {
         let ct = delegation::seal_entry(&dk, &ctx, kind, r, 1, &SymmetricKey::from_bytes(k), &mut OsRandom).unwrap();
         json!({ "id": id, "kind": kind.as_str(), "ref": r, "version": 1, "ciphertext": ct })
@@ -116,15 +136,30 @@ fn delegation_record(
     // Toujours en dernier : l'appelant la retire pour la servir plus tard.
     entries.push(entry(EntryKind::Thread, THREAD_LATE, LATE_KEY, "e-late"));
     // Enregistrement servi par l'API (éventuellement altéré : `exp` différent de l'AAD).
-    let record = json!({
+    let mut record = json!({
         "delegationId": delegation_id, "userId": user, "scope": "org",
         "iat": ctx.iat, "exp": ctx.exp + served_exp_shift, "wrap": wrap, "mandateSignature": sig,
     });
+    if let Mandate::V2(mode, pin) = mandate {
+        record["mandateVersion"] = json!(2);
+        record["mode"] = json!(mode.as_str());
+        record["ownerRsaSpkiHex"] = json!(pin);
+    }
     (record, entries)
 }
 
 async fn setup() -> Env {
-    setup_with(Arc::new(InProcessStubLauncher)).await
+    // Mandat v2 `auto` : seul à pouvoir faire signer une enveloppe `rt1` (12 §10.3).
+    setup_hops_mandate(
+        Arc::new(InProcessStubLauncher),
+        0,
+        None,
+        "http://127.0.0.1:9/v1",
+        0,
+        Mandate::V2(delegation::MandateMode::Auto, owner_pin()),
+        "",
+    )
+    .await
 }
 
 async fn setup_with(launcher: Arc<dyn synco_ai_runtime::launcher::WorkerLauncher>) -> Env {
@@ -159,6 +194,19 @@ async fn setup_hops(
     policy: Option<Value>,
     llm_base_url: &str,
     listen_hops: usize,
+) -> Env {
+    setup_hops_mandate(launcher, slow_entries_ms, policy, llm_base_url, listen_hops, Mandate::V1, "").await
+}
+
+/// Comme `setup_hops`, avec le mandat de `USER` et des lignes de configuration TOML en plus.
+async fn setup_hops_mandate(
+    launcher: Arc<dyn synco_ai_runtime::launcher::WorkerLauncher>,
+    slow_entries_ms: u64,
+    policy: Option<Value>,
+    llm_base_url: &str,
+    listen_hops: usize,
+    mandate: Mandate,
+    extra_config: &str,
 ) -> Env {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join("etat");
@@ -199,10 +247,12 @@ async fn setup_hops(
     let bad_key = EcSigningKey::generate(&mut OsRandom).unwrap();
     let kex = keys.public().kex.clone();
     let fpr = keys.fingerprint_hex().to_owned();
-    let (mut good, mut good_entries) = delegation_record(&kex, &fpr, keys.runtime_id(), USER, "d-good", &user_key, 0);
+    let (mut good, mut good_entries) =
+        delegation_record(&kex, &fpr, keys.runtime_id(), USER, "d-good", &user_key, 0, mandate);
     good["displayName"] = json!("Alice\u{7} Martin");
     let late_entry = good_entries.pop().unwrap();
-    let (bad, mut bad_entries) = delegation_record(&kex, &fpr, keys.runtime_id(), BAD_USER, "d-bad", &bad_key, 3_600);
+    let (bad, mut bad_entries) =
+        delegation_record(&kex, &fpr, keys.runtime_id(), BAD_USER, "d-bad", &bad_key, 3_600, Mandate::V1);
     bad_entries.pop();
     api.with(|st| {
         st.slow_entries_ms = slow_entries_ms;
@@ -228,6 +278,7 @@ log_level = "debug"
 public = "127.0.0.1:0"
 dashboard = "127.0.0.1:0"
 trust_proxy_hops = {listen_hops}
+{extra_config}
 [limits]
 idle_shutdown_secs = 1
 shutdown_grace_secs = 2
@@ -912,6 +963,34 @@ fn reset_frame(thread: &str, user: &str, delegation: &str) -> Value {
 /// signature `rt1` valide, S seule), puis refus silencieux : salon étranger, salon d'un autre
 /// utilisateur, délégation inconnue ; rejeu idempotent (pas de boucle) ; refus de l'API définitifs ;
 /// délégation inactive (révoquée).
+/// 12 §10.3 : réparer = signer `rt1` ; refusé (demande gardée) sous un mandat v1, v2 `plan`, ou v2
+/// `auto` avec `autonomy.allowed = false`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn reparation_refusee_hors_mandat_autonome() {
+    use synco_e2ee::delegation::MandateMode::{Auto, Plan};
+    let off = "[autonomy]\nallowed = false";
+    for (mandate, extra) in
+        [(Mandate::V1, ""), (Mandate::V2(Plan, owner_pin()), ""), (Mandate::V2(Auto, owner_pin()), off)]
+    {
+        let env =
+            setup_hops_mandate(Arc::new(InProcessStubLauncher), 0, None, "http://127.0.0.1:9/v1", 0, mandate, extra)
+                .await;
+        let rt = Arc::clone(&env.running.runtime);
+        wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+        wait_until("flux ouvert", || env.api.with(|st| st.stream_hellos > 0)).await;
+        assert!(rt.state.lock().await.created_threads.record(THREAD, USER, "d-good"));
+        env.api.push(reset_frame(THREAD, USER, "d-good"));
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert!(reposes(&env).is_empty(), "aucune enveloppe rt1 signée hors mandat autonome");
+        assert_eq!(
+            rt.state.lock().await.repairs.items().len(),
+            1,
+            "la demande attend la réactivation du mode autonome"
+        );
+        synco_ai_runtime::app::shutdown(&rt).await;
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn enveloppe_rt1_reposee_apres_reinitialisation() {
     let env = setup().await;
@@ -1835,7 +1914,16 @@ async fn created_key_reserve_aux_salons_crees_par_ce_worker() {
         })
     });
     let launcher = ScriptedEach { script, n: Default::default() };
-    let env = setup_with(Arc::new(launcher)).await;
+    let env = setup_hops_mandate(
+        Arc::new(launcher),
+        0,
+        None,
+        "http://127.0.0.1:9/v1",
+        0,
+        Mandate::V2(delegation::MandateMode::Auto, owner_pin()),
+        "",
+    )
+    .await;
     wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
     authorize(&env).await;
     let rt = Arc::clone(&env.running.runtime);
@@ -1896,6 +1984,58 @@ async fn created_key_reserve_aux_salons_crees_par_ce_worker() {
 // ---------------------------------------------------------------------------
 
 /// Marqueur injecté partout où un contenu de conversation peut passer par le superviseur.
+/// Lance un worker scripté sous le mandat donné : rend l'erreur de `created_key`, le `plan` d'`init` et
+/// les alertes du superviseur.
+async fn under_mandate(mandate: Mandate, extra_config: &str) -> (Option<String>, wire::PlanInit, Vec<&'static str>) {
+    type Seen = (Option<String>, Option<wire::PlanInit>);
+    let seen = Arc::new(std::sync::Mutex::new(Seen::default()));
+    let s2 = Arc::clone(&seen);
+    let script: ScriptFn = Arc::new(move |_, io| {
+        let seen = Arc::clone(&s2);
+        Box::pin(async move {
+            let (mut rd, mut wr) = tokio::io::split(io);
+            let init = handshake(&mut rd, &mut wr).await;
+            let t = create_thread(&mut rd, &mut wr, "m1").await;
+            let c = created_key(&mut rd, &mut wr, &t, [7; 32]).await;
+            *seen.lock().unwrap() = (c.error, init.plan);
+            let _ = wire::write_json(&mut wr, &WorkerMsg::Done(wire::DoneMsg { reason: wire::DoneReason::Idle })).await;
+        })
+    });
+    let launcher = ScriptedEach { script, n: Default::default() };
+    let env = setup_hops_mandate(Arc::new(launcher), 0, None, "http://127.0.0.1:9/v1", 0, mandate, extra_config).await;
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    authorize(&env).await;
+    env.api.push(json!({ "type": "conversation.wake", "sessionId": SESSION, "authId": AUTH, "reason": "inbox" }));
+    wait_until("created_key rendu", || seen.lock().unwrap().1.is_some()).await;
+    let alerts = env.running.runtime.state.lock().await.alerts.iter().map(|(_, c)| *c).collect();
+    let (error, plan) = seen.lock().unwrap().clone();
+    synco_ai_runtime::app::shutdown(&env.running.runtime).await;
+    (error, plan.unwrap(), alerts)
+}
+
+/// 12 §10.3 : `created_key` n'est signé que sous un mandat **vérifié** v2 `auto` (et `autonomy.allowed`) ;
+/// le worker reçoit le mode vérifié dans `init.plan`, jamais le champ servi.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn created_key_exige_un_mandat_v2_autonome() {
+    use synco_e2ee::delegation::MandateMode::{Auto, Plan};
+    // v2 auto : signé, mode `auto`.
+    let (error, plan, _) = under_mandate(Mandate::V2(Auto, owner_pin()), "").await;
+    assert_eq!((error, plan.mode), (None, wire::PlanMode::Auto));
+    assert_eq!((plan.concurrency, plan.confirmation_timeout_secs), (4, 604_800), "valeurs par défaut");
+    // v2 plan et v1 : refus, mode `plan`.
+    for m in [Mandate::V2(Plan, owner_pin()), Mandate::V1] {
+        let (error, plan, _) = under_mandate(m, "").await;
+        assert_eq!(error.as_deref(), Some("autonomy_required"));
+        assert_eq!(plan.mode, wire::PlanMode::Plan);
+    }
+    // v2 auto mais `autonomy.allowed = false` : traité comme `plan`, signalé au dashboard.
+    let (error, plan, alerts) =
+        under_mandate(Mandate::V2(Auto, owner_pin()), "[autonomy]\nallowed = false\n[plan]\nconcurrency = 8").await;
+    assert_eq!(error.as_deref(), Some("autonomy_required"));
+    assert_eq!((plan.mode, plan.concurrency), (wire::PlanMode::Plan, 8));
+    assert!(alerts.contains(&"autonomy_disabled_by_config"), "{alerts:?}");
+}
+
 const MARKER: &str = "MARQUEUR-CONFIDENTIEL-9f3a7c";
 
 struct Marked;
@@ -2324,10 +2464,43 @@ async fn cles_rsa_charge_et_plafond() {
 
 /// Revue L05b : vérifications de rotation bornées par réponse, org revérifiée après l'appel
 /// `sign-key`, deux réponses concurrentes pour un même membre jamais vu.
+/// PC46 : sous un mandat v2 vérifié, `ownerRsaSpkiHex` est l'épingle RSA du propriétaire et prime sur
+/// l'épingle TOFU ; une autre clé servie refuse la réponse entière (`member_key_changed`) et alerte ;
+/// sous un mandat v1, l'épinglage TOFU actuel s'applique.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn epingle_du_proprietaire_v2_prime_sur_tofu() {
+    use synco_ai_runtime::workers::member_keys_gate;
+    let body = |m: &[(&str, u8)]| {
+        json!({ "members": m.iter().map(|(u, k)| json!({ "userId": u, "publicKey": rsa_jwk(*k) })).collect::<Vec<_>>() })
+            .to_string()
+    };
+    let env = setup().await;
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    let rt = Arc::clone(&env.running.runtime);
+    let org = rt.state.lock().await.org_id.clone().unwrap();
+    // Clé conforme à l'épingle du mandat (seed 1) : acceptée, sans épingle TOFU enregistrée.
+    assert_eq!(member_keys_gate(&rt, body(&[(USER, 1), (OTHER, 5)]).as_bytes()).await, Ok(()));
+    assert!(rt.state.lock().await.member_pins.get(&org, USER).is_none(), "l'épingle du mandat prime sur TOFU");
+    assert!(rt.state.lock().await.member_pins.get(&org, OTHER).is_some(), "les autres membres restent en TOFU");
+    // Clé servie différente : refus global, alerte, même sans chaîne de rotation.
+    assert_eq!(member_keys_gate(&rt, body(&[(USER, 2), (OTHER, 5)]).as_bytes()).await, Err("member_key_changed"));
+    assert!(rt.state.lock().await.alerts.iter().any(|(_, c)| *c == "member_rsa_key_changed"));
+    synco_ai_runtime::app::shutdown(&rt).await;
+
+    // Mandat v1 : épinglage TOFU (première vue épinglée, aucune épingle de mandat).
+    let env = setup_with(Arc::new(InProcessStubLauncher)).await;
+    wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
+    let rt = Arc::clone(&env.running.runtime);
+    let org = rt.state.lock().await.org_id.clone().unwrap();
+    assert_eq!(member_keys_gate(&rt, body(&[(USER, 2)]).as_bytes()).await, Ok(()));
+    assert_eq!(rt.state.lock().await.member_pins.get(&org, USER).unwrap().fingerprint, spki(2));
+    synco_ai_runtime::app::shutdown(&rt).await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cles_rsa_bornes_org_et_concurrence() {
     use synco_ai_runtime::workers::{MAX_ROTATION_LOOKUPS, member_keys_gate};
-    let env = setup().await;
+    let env = setup_with(Arc::new(InProcessStubLauncher)).await;
     wait_until("délégations traitées", || env.api.with(|st| st.delegation_status.len() == 2)).await;
     let rt = Arc::clone(&env.running.runtime);
     let org = rt.state.lock().await.org_id.clone().unwrap();

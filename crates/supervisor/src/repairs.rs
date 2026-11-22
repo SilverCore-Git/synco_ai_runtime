@@ -293,6 +293,13 @@ impl Runtime {
                 self.warn_limited("envelope_reset_unknown_delegation", "délégation expirée");
                 return Verdict::Drop;
             }
+            // 12 §10.3 : réparer = signer `rt1` ; seulement sous un mandat vérifié v2 `auto`. La
+            // demande attend (réactivation du mode autonome : nouvelle délégation, nouveau passage).
+            if delegation.effective_mode(self.config.autonomy.allowed) != synco_e2ee::delegation::MandateMode::Auto {
+                drop(st);
+                self.warn_limited("envelope_reset_autonomy_required", "mandat non autonome : réparation en attente");
+                return Verdict::Pending;
+            }
             // (3) Clé du salon détenue dans cette délégation.
             let Some(key) = delegation.thread_key(thread_id, 1) else {
                 drop(st);

@@ -257,6 +257,17 @@ pub(crate) async fn created_key(
     };
     let reference = entry.reference.clone();
     let mut st = rt.state.lock().await;
+    // 12 §10.3 : pas de signature `rt1` sans mandat **vérifié** v2 `auto` (et `autonomy.allowed`) ;
+    // contrôlé avant toute consommation de l'état du worker.
+    let allowed = rt.config.autonomy.allowed;
+    let non_autonomous = st
+        .vault
+        .get(user_id)
+        .filter(|d| d.exp() > now_secs())
+        .is_some_and(|d| d.effective_mode(allowed) != synco_e2ee::delegation::MandateMode::Auto);
+    if non_autonomous {
+        return created_key_error(&reference, "autonomy_required");
+    }
     let Some(WorkerState::Running(w)) = st.convs.get_mut(session).map(|c| &mut c.worker) else {
         return created_key_error(&reference, "created_key_failed");
     };
@@ -379,12 +390,20 @@ pub async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> Result<(), &'st
         .collect();
     let now = now_secs();
     // (utilisateur, clé présentée, empreinte épinglée, clés de signature épinglées, liaison RSA)
-    let (org, changed, full, snapshot) = {
+    let (org, changed, full, owner_mismatch, snapshot) = {
         let mut st = rt.state.lock().await;
         let Some(org) = st.org_id.clone() else { return Err(MEMBER_PINS_UNAVAILABLE) };
         let mut changed = Vec::new();
         let mut full = false;
+        let mut owner_mismatch = false;
         for (user, key) in listed {
+            // PC46 : pour un mandat v2 vérifié, `ownerRsaSpkiHex` est l'épingle de la clé RSA du
+            // propriétaire et prime sur l'épingle TOFU ; une clé servie différente refuse la réponse
+            // entière (aucune rotation par chaîne : seule une nouvelle délégation signée la change).
+            if let Some(pin) = st.vault.owner_pin(&user, now) {
+                owner_mismatch |= pin != key.fingerprint;
+                continue;
+            }
             match st.member_pins.check(&org, &user, &key, now) {
                 Verdict::Pinned | Verdict::Trusted => {}
                 Verdict::Full => full = true,
@@ -402,10 +421,16 @@ pub async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> Result<(), &'st
         if full {
             st.alert(now, "member_pins_limit");
         }
-        (org, changed, full, st.member_pins.snapshot())
+        if owner_mismatch {
+            st.alert(now, "member_rsa_key_changed");
+        }
+        (org, changed, full, owner_mismatch, st.member_pins.snapshot())
     };
     if !rt.save_member_pins(snapshot).await {
         return Err(MEMBER_PINS_UNAVAILABLE);
+    }
+    if owner_mismatch {
+        return Err(MEMBER_KEY_CHANGED);
     }
     if full {
         return Err(MEMBER_PINS_LIMIT);

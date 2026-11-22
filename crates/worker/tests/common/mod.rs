@@ -129,6 +129,8 @@ pub struct ApiState {
     pub plan_posts: Vec<Value>,
     /// `POST …/agent-result` reçus.
     pub agent_posts: Vec<Value>,
+    /// `POST …/agent-result` reçus avec des abandons (PC74) ou menant à un plan terminal.
+    pub abandon_posts: Vec<Value>,
     /// Appels d'exécution avec `plan` reçus (corps complet).
     pub plan_execs: Vec<Value>,
     /// Les N prochains appels d'exécution d'un plan répondent `429`.
@@ -522,6 +524,42 @@ impl FakeApi {
                 let Some(p) = st.plans.get_mut(*pid) else { return err(404, "not_found") };
                 if !matches!(p.status.as_str(), "accepted" | "executing") {
                     return err(409, "plan_not_executing");
+                }
+                // Abandons (PC74), avant le contrôle des actions occupées : seul un `pending` d'agent passe
+                // à l'état donné ; le reste est ignoré. Cascade, puis statut du plan.
+                const CODES: [&str; 5] =
+                    ["rate_limited", "refs_inconsistent", "action_not_accepted", "autonomy_required", "key_unavailable"];
+                let mut abandoned = Vec::new();
+                for a in b["abandoned"].as_array().map(Vec::as_slice).unwrap_or_default() {
+                    let (n, state, code) = (a["n"].as_u64(), a["state"].as_str(), a["code"].as_str());
+                    let valid = n.is_some_and(|n| n >= 1 && usize::try_from(n).unwrap() <= p.actions.len())
+                        && matches!(state, Some("failed" | "unknown_outcome"))
+                        && code.is_some_and(|c| CODES.contains(&c));
+                    if !valid {
+                        return err(400, "invalid_body");
+                    }
+                    abandoned.push((n.unwrap(), state.unwrap().to_owned()));
+                }
+                for (n, state) in abandoned {
+                    let i = usize::try_from(n - 1).unwrap();
+                    if p.actions[i].executor == "agent" && p.actions[i].state == "pending" {
+                        p.actions[i].state = state;
+                    }
+                }
+                p.cascade();
+                p.settle();
+                st.abandon_posts.push(b.clone());
+                if !matches!(p.status.as_str(), "accepted" | "executing") {
+                    // Plan devenu terminal : `value` facultative, la conversation ne change pas.
+                    if let Some(v) = b["value"].as_str() {
+                        p.agent_phases += 1;
+                        p.agent_results.push((p.agent_phases, v.to_owned()));
+                    }
+                    st.rev += 1;
+                    return (200, json!({ "status": p.status }));
+                }
+                if b["value"].as_str().is_none() {
+                    return err(400, "invalid_body");
                 }
                 let agent_ready = p.actions.iter().any(|a| a.executor == "agent" && (p.ready(a) || a.state == "executing"));
                 if b["phase"].as_u64() != Some(p.agent_phases + 1) || agent_ready {

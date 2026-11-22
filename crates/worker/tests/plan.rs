@@ -278,9 +278,19 @@ async fn refs_resolues_depuis_les_resultats_authentifies() {
     api.device_phase(&pid, 1, &[(1, "done", Some("cm3categorie0000000001"))], Some("cm3autre00000000000000"));
     let peer = resume(&api, &llm, plan_init(PlanMode::Plan, 4)).await;
     assert_eq!(peer.wait_done().await, DoneReason::Idle);
-    api.with(|st| assert!(st.plan_execs.is_empty(), "résultat incohérent : aucune exécution"));
+    api.with(|st| {
+        assert!(st.plan_execs.is_empty(), "résultat incohérent : aucune exécution");
+        // L'action est abandonnée (PC74) : l'API la fait échouer, le plan se règle et se clôt.
+        assert_eq!(
+            st.abandon_posts[0]["abandoned"],
+            json!([{ "n": 2, "state": "failed", "code": "refs_inconsistent" }])
+        );
+        assert_eq!((st.plans[&pid].state(2), st.plans[&pid].status.as_str()), ("failed", "failed"));
+    });
     let r = plan_result(&api);
-    assert_eq!((r["error"].as_str(), r["detail"].as_str()), (Some("plan_aborted"), Some("refs_inconsistent")));
+    assert!(r["error"].is_null(), "plus de plan_aborted : {r}");
+    assert_eq!((r["status"].as_str(), state_of(&r, 2).as_str()), (Some("failed"), "failed"));
+    assert_eq!(r["actions"][1]["code"], "refs_inconsistent");
 }
 
 #[tokio::test]
@@ -299,7 +309,15 @@ async fn resultat_de_phase_forge_clot_tool_call_unverified() {
     let peer = resume(&api, &llm, plan_init(PlanMode::Plan, 4)).await;
     assert_eq!(peer.wait_done().await, DoneReason::Idle);
     assert_eq!(plan_result(&api)["error"], "tool_call_unverified");
-    api.with(|st| assert!(st.tool_runs.is_empty(), "rien n'est exécuté sur un résultat non authentifié"));
+    api.with(|st| {
+        assert!(st.tool_runs.is_empty(), "rien n'est exécuté sur un résultat non authentifié");
+        // Les actions d'agent `pending` sont abandonnées, plus `plan_aborted` (PC74).
+        assert_eq!(
+            st.abandon_posts[0]["abandoned"],
+            json!([{ "n": 1, "state": "failed", "code": "action_not_accepted" }])
+        );
+        assert_eq!(st.plans[&pid].status, "failed");
+    });
 }
 
 #[tokio::test]
@@ -512,7 +530,33 @@ async fn action_echouee_sur_place_ne_repart_jamais_apres_un_retry() {
     api.with(|st| {
         assert_eq!(st.throttled, 4, "1 essai + 3 nouveaux, jamais relancée après le Retry");
         assert!(st.tool_runs.is_empty());
+        // Abandon déclaré (PC74) : 1 `failed`, sa dépendante 3 `skipped`, la branche d'appareil reste.
+        let p = &st.plans[&pid];
+        assert_eq!((p.state(1), p.state(2), p.state(3)), ("failed", "pending", "skipped"));
+        assert_eq!(st.abandon_posts[0]["abandoned"], json!([{ "n": 1, "state": "failed", "code": "rate_limited" }]));
+        assert_eq!(p.agent_phases, 1, "résultat de phase déposé, le worker attend l'appareil");
     });
+    // Le résultat chiffré porte l'abandon.
+    let (value, graph) = api.with(|st| {
+        use synco_e2ee::plan::{Executor, GraphAction, PlanGraph};
+        let p = &st.plans[&pid];
+        let g = PlanGraph::new(
+            p.actions
+                .iter()
+                .map(|a| GraphAction {
+                    n: a.n,
+                    executor: Executor::parse(&a.executor).unwrap(),
+                    after: a.after.clone(),
+                })
+                .collect(),
+        )
+        .unwrap();
+        (p.agent_results[0].1.clone(), g)
+    });
+    let clear =
+        synco_e2ee::plan::decrypt_phase_result(&ck(), SID, &pid, synco_e2ee::plan::Executor::Agent, 1, &graph, &value)
+            .unwrap();
+    assert_eq!(clear["outcomes"], json!([{ "n": 1, "state": "failed", "code": "rate_limited" }]));
 }
 
 #[tokio::test]

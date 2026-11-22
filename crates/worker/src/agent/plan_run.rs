@@ -76,8 +76,8 @@ enum Phase {
     Interrupted,
 }
 
-/// Issues des actions d'une phase : état final et sortie.
-type Outcomes = BTreeMap<u64, (ActionState, Option<Map<String, Value>>)>;
+/// Abandon d'une action d'agent jamais partie (12 §8.3, PC74) : `(n, état, code)`.
+type Abandon = (u64, ActionState, &'static str);
 
 /// Une action d'agent à lancer.
 struct Job {
@@ -337,12 +337,6 @@ impl Agent {
         }
     }
 
-    /// [`Self::fetch_view`] avec les issues locales du worker ([`PlanView::with_local`]).
-    async fn fetch_overlaid(&mut self, plan_id: &str) -> Result<Option<PlanView>, Stop> {
-        let view = self.fetch_view(plan_id).await?;
-        Ok(view.map(|v| self.overlay(v)))
-    }
-
     /// Superpose les issues locales du worker à une vue de l'API.
     fn overlay(&self, v: PlanView) -> PlanView {
         match self.plan.as_ref() {
@@ -382,7 +376,7 @@ impl Agent {
                 return false;
             };
             merge_outputs(&mut st.outputs, &clear);
-            reported_in(&mut st.reported, &clear);
+            reported_in(&mut st.reported, &mut st.codes, &clear);
         }
         true
     }
@@ -431,6 +425,7 @@ impl Agent {
             return Ok(false);
         }
         self.consumed.push(id);
+        self.abandon_unverified(&plan_id).await?;
         self.close_plan(ToolStatus::Error, json!({ "error": "tool_call_unverified" })).await?;
         Ok(true)
     }
@@ -467,12 +462,10 @@ impl Agent {
                 return Ok(PlanFlow::Closed);
             };
             if !self.sync_plan(&view) {
+                self.abandon_unverified(&plan_id).await?;
                 self.close_plan(ToolStatus::Error, json!({ "error": "tool_call_unverified" })).await?;
                 return Ok(PlanFlow::Closed);
             }
-            // Vue superposée dès l'entrée : une action déjà `failed` / `unknown_outcome` sur place ne
-            // repart jamais (08 §5), même après un `Retry`.
-            let view = self.overlay(view);
             match view.status.as_str() {
                 "proposed" => return self.wait_decision().await,
                 "rejected" => {
@@ -540,16 +533,17 @@ impl Agent {
 
     /// Phase d'agent (12 §8.3) : lance les actions prêtes en parallèle, une place libérée est reprise
     /// aussitôt, plus petite `n` d'abord ; aucune action ne démarre après `expiresAt`, un arrêt ou
-    /// une annulation ; celles en cours vont à leur terme.
-    async fn agent_phase(&mut self, plan_id: &str, view: PlanView) -> Result<Phase, Stop> {
-        let mut view = self.overlay(view);
-        let Some(cfg) = self.init.plan else { return Ok(Phase::Finished(view)) };
+    /// une annulation ; celles en cours vont à leur terme. Une action qui n'a pas pu partir est
+    /// **abandonnée** par `agent-result` (PC74), jamais relancée.
+    async fn agent_phase(&mut self, plan_id: &str, raw: PlanView) -> Result<Phase, Stop> {
+        let mut raw = raw;
+        let mut view = self.overlay(raw.clone());
+        let Some(cfg) = self.init.plan else { return Ok(Phase::Finished(raw)) };
         let expires_at =
             self.pending.as_ref().and_then(|p| p.args.get("expiresAt")).and_then(Value::as_u64).unwrap_or(0);
         let limit = Arc::new(AtomicUsize::new(usize::from(cfg.concurrency.clamp(1, 8))));
         let mut set: JoinSet<Report> = JoinSet::new();
         let (mut started, mut in_flight): (BTreeSet<u64>, BTreeSet<u64>) = (BTreeSet::new(), BTreeSet::new());
-        let mut outcomes = self.unreported_outcomes(&view);
         let mut blocked: Vec<String> = Vec::new();
         let mut stopping = false;
         let mut running = self.status == "running";
@@ -567,8 +561,10 @@ impl Agent {
                     let job = match self.build_job(n, &view, cfg.mode) {
                         Ok(j) => j,
                         Err(code) => {
-                            blocked.push(code.to_owned());
-                            break;
+                            // Action qui ne part pas : abandon (code de la liste fermée).
+                            started.insert(n);
+                            self.fail_locally(n, ActionState::Failed, abandon_code(code));
+                            continue;
                         }
                     };
                     started.insert(n);
@@ -583,6 +579,7 @@ impl Agent {
                         Arc::clone(&limit),
                     ));
                 }
+                view = self.overlay(raw.clone());
             }
             if in_flight.is_empty() {
                 break;
@@ -609,13 +606,19 @@ impl Agent {
                                     st.local.insert(rep.n, state);
                                 }
                             }
-                            outcomes.insert(rep.n, (state, rep.output));
+                        }
+                        // Verrou refusé : l'action n'est pas acceptée pour l'API, elle est abandonnée.
+                        (None, Some(c)) if c == "action_not_accepted" => {
+                            self.fail_locally(rep.n, ActionState::Failed, "action_not_accepted");
                         }
                         (None, code) => blocked.push(code.unwrap_or_else(|| "plan_phase_mismatch".to_owned())),
                     }
-                    match self.fetch_overlaid(plan_id).await? {
-                        Some(v) => view = v,
-                        None => return Ok(Phase::Aborted("plan_unavailable".into(), view)),
+                    match self.fetch_view(plan_id).await? {
+                        Some(v) => {
+                            raw = v;
+                            view = self.overlay(raw.clone());
+                        }
+                        None => return Ok(Phase::Aborted("plan_unavailable".into(), raw)),
                     }
                 }
                 c = self.ctl.recv() => match c {
@@ -639,71 +642,153 @@ impl Agent {
         if stopping {
             return Ok(Phase::Interrupted);
         }
-        let Some(fresh) = self.fetch_overlaid(plan_id).await? else {
-            return Ok(Phase::Aborted("plan_unavailable".into(), view));
+        // Seule la vue de l'API décide de la fin du plan : la vue superposée ne sert qu'au bilan et à
+        // ne jamais relancer une action.
+        let Some(raw) = self.fetch_view(plan_id).await? else {
+            return Ok(Phase::Aborted("plan_unavailable".into(), raw));
         };
-        view = fresh;
-        if view.terminal() || view.finished() {
-            return Ok(Phase::Finished(view));
+        if raw.terminal() || raw.finished() {
+            return Ok(Phase::Finished(raw));
         }
         if let Some(code) = blocked.into_iter().next() {
-            return Ok(Phase::Aborted(code, view));
+            return Ok(Phase::Aborted(code, raw));
         }
-        if unix_secs() >= expires_at && !ready_agent_actions(&view, &started).is_empty() {
+        let abandons = match self.abandons(&raw) {
+            Ok(a) => a,
+            Err(code) => return Ok(Phase::Aborted(code, raw)),
+        };
+        if unix_secs() >= expires_at && abandons.is_empty() && !ready_agent_actions(&raw, &started).is_empty() {
             // `expiresAt` passé : aucune action ne démarre, le plan expire côté API (12 §7.1).
-            return Ok(Phase::Aborted("plan_expired".into(), view));
+            return Ok(Phase::Aborted("plan_expired".into(), raw));
         }
-        self.post_agent_result(plan_id, &view, &outcomes).await
+        let Some(graph) = self.plan.as_ref().map(|st| st.graph.clone()) else { return Err(Stop::Fatal("internal")) };
+        self.post_agent_result(plan_id, &raw, &abandons, &graph).await
+    }
+
+    /// Issue locale d'une action d'agent jamais partie (ou dont l'issue est inconnue) : le worker se
+    /// souvient de l'état et du code, pour ne pas la relancer et pour l'abandon (PC74).
+    fn fail_locally(&mut self, n: u64, state: ActionState, code: &str) {
+        if let Some(st) = self.plan.as_mut() {
+            st.local.insert(n, state);
+            st.codes.insert(n, code.to_owned());
+        }
+    }
+
+    /// Abandons à déclarer : issues locales dont l'API garde l'action `pending` (donc acceptée), avec
+    /// un code de la liste fermée. `Err(code)` : issue locale sans code déclarable (plan clos
+    /// `plan_aborted`).
+    fn abandons(&self, raw: &PlanView) -> Result<Vec<Abandon>, String> {
+        let Some(st) = self.plan.as_ref() else { return Ok(Vec::new()) };
+        let mut out = Vec::new();
+        for (n, state) in &st.local {
+            let pending =
+                raw.action(*n).is_some_and(|a| a.executor == Executor::Agent && a.state == ActionState::Pending);
+            if !pending {
+                continue;
+            }
+            let code = st.codes.get(n).map_or("", String::as_str);
+            // Issue inconnue sans code propre (transport coupé) : l'API n'a rien exécuté.
+            let code = if *state == ActionState::UnknownOutcome && !plan_abandon_code(code) {
+                "action_not_accepted"
+            } else {
+                code
+            };
+            let Some(code) = synco_e2ee::plan::ABANDON_CODES.iter().find(|c| **c == code) else {
+                return Err(if code.is_empty() { "tool_failed".to_owned() } else { code.to_owned() });
+            };
+            out.push((*n, *state, *code));
+        }
+        Ok(out)
     }
 
     /// Actions d'agent devenues finales (`done`, `failed`, `unknown_outcome`) et absentes des
-    /// `plan_agent_result` déjà déposés : elles figurent dans le prochain, même après un `Retry`, un
-    /// `Interrupted` ou une reprise du worker (le bilan garde ainsi leurs sorties).
-    fn unreported_outcomes(&self, view: &PlanView) -> Outcomes {
-        let Some(st) = self.plan.as_ref() else { return Outcomes::new() };
-        view.actions
-            .iter()
-            .filter(|a| {
-                a.executor == Executor::Agent
-                    && matches!(a.state, ActionState::Done | ActionState::Failed | ActionState::UnknownOutcome)
-                    && !st.reported.contains(&a.n)
-            })
-            .map(|a| {
-                let out = (a.state == ActionState::Done)
-                    .then(|| st.outputs.get(&a.n).or(a.output.as_ref()).cloned())
-                    .flatten();
-                (a.n, (a.state, out))
-            })
-            .collect()
+    /// `plan_agent_result` déjà déposés, plus les abandons : tout ce que le prochain résultat doit
+    /// porter, dans l'ordre de `n`, même après un `Retry`, un `Interrupted` ou une reprise du worker.
+    fn outcome_list(&self, raw: &PlanView, abandons: &[Abandon]) -> Vec<Value> {
+        let reported = self.plan.as_ref().map(|st| &st.reported);
+        let mut list: BTreeMap<u64, Value> = BTreeMap::new();
+        for a in raw.actions.iter().filter(|a| {
+            a.executor == Executor::Agent
+                && matches!(a.state, ActionState::Done | ActionState::Failed | ActionState::UnknownOutcome)
+                && !reported.is_some_and(|r| r.contains(&a.n))
+        }) {
+            let mut o = json!({ "n": a.n, "state": a.state.as_str() });
+            let out = (a.state == ActionState::Done)
+                .then(|| self.plan.as_ref().and_then(|st| st.outputs.get(&a.n)).or(a.output.as_ref()))
+                .flatten();
+            if let Some(out) = out {
+                crate::json_set(&mut o, "output", Value::Object(out.clone()));
+            }
+            list.insert(a.n, o);
+        }
+        for (n, state, code) in abandons {
+            list.insert(*n, json!({ "n": n, "state": state.as_str(), "code": code }));
+        }
+        list.into_values().collect()
     }
 
-    /// `POST …/agent-result` (12 §8.3, étape 3, §12.2).
-    async fn post_agent_result(&mut self, plan_id: &str, view: &PlanView, outcomes: &Outcomes) -> Result<Phase, Stop> {
-        let phase = view.agent_phases.saturating_add(1);
-        let list: Vec<Value> = outcomes
+    /// `tool_call_unverified` : le worker ne peut plus exécuter ce plan ; ses actions d'agent encore
+    /// `pending` sont abandonnées (`action_not_accepted`) avant la clôture de `propose_actions`.
+    /// Tout échec de l'API est toléré (le plan expirera) ; seules les pannes du worker remontent.
+    async fn abandon_unverified(&mut self, plan_id: &str) -> Result<(), Stop> {
+        let Some(raw) = self.fetch_view(plan_id).await? else { return Ok(()) };
+        if !matches!(raw.status.as_str(), "accepted" | "executing") {
+            return Ok(());
+        }
+        let abandons: Vec<Abandon> = raw
+            .actions
             .iter()
-            .map(|(n, (state, out))| {
-                let mut o = json!({ "n": n, "state": state.as_str() });
-                if let Some(out) = out {
-                    crate::json_set(&mut o, "output", Value::Object(out.clone()));
-                }
-                o
-            })
+            .filter(|a| a.executor == Executor::Agent && a.state == ActionState::Pending)
+            .map(|a| (a.n, ActionState::Failed, "action_not_accepted"))
             .collect();
+        let graph = PlanGraph::new(
+            raw.actions
+                .iter()
+                .map(|a| synco_e2ee::plan::GraphAction { n: a.n, executor: a.executor, after: a.after.clone() })
+                .collect(),
+        );
+        if let (false, Ok(graph)) = (abandons.is_empty(), graph) {
+            let _ = self.post_agent_result(plan_id, &raw, &abandons, &graph).await?;
+        }
+        Ok(())
+    }
+
+    /// `POST …/agent-result` (12 §8.3, étape 3, §12.2) : résultat de phase chiffré et abandons.
+    async fn post_agent_result(
+        &mut self,
+        plan_id: &str,
+        raw: &PlanView,
+        abandons: &[Abandon],
+        graph: &PlanGraph,
+    ) -> Result<Phase, Stop> {
+        let phase = raw.agent_phases.saturating_add(1);
+        let list = self.outcome_list(raw, abandons);
         let clear = json!({ "v": 1, "planId": plan_id, "phase": phase, "outcomes": list });
-        let Some(st) = self.plan.as_ref() else { return Err(Stop::Fatal("internal")) };
         let value = synco_e2ee::plan::encrypt_phase_result(
             &self.ck,
             &self.init.session_id,
             Executor::Agent,
-            &st.graph,
+            graph,
             &clear,
             &mut OsRandom,
         )
         .map_err(|_| Stop::Fatal("internal"))?;
-        let body = json!({ "leaseEpoch": self.init.lease_epoch, "baseRev": self.rev, "phase": phase, "value": value });
+        let mut body =
+            json!({ "leaseEpoch": self.init.lease_epoch, "baseRev": self.rev, "phase": phase, "value": value });
+        if !abandons.is_empty() {
+            let a: Vec<Value> =
+                abandons.iter().map(|(n, s, c)| json!({ "n": n, "state": s.as_str(), "code": c })).collect();
+            crate::json_set(&mut body, "abandoned", Value::Array(a));
+        }
         let r = self.api.conv(HttpMethod::Post, &format!("/plans/{plan_id}/agent-result"), Some(&body)).await?;
         if r.ok() {
+            // Plan devenu terminal (abandons) : `200 { status }`, rien à attendre ; on relit et on clôt.
+            if r.body.get("status").and_then(Value::as_str).is_some_and(is_terminal_status) {
+                if let Some(rev) = r.body.get("rev").and_then(Value::as_u64) {
+                    self.rev = rev;
+                }
+                return Ok(Phase::Retry);
+            }
             self.rev = r.body.get("rev").and_then(Value::as_u64).unwrap_or(self.rev.saturating_add(1));
             self.set_local_status("awaiting_confirmation", None).await?;
             return Ok(Phase::Posted);
@@ -773,11 +858,28 @@ fn ready_agent_actions(view: &PlanView, started: &BTreeSet<u64>) -> Vec<u64> {
         .collect()
 }
 
-/// Actions citées par un résultat de phase déjà recontrôlé (quel que soit l'état).
-fn reported_in(reported: &mut BTreeSet<u64>, clear: &Value) {
+/// Code d'abandon d'une erreur de préparation (`build_job`) : hors liste, `action_not_accepted`.
+fn abandon_code(code: &str) -> &'static str {
+    synco_e2ee::plan::ABANDON_CODES.iter().find(|c| **c == code).copied().unwrap_or("action_not_accepted")
+}
+
+fn plan_abandon_code(code: &str) -> bool {
+    synco_e2ee::plan::is_abandon_code(code)
+}
+
+fn is_terminal_status(s: &str) -> bool {
+    matches!(s, "done" | "failed" | "interrupted" | "rejected" | "stopped" | "expired")
+}
+
+/// Actions citées par un résultat de phase déjà recontrôlé (quel que soit l'état),
+/// et codes d'abandon (le bilan les garde après une reprise).
+fn reported_in(reported: &mut BTreeSet<u64>, codes: &mut BTreeMap<u64, String>, clear: &Value) {
     for o in clear.get("outcomes").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default() {
         if let Some(n) = o.get("n").and_then(Value::as_u64) {
             reported.insert(n);
+            if let Some(code) = o.get("code").and_then(Value::as_str) {
+                codes.insert(n, code.to_owned());
+            }
         }
     }
 }

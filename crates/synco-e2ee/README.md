@@ -20,7 +20,8 @@ API pure : ni entrée/sortie, ni `async`, ni état global. L'aléa est injecté 
 | Module | Contenu | Spec |
 |---|---|---|
 | `runtime_cert` | empreinte, code d'appairage, URL canonique, certificat, défi | `docs/plan/01` |
-| `delegation` | enveloppe de tête, mandat, entrées | `docs/plan/03` §3-§5 |
+| `delegation` | enveloppe de tête, mandat v1 et v2, entrées, règle `rt1` | `docs/plan/03` §3-§5, §4.1 ; `12` §10.2 |
+| `plan` | plan d'action : JCS, AAD, chiffrement sous `CK`, `serverDigests`, validation, graphe, exécution | `docs/plan/12` §3-§9 |
 | `keys` | commitments et signatures FC4, enveloppes `rt1` | `keyEnvelope.ts`, `docs/plan/03` §10 |
 | `session` | champs `gcm1:` (AAD `sessionId:messageId:fieldName`) | `docs/plan/03` §6.3, `05` §4 |
 | `identity` | chaîne de transitions ; clés d'identité scellées (compatibilité) | `e2eeV4.ts` |

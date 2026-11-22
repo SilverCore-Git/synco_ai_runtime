@@ -275,8 +275,17 @@ fn vecteurs_du_plan_d_action() {
             args_refs: call.get("argsRefs").map(|r| r.as_object().unwrap()),
             refs: call.get("refs").map(|r| r.as_object().unwrap()),
         };
-        let digests = plan::plan_server_digests(named_plan(&v, s(c, "plan"))).unwrap();
-        assert!(digests.contains(&(c["n"].as_u64().unwrap(), s(c, "serverDigest").to_owned())), "{name}");
+        // Sans `plan`, le condensat attendu est celui de l'appel lui-même (cas hors des plans figés).
+        if let Some(plan_name) = c["plan"].as_str() {
+            let digests = plan::plan_server_digests(named_plan(&v, plan_name)).unwrap();
+            assert!(digests.contains(&(c["n"].as_u64().unwrap(), s(c, "serverDigest").to_owned())), "{name}");
+        } else {
+            assert_eq!(
+                plan::server_digest(call.tool, call.args, call.args_refs).unwrap(),
+                s(c, "serverDigest"),
+                "{name}"
+            );
+        }
         let r = plan::check_server_call(s(c, "serverDigest"), &call, &recorded);
         match s(c, "expect") {
             "ok" => assert_eq!(Value::Object(r.unwrap()), c["effectiveArgs"], "{name}"),
@@ -413,7 +422,7 @@ fn vecteurs_du_plan_d_action() {
     }
 
     println!("action-plan.json : {checks} vérifications rejouées");
-    assert_eq!(checks, 2 + 4 + 4 + 4 + 10 + 20 + 14 + 41 + 6 + 7 + 2 + 7, "un cas n'a pas été rejoué");
+    assert_eq!(checks, 2 + 4 + 4 + 4 + 12 + 20 + 14 + 41 + 6 + 7 + 2 + 7, "un cas n'a pas été rejoué");
 }
 
 /// Protections propres au code (hors vecteurs) : chacune échoue sans la règle qu'elle couvre.

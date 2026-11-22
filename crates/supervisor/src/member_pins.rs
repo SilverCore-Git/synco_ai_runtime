@@ -17,10 +17,20 @@
 //!   RSA ([`chain_vouches`]) ; sinon refus, changement mis en attente ([`MemberPin::pending`]) et
 //!   alerte ; l'admin du runtime peut l'accepter depuis le dashboard ([`MemberPinStore::accept_pending`]).
 //!
+//! Épingles **hybrides** (PC28, L05c) : plafond de sécurité par org (réglable, défaut
+//! [`DEFAULT_MAX_PINS_PER_ORG`]) ; une épingle inactive depuis plus de [`ARCHIVE_AFTER_SECS`] est
+//! **archivée** en forme compacte (empreinte SPKI seule) mais reste **toujours détectée** : une autre
+//! clé pour la même identité donne [`Verdict::Changed`] (jamais une nouvelle première vue). Au retour
+//! du membre avec la même clé, l'épingle redevient active. Plafond atteint à une première vue : la plus
+//! ancienne archive est évincée (tracée : journal `member_pin_archive_evicted`, alerte, compteur
+//! persistant) ; sans archive à évincer, refus fermé ([`Verdict::Full`]). **Seule** l'éviction d'une
+//! archive peut rouvrir un TOFU pour une identité déjà vue : l'empreinte n'est alors plus conservée.
+//! Alerte `member_pins_near_limit` à 80 % du plafond.
+//!
 //! Fichier `member-rsa-pins.json` du répertoire d'état : données **publiques** uniquement
-//! (empreintes, jamais la clé elle-même).
+//! (empreintes, jamais la clé elle-même). Format 2 (L05c) ; le format 1 est relu et réécrit en 2.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -38,8 +48,19 @@ pub const MEMBER_PINS_FILE: &str = "member-rsa-pins.json";
 pub const MIN_RSA_BITS: usize = 2048;
 /// Taille maximale (comme `rsa::PublicKey::MAX_SIZE`).
 pub const MAX_RSA_BITS: usize = 8192;
-/// Épingles au plus par org (l'app vise 100 membres) ; au-delà, refus fermé (`member_pins_limit`).
-pub const MAX_PINS_PER_ORG: usize = 2000;
+/// Plafond de sécurité par org, archives comprises (PC28) ; réglable : `limits.max_member_pins_per_org`.
+/// Au-delà, la plus ancienne archive est évincée ; sans archive, refus fermé (`member_pins_limit`).
+pub const DEFAULT_MAX_PINS_PER_ORG: usize = 50_000;
+/// Inactivité au-delà de laquelle une épingle est archivée (180 jours).
+pub const ARCHIVE_AFTER_SECS: u64 = 180 * 86_400;
+/// `lastSeen` n'est réécrit que s'il a plus de ce délai (un jour) : pas d'écriture à chaque réponse.
+pub const LAST_SEEN_GRANULARITY_SECS: u64 = 86_400;
+/// Intervalle minimal entre deux balayages d'archivage (en mémoire).
+pub const SWEEP_INTERVAL_SECS: u64 = 3_600;
+/// Seuil d'alerte, en pour cent du plafond.
+pub const WARN_PERCENT: usize = 80;
+/// Version du fichier écrite.
+const FILE_VERSION: u8 = 2;
 /// Empreintes précédentes gardées par membre (refus des retours arrière).
 pub const MAX_PREVIOUS: usize = 16;
 /// Clés en attente au plus par org ; au-delà, le refus reste fermé mais n'est plus mémorisé.
@@ -257,6 +278,34 @@ pub struct MemberPin {
     /// Dernière clé différente refusée.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending: Option<PendingKey>,
+    /// Dernière présentation de la clé épinglée (s) ; absent dans le format 1 (réglé au premier balayage).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seen: Option<u64>,
+}
+
+/// Épingle archivée : forme compacte, empreinte SPKI seule (PC28).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchivedPin {
+    /// `hex(SHA-256(SPKI DER))` de la clé épinglée.
+    pub fingerprint: String,
+    /// Première vue (s).
+    pub first_seen: u64,
+    /// Dernière présentation (s).
+    pub last_seen: u64,
+}
+
+/// Occupation des épingles d'une org (tableau de bord).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PinUsage {
+    /// Épingles actives.
+    pub active: usize,
+    /// Épingles archivées.
+    pub archived: usize,
+    /// Plafond de l'org.
+    pub max: usize,
+    /// Archives évincées depuis l'origine (cumul).
+    pub evicted: u64,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -264,6 +313,18 @@ struct PinFile {
     v: u8,
     /// org → utilisateur → épingle.
     orgs: BTreeMap<String, BTreeMap<String, MemberPin>>,
+    /// org → utilisateur → épingle archivée (format 2).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    archive: BTreeMap<String, BTreeMap<String, ArchivedPin>>,
+    /// org → archives évincées (compteur cumulé, format 2).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    evicted: BTreeMap<String, u64>,
+}
+
+impl PinFile {
+    fn default_v2() -> Self {
+        Self { v: FILE_VERSION, ..Self::default() }
+    }
 }
 
 /// Verdict de l'épinglage pour une clé présentée.
@@ -275,7 +336,7 @@ pub enum Verdict {
     Trusted,
     /// Clé différente de l'épinglée (rien n'est modifié).
     Changed,
-    /// Première vue, mais l'org a déjà [`MAX_PINS_PER_ORG`] épingles : rien n'est épinglé.
+    /// Première vue, mais l'org a atteint son plafond sans archive à évincer : rien n'est épinglé.
     Full,
 }
 
@@ -311,6 +372,12 @@ pub struct MemberPinStore {
     dirty: bool,
     generation: u64,
     written: Arc<Mutex<u64>>,
+    max_per_org: usize,
+    last_sweep: u64,
+    /// Orgs dont l'alerte des 80 % a été levée (réarmée sous le seuil).
+    warned: BTreeSet<String>,
+    /// Orgs où une éviction a eu lieu depuis le dernier [`Self::take_alerts`].
+    evicted_unreported: BTreeSet<String>,
 }
 
 impl Default for MemberPinStore {
@@ -323,11 +390,27 @@ impl MemberPinStore {
     /// Magasin en mémoire seulement (tests).
     #[must_use]
     pub fn in_memory() -> Self {
-        Self::with(None, PinFile { v: 1, orgs: BTreeMap::new() })
+        Self::with(None, PinFile::default_v2())
     }
 
     fn with(path: Option<PathBuf>, file: PinFile) -> Self {
-        Self { path, file, dirty: false, generation: 0, written: Arc::new(Mutex::new(0)) }
+        Self {
+            path,
+            file,
+            dirty: false,
+            generation: 0,
+            written: Arc::new(Mutex::new(0)),
+            max_per_org: DEFAULT_MAX_PINS_PER_ORG,
+            last_sweep: 0,
+            warned: BTreeSet::new(),
+            evicted_unreported: BTreeSet::new(),
+        }
+    }
+
+    /// Fixe le plafond par org (configuration). Un plafond abaissé sous l'occupation évince des
+    /// archives à la prochaine première vue, jamais une épingle active.
+    pub fn set_max_per_org(&mut self, max: usize) {
+        self.max_per_org = max.max(1);
     }
 
     /// Ouvre `member-rsa-pins.json` (absent : vide). Illisible : erreur (jamais un épinglage remis
@@ -338,12 +421,12 @@ impl MemberPinStore {
             Ok(bytes) => {
                 serde_json::from_slice(&bytes).map_err(|_| Error::Io(format!("{MEMBER_PINS_FILE} illisible")))?
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => PinFile { v: 1, orgs: BTreeMap::new() },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => PinFile::default_v2(),
             Err(e) => return Err(Error::Io(format!("{MEMBER_PINS_FILE} : {}", e.kind()))),
         };
         // Revue M5 : version inconnue (fichier d'un runtime plus récent) : refus de démarrer plutôt
         // qu'une relecture partielle suivie d'une réécriture qui perdrait des données.
-        if file.v != 1 {
+        if !(1..=FILE_VERSION).contains(&file.v) {
             return Err(Error::Io(format!("{MEMBER_PINS_FILE} : version {} inconnue", file.v)));
         }
         Ok(Self::with(Some(path), file))
@@ -360,7 +443,7 @@ impl MemberPinStore {
             self.dirty = false;
             return Ok(None);
         };
-        self.file.v = 1;
+        self.file.v = FILE_VERSION;
         let bytes = serde_json::to_vec_pretty(&self.file).map_err(|_| Error::Io("sérialisation".into()))?;
         self.dirty = false;
         self.generation = self.generation.saturating_add(1);
@@ -386,28 +469,175 @@ impl MemberPinStore {
         self.file.orgs.get(org_id).and_then(|m| m.get(user_id))
     }
 
-    /// Règle TOFU : épingle à la première vue, sinon compare. Une clé différente ne modifie rien.
+    /// Règle TOFU : épingle à la première vue, sinon compare. Une clé différente ne modifie rien
+    /// (sauf : une épingle archivée redevient active, avec la même empreinte, pour pouvoir porter
+    /// un changement en attente). Une identité archivée n'est **jamais** une première vue.
     pub fn check(&mut self, org_id: &str, user_id: &str, key: &MemberKey, now: u64) -> Verdict {
+        self.reactivate(org_id, user_id, key, now);
         let users = self.file.orgs.entry(org_id.to_owned()).or_default();
-        match users.get(user_id) {
-            Some(pin) if pin.fingerprint == key.fingerprint => Verdict::Trusted,
-            Some(_) => Verdict::Changed,
-            None if users.len() >= MAX_PINS_PER_ORG => Verdict::Full,
-            None => {
-                users.insert(
-                    user_id.to_owned(),
-                    MemberPin {
-                        fingerprint: key.fingerprint.clone(),
-                        thumbprint: key.thumbprint.clone(),
-                        first_seen: now,
-                        previous: Vec::new(),
-                        pending: None,
-                    },
-                );
+        if let Some(pin) = users.get_mut(user_id) {
+            if pin.fingerprint != key.fingerprint {
+                return Verdict::Changed;
+            }
+            if pin.last_seen.is_none_or(|t| now.saturating_sub(t) >= LAST_SEEN_GRANULARITY_SECS) {
+                pin.last_seen = Some(now);
                 self.persist();
-                Verdict::Pinned
+            }
+            return Verdict::Trusted;
+        }
+        // Première vue : le plafond compte les épingles actives et les archives.
+        while self.total(org_id) >= self.max_per_org {
+            if !self.evict_oldest_archive(org_id) {
+                return Verdict::Full;
             }
         }
+        self.file.orgs.entry(org_id.to_owned()).or_default().insert(
+            user_id.to_owned(),
+            MemberPin {
+                fingerprint: key.fingerprint.clone(),
+                thumbprint: key.thumbprint.clone(),
+                first_seen: now,
+                previous: Vec::new(),
+                pending: None,
+                last_seen: Some(now),
+            },
+        );
+        self.persist();
+        Verdict::Pinned
+    }
+
+    fn total(&self, org_id: &str) -> usize {
+        self.file
+            .orgs
+            .get(org_id)
+            .map_or(0, BTreeMap::len)
+            .saturating_add(self.file.archive.get(org_id).map_or(0, BTreeMap::len))
+    }
+
+    /// Remet une archive en épingle active (le total de l'org ne change pas). L'empreinte d'affichage
+    /// n'est connue que si la clé présentée est l'épinglée ; sinon elle reste vide jusqu'à une décision.
+    fn reactivate(&mut self, org_id: &str, user_id: &str, key: &MemberKey, now: u64) {
+        let Some(archived) = self.file.archive.get_mut(org_id).and_then(|m| m.remove(user_id)) else { return };
+        if self.file.archive.get(org_id).is_some_and(BTreeMap::is_empty) {
+            self.file.archive.remove(org_id);
+        }
+        let same = archived.fingerprint == key.fingerprint;
+        self.file.orgs.entry(org_id.to_owned()).or_default().insert(
+            user_id.to_owned(),
+            MemberPin {
+                thumbprint: if same { key.thumbprint.clone() } else { String::new() },
+                fingerprint: archived.fingerprint,
+                first_seen: archived.first_seen,
+                previous: Vec::new(),
+                pending: None,
+                last_seen: Some(if same { now } else { archived.last_seen }),
+            },
+        );
+        self.persist();
+    }
+
+    /// Évince la plus ancienne archive de l'org (jamais une épingle active). Rend faux s'il n'y en a
+    /// aucune. Cas **inévitable** qui rouvre un TOFU : l'identité évincée sera épinglée de nouveau,
+    /// sans comparaison, à sa prochaine présentation. Tracé (journal, alerte, compteur persistant).
+    fn evict_oldest_archive(&mut self, org_id: &str) -> bool {
+        let Some(archive) = self.file.archive.get_mut(org_id) else { return false };
+        let Some(oldest) =
+            archive.iter().min_by(|a, b| (a.1.last_seen, a.0).cmp(&(b.1.last_seen, b.0))).map(|(u, _)| u.clone())
+        else {
+            return false;
+        };
+        archive.remove(&oldest);
+        if archive.is_empty() {
+            self.file.archive.remove(org_id);
+        }
+        let count = self.file.evicted.entry(org_id.to_owned()).or_default();
+        *count = count.saturating_add(1);
+        let evicted_total = *count;
+        self.evicted_unreported.insert(org_id.to_owned());
+        self.persist();
+        tracing::warn!(
+            code = "member_pin_archive_evicted",
+            evicted_total,
+            "plafond d'épingles atteint : plus ancienne archive évincée (cette identité sera de nouveau épinglée sans comparaison)"
+        );
+        true
+    }
+
+    /// Archive les épingles inactives depuis plus de [`ARCHIVE_AFTER_SECS`] (au plus une fois par
+    /// [`SWEEP_INTERVAL_SECS`]). Une épingle de format 1, sans `lastSeen`, reçoit `now` (l'inactivité
+    /// est comptée depuis ce balayage). Une épingle avec un changement en attente n'est pas archivée.
+    pub fn sweep(&mut self, now: u64) {
+        if self.last_sweep != 0 && now.saturating_sub(self.last_sweep) < SWEEP_INTERVAL_SECS {
+            return;
+        }
+        self.last_sweep = now.max(1);
+        let mut changed = false;
+        let mut moved: Vec<(String, String, ArchivedPin)> = Vec::new();
+        for (org, users) in &mut self.file.orgs {
+            for (user, pin) in users.iter_mut() {
+                match pin.last_seen {
+                    None => {
+                        pin.last_seen = Some(now);
+                        changed = true;
+                    }
+                    Some(t) if pin.pending.is_none() && now.saturating_sub(t) > ARCHIVE_AFTER_SECS => moved.push((
+                        org.clone(),
+                        user.clone(),
+                        ArchivedPin { fingerprint: pin.fingerprint.clone(), first_seen: pin.first_seen, last_seen: t },
+                    )),
+                    Some(_) => {}
+                }
+            }
+        }
+        for (org, user, archived) in moved {
+            if let Some(users) = self.file.orgs.get_mut(&org) {
+                users.remove(&user);
+                if users.is_empty() {
+                    self.file.orgs.remove(&org);
+                }
+            }
+            self.file.archive.entry(org).or_default().insert(user, archived);
+            changed = true;
+        }
+        if changed {
+            self.persist();
+        }
+    }
+
+    /// Alertes à lever pour l'org après un contrôle : `member_pins_archive_evicted` (éviction depuis le
+    /// dernier appel) et `member_pins_near_limit` (80 % du plafond atteints, une fois par franchissement).
+    pub fn take_alerts(&mut self, org_id: &str) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.evicted_unreported.remove(org_id) {
+            out.push("member_pins_archive_evicted");
+        }
+        let near = self.total(org_id).saturating_mul(100) >= self.max_per_org.saturating_mul(WARN_PERCENT);
+        if near {
+            if self.warned.insert(org_id.to_owned()) {
+                tracing::warn!(code = "member_pins_near_limit", "épingles RSA à 80 % du plafond de l'org");
+                out.push("member_pins_near_limit");
+            }
+        } else {
+            self.warned.remove(org_id);
+        }
+        out
+    }
+
+    /// Occupation d'une org.
+    #[must_use]
+    pub fn usage(&self, org_id: &str) -> PinUsage {
+        PinUsage {
+            active: self.file.orgs.get(org_id).map_or(0, BTreeMap::len),
+            archived: self.file.archive.get(org_id).map_or(0, BTreeMap::len),
+            max: self.max_per_org,
+            evicted: self.file.evicted.get(org_id).copied().unwrap_or(0),
+        }
+    }
+
+    /// Empreinte épinglée d'un membre, **archive comprise** (sans la réactiver).
+    #[must_use]
+    pub fn is_archived(&self, org_id: &str, user_id: &str) -> bool {
+        self.file.archive.get(org_id).is_some_and(|m| m.contains_key(user_id))
     }
 
     fn replace(&mut self, org_id: &str, user_id: &str, key: &MemberKey) {
@@ -638,8 +868,9 @@ mod tests {
     #[test]
     fn bornes() {
         let mut s = MemberPinStore::in_memory();
+        s.set_max_per_org(150);
         let k = key(1);
-        for i in 0..MAX_PINS_PER_ORG {
+        for i in 0..150 {
             assert_eq!(s.check("o", &format!("u{i}"), &k, 1), Verdict::Pinned);
         }
         assert_eq!(s.check("o", "nouveau", &k, 1), Verdict::Full, "plafond par org");
@@ -656,6 +887,131 @@ mod tests {
             assert!(s.rotate("o", "u", &from, &key(seed)));
         }
         assert_eq!(s.get("o", "u").unwrap().previous.len(), MAX_PREVIOUS);
+    }
+
+    const YEAR: u64 = 365 * 86_400;
+
+    #[test]
+    fn archive_detecte_toujours_un_changement() {
+        let mut s = MemberPinStore::in_memory();
+        assert_eq!(s.check("o", "u1", &key(1), 10), Verdict::Pinned);
+        s.sweep(10 + 30 * 86_400);
+        assert!(!s.is_archived("o", "u1"), "actif depuis moins de 180 jours");
+        s.sweep(10 + YEAR);
+        assert!(s.is_archived("o", "u1"));
+        assert_eq!(s.usage("o"), PinUsage { active: 0, archived: 1, max: DEFAULT_MAX_PINS_PER_ORG, evicted: 0 });
+        // Autre clé : Changed (jamais une première vue), l'épingle redevient active avec l'ancienne empreinte.
+        assert_eq!(s.check("o", "u1", &key(2), 20 + YEAR), Verdict::Changed);
+        assert_eq!(s.get("o", "u1").unwrap().fingerprint, key(1).fingerprint);
+        assert!(!s.is_archived("o", "u1"));
+        // Le refus peut être mis en attente, puis accepté par l'admin comme avant.
+        s.refuse("o", "u1", &key(1).fingerprint, &key(2), 21 + YEAR);
+        assert_eq!(s.pending("o").len(), 1);
+        // Retour du membre avec la même clé : épingle active de nouveau, thumbprint rétabli.
+        let mut s = MemberPinStore::in_memory();
+        s.check("o", "u1", &key(1), 10);
+        s.sweep(10 + YEAR);
+        assert_eq!(s.check("o", "u1", &key(1), 20 + YEAR), Verdict::Trusted);
+        let pin = s.get("o", "u1").unwrap();
+        assert_eq!(
+            (pin.thumbprint.as_str(), pin.first_seen, pin.last_seen),
+            (key(1).thumbprint.as_str(), 10, Some(20 + YEAR))
+        );
+        // Une épingle avec un changement en attente n'est pas archivée.
+        let mut s = MemberPinStore::in_memory();
+        s.check("o", "u1", &key(1), 10);
+        s.refuse("o", "u1", &key(1).fingerprint, &key(2), 11);
+        s.sweep(10 + YEAR);
+        assert!(!s.is_archived("o", "u1"));
+    }
+
+    #[test]
+    fn archive_persiste_et_reste_detectee_apres_redemarrage() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let mut s = MemberPinStore::open(dir.path()).unwrap();
+            s.check("o", "u1", &key(1), 10);
+            s.sweep(10 + YEAR);
+            s.flush().unwrap();
+        }
+        let text = std::fs::read_to_string(dir.path().join(MEMBER_PINS_FILE)).unwrap();
+        assert!(text.contains("\"v\": 2") && text.contains("\"archive\""));
+        let mut s = MemberPinStore::open(dir.path()).unwrap();
+        assert!(s.is_archived("o", "u1"));
+        assert_eq!(s.check("o", "u1", &key(2), 20 + YEAR), Verdict::Changed);
+    }
+
+    #[test]
+    fn eviction_seulement_de_la_plus_ancienne_archive() {
+        let mut s = MemberPinStore::in_memory();
+        s.set_max_per_org(4);
+        for (i, t) in [(1u8, 1u64), (2, 2), (3, 3 * YEAR), (4, 3 * YEAR)] {
+            assert_eq!(s.check("o", &format!("u{i}"), &key(i), t), Verdict::Pinned);
+        }
+        s.sweep(3 * YEAR + 1); // u1 et u2 archivées, u3 et u4 actives
+        assert_eq!(s.usage("o"), PinUsage { active: 2, archived: 2, max: 4, evicted: 0 });
+        // Plafond atteint : la plus ancienne archive (u1) part, rien d'autre.
+        assert_eq!(s.check("o", "u5", &key(5), 3 * YEAR + 2), Verdict::Pinned);
+        assert_eq!(s.usage("o"), PinUsage { active: 3, archived: 1, max: 4, evicted: 1 });
+        assert!(s.is_archived("o", "u2"), "l'autre archive est intacte");
+        assert_eq!(s.check("o", "u2", &key(9), 3 * YEAR + 3), Verdict::Changed, "u2 reste détectée");
+        assert!(s.get("o", "u3").is_some() && s.get("o", "u4").is_some(), "aucune épingle active évincée");
+        assert!(s.take_alerts("o").contains(&"member_pins_archive_evicted"), "éviction signalée");
+        assert!(!s.take_alerts("o").contains(&"member_pins_archive_evicted"), "une seule fois");
+        // Cas documenté : u1 évincée est de nouveau épinglée sans comparaison (empreinte perdue).
+        assert_eq!(s.usage("o").evicted, 1, "compteur persistant");
+        // Sans archive à évincer : refus fermé, jamais d'éviction d'une épingle active.
+        let mut s = MemberPinStore::in_memory();
+        s.set_max_per_org(2);
+        s.check("o", "a", &key(1), 1);
+        s.check("o", "b", &key(2), 1);
+        assert_eq!(s.check("o", "c", &key(3), 2), Verdict::Full);
+        assert_eq!(s.usage("o").evicted, 0);
+    }
+
+    #[test]
+    fn alerte_a_80_pour_cent() {
+        let mut s = MemberPinStore::in_memory();
+        s.set_max_per_org(10);
+        for i in 0..7 {
+            s.check("o", &format!("u{i}"), &key(1), 1);
+        }
+        assert!(s.take_alerts("o").is_empty(), "70 %");
+        s.check("o", "u7", &key(1), 1);
+        assert_eq!(s.take_alerts("o"), vec!["member_pins_near_limit"], "80 %");
+        s.check("o", "u8", &key(1), 1);
+        assert!(s.take_alerts("o").is_empty(), "une fois par franchissement");
+    }
+
+    #[test]
+    fn ancien_format_relu_et_reecrit_en_nouveau() {
+        let dir = tempfile::tempdir().unwrap();
+        let fp = key(1);
+        let old = format!(
+            r#"{{"v":1,"orgs":{{"o":{{"u1":{{"fingerprint":"{}","thumbprint":"{}","firstSeen":5}}}}}}}}"#,
+            fp.fingerprint, fp.thumbprint
+        );
+        std::fs::write(dir.path().join(MEMBER_PINS_FILE), old).unwrap();
+        let mut s = MemberPinStore::open(dir.path()).unwrap();
+        assert_eq!(s.check("o", "u1", &key(2), 6), Verdict::Changed, "l'ancienne épingle protège");
+        assert_eq!(s.check("o", "u1", &fp, 7), Verdict::Trusted);
+        s.flush().unwrap();
+        let text = std::fs::read_to_string(dir.path().join(MEMBER_PINS_FILE)).unwrap();
+        assert!(text.contains("\"v\": 2"), "seul le nouveau format est écrit");
+        // Sans lastSeen : l'inactivité est comptée depuis le premier balayage, pas depuis firstSeen.
+        std::fs::write(
+            dir.path().join(MEMBER_PINS_FILE),
+            format!(
+                r#"{{"v":1,"orgs":{{"o":{{"u1":{{"fingerprint":"{}","thumbprint":"x","firstSeen":5}}}}}}}}"#,
+                fp.fingerprint
+            ),
+        )
+        .unwrap();
+        let mut s = MemberPinStore::open(dir.path()).unwrap();
+        s.sweep(10 * YEAR);
+        assert!(!s.is_archived("o", "u1"));
+        s.sweep(10 * YEAR + SWEEP_INTERVAL_SECS + ARCHIVE_AFTER_SECS + 1);
+        assert!(s.is_archived("o", "u1"));
     }
 
     #[test]
@@ -696,7 +1052,7 @@ mod tests {
         std::fs::write(dir.path().join(MEMBER_PINS_FILE), b"{").unwrap();
         assert!(MemberPinStore::open(dir.path()).is_err());
         // Version inconnue : refus (revue M5).
-        std::fs::write(dir.path().join(MEMBER_PINS_FILE), br#"{"v":2,"orgs":{}}"#).unwrap();
+        std::fs::write(dir.path().join(MEMBER_PINS_FILE), br#"{"v":3,"orgs":{}}"#).unwrap();
         assert!(MemberPinStore::open(dir.path()).is_err());
         std::fs::write(dir.path().join(MEMBER_PINS_FILE), br#"{"v":1,"orgs":{}}"#).unwrap();
         assert!(MemberPinStore::open(dir.path()).is_ok());

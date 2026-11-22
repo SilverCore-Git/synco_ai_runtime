@@ -394,6 +394,7 @@ pub async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> Result<(), &'st
     let (org, changed, full, owner_mismatch, snapshot) = {
         let mut st = rt.state.lock().await;
         let Some(org) = st.org_id.clone() else { return Err(MEMBER_PINS_UNAVAILABLE) };
+        st.member_pins.sweep(now);
         let mut changed = Vec::new();
         let mut full = false;
         let mut owner_mismatch = false;
@@ -421,6 +422,10 @@ pub async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> Result<(), &'st
         }
         if full {
             st.alert(now, "member_pins_limit");
+        }
+        // PC28 : éviction d'une archive (TOFU rouvert pour cette identité) et 80 % du plafond.
+        for code in st.member_pins.take_alerts(&org) {
+            st.alert(now, code);
         }
         if owner_mismatch {
             st.alert(now, "member_rsa_key_changed");

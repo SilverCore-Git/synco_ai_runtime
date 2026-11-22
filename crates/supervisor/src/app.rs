@@ -55,6 +55,7 @@ pub async fn start(
     let public_addr = listener.local_addr().map_err(|e| Error::Io(format!("adresse d'écoute : {}", e.kind())))?;
     let mut state = State::new(pins, auths);
     state.member_pins = crate::member_pins::MemberPinStore::open(&config.state_dir)?;
+    state.member_pins.set_max_per_org(config.limits.max_member_pins_per_org);
     state.created_threads = crate::created_threads::CreatedThreadStore::open(&config.state_dir, &keys)?;
     if state.created_threads.take_tampered() {
         // PC33 : MAC invalide, le registre est considéré vide (rien n'est signé) ; le runtime continue.

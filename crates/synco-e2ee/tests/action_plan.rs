@@ -129,14 +129,29 @@ fn field_name(text: &str) -> session::FieldName {
     }
 }
 
-/// Lecture typée d'un cas (`sessionId`, `planId`) : `decrypt_plan` ou `decrypt_phase_result`.
-fn typed_decrypt(ck: &SymmetricKey, c: &Value, field: &str, value: &str) -> Result<Value> {
+/// Graphe du plan figé qui porte ce `planId` (le plan de référence par défaut).
+fn graph_by_id(v: &Value, manifest: &ToolManifest, plan_id: &str) -> PlanGraph {
+    let name = ["mixedPlan", "categoryPlan"].into_iter().find(|n| s(&v[n], "planId") == plan_id).unwrap_or("plan");
+    graph_of(named_plan(v, name), v, manifest)
+}
+
+/// Lecture typée d'un cas (`sessionId`, `planId`) : `decrypt_plan` ou `decrypt_phase_result`, ce
+/// dernier contre le graphe du plan figé de même `planId`.
+fn typed_decrypt(ck: &SymmetricKey, v: &Value, manifest: &ToolManifest, c: &Value, value: &str) -> Result<Value> {
     let (sid, pid) = (s(c, "sessionId"), c.get("planId").or_else(|| c.get("messageId")).unwrap().as_str().unwrap());
-    match field.split_once(':') {
+    match s(c, "fieldName").split_once(':') {
         None => plan::decrypt_plan(ck, sid, pid, value),
         Some((label, k)) => {
             let executor = if label == "plan_result" { Executor::Device } else { Executor::Agent };
-            plan::decrypt_phase_result(ck, sid, pid, executor, k.parse().unwrap(), value)
+            plan::decrypt_phase_result(
+                ck,
+                sid,
+                pid,
+                executor,
+                k.parse().unwrap(),
+                &graph_by_id(v, manifest, pid),
+                value,
+            )
         }
     }
 }
@@ -174,9 +189,11 @@ fn vecteurs_du_plan_d_action() {
     let r = &v["planResult"];
     assert_eq!(plan::jcs(r).unwrap(), s(&v, "planResultCanonical"));
     assert_eq!(plan::phase_result_aad(sid, s(&v, "planId"), Executor::Device, 1).unwrap(), s(&v, "aadPlanResult"));
-    let value = plan::encrypt_phase_result(&ck, sid, Executor::Device, r, &mut iv(s(&v, "ivPlanResultHex"))).unwrap();
+    let rg = graph_of(p, &v, &manifest);
+    let value =
+        plan::encrypt_phase_result(&ck, sid, Executor::Device, &rg, r, &mut iv(s(&v, "ivPlanResultHex"))).unwrap();
     assert_eq!(value, s(&v, "planResultValue"));
-    assert_eq!(&plan::decrypt_phase_result(&ck, sid, s(&v, "planId"), Executor::Device, 1, &value).unwrap(), r);
+    assert_eq!(&plan::decrypt_phase_result(&ck, sid, s(&v, "planId"), Executor::Device, 1, &rg, &value).unwrap(), r);
     checks += 1;
 
     // Plan mixte : plan et résultats de phase numérotés par exécutant.
@@ -199,8 +216,8 @@ fn vecteurs_du_plan_d_action() {
             let (executor, k) = field.rsplit_once(':').unwrap();
             let executor = if executor == "plan_result" { Executor::Device } else { Executor::Agent };
             let k: u64 = k.parse().unwrap();
-            let value = plan::encrypt_phase_result(&ck, sid, executor, clear, &mut rng).unwrap();
-            assert_eq!(&plan::decrypt_phase_result(&ck, sid, mixed_id, executor, k, &value).unwrap(), clear);
+            let value = plan::encrypt_phase_result(&ck, sid, executor, &g, clear, &mut rng).unwrap();
+            assert_eq!(&plan::decrypt_phase_result(&ck, sid, mixed_id, executor, k, &g, &value).unwrap(), clear);
             (plan::phase_result_aad(sid, mixed_id, executor, k).unwrap(), value)
         };
         assert_eq!(aad, s(e, "aad"), "{}", s(e, "label"));
@@ -305,20 +322,7 @@ fn vecteurs_du_plan_d_action() {
                 assert_eq!(clear, s(c, "plaintext"), "{name}");
                 // Chemin typé : la même valeur se relit par la fonction du plan.
                 let parsed: Value = serde_json::from_str(&clear).unwrap();
-                let typed = match s(c, "fieldName").split_once(':') {
-                    None => plan::decrypt_plan(&k, s(c, "sessionId"), s(c, "messageId"), s(c, "value")),
-                    Some((label, n)) => {
-                        let executor = if label == "plan_result" { Executor::Device } else { Executor::Agent };
-                        plan::decrypt_phase_result(
-                            &k,
-                            s(c, "sessionId"),
-                            s(c, "messageId"),
-                            executor,
-                            n.parse().unwrap(),
-                            s(c, "value"),
-                        )
-                    }
-                };
+                let typed = typed_decrypt(&k, &v, &manifest, c, s(c, "value"));
                 assert_eq!(typed.unwrap(), parsed, "{name}");
             }
             code => assert_eq!(r.unwrap_err().code(), code, "{name}"),
@@ -339,7 +343,7 @@ fn vecteurs_du_plan_d_action() {
             &mut iv(s(c, "ivHex")),
         );
         assert_eq!(rebuilt.unwrap(), s(c, "value"), "{name} : vecteur");
-        let r = typed_decrypt(&ck, c, s(c, "fieldName"), s(c, "value"));
+        let r = typed_decrypt(&ck, &v, &manifest, c, s(c, "value"));
         match s(c, "expect") {
             "ok" => assert_eq!(plan::jcs(&r.unwrap_or_else(|e| panic!("{name} : {e}"))).unwrap(), s(c, "canonical")),
             code => assert_eq!(r.map(|_| ()).unwrap_err().code(), code, "{name}"),
@@ -353,7 +357,7 @@ fn vecteurs_du_plan_d_action() {
         let name = s(c, "name");
         let fill = s(c, "fill").repeat(c["fillLength"].as_u64().unwrap().try_into().unwrap());
         let value = format!("{}{fill}", s(c, "valuePrefix"));
-        let r = typed_decrypt(&ck, c, s(c, "fieldName"), &value);
+        let r = typed_decrypt(&ck, &v, &manifest, c, &value);
         assert_eq!(r.unwrap_err().code(), s(c, "expect"), "{name}");
         checks += 1;
     }
@@ -433,7 +437,7 @@ fn vecteurs_du_plan_d_action() {
     }
 
     println!("action-plan.json : {checks} vérifications rejouées");
-    assert_eq!(checks, 2 + 4 + 4 + 4 + 12 + 20 + 14 + 4 + 45 + 6 + 7 + 2 + 7, "un cas n'a pas été rejoué");
+    assert_eq!(checks, 2 + 4 + 4 + 4 + 12 + 20 + 20 + 4 + 45 + 6 + 7 + 2 + 7, "un cas n'a pas été rejoué");
 }
 
 /// Protections propres au code (hors vecteurs) : chacune échoue sans la règle qu'elle couvre.
@@ -478,8 +482,14 @@ fn garde_fous() {
     let mut rng = iv("000102030405060708090a0b");
     let mut other = v["planResult"].clone();
     other["phase"] = 2.into();
-    let value = plan::encrypt_phase_result(&ck, s(&v, "sessionId"), Executor::Device, &other, &mut rng).unwrap();
-    assert!(plan::decrypt_phase_result(&ck, s(&v, "sessionId"), s(&v, "planId"), Executor::Device, 2, &value).is_ok());
+    let value = plan::encrypt_phase_result(&ck, s(&v, "sessionId"), Executor::Device, &g, &other, &mut rng).unwrap();
+    assert!(
+        plan::decrypt_phase_result(&ck, s(&v, "sessionId"), s(&v, "planId"), Executor::Device, 2, &g, &value).is_ok()
+    );
+    // Le chiffrement refuse aussi un n de l'agent dans un résultat d'appareil.
+    let mut agent_n = v["planResult"].clone();
+    agent_n["outcomes"][3]["n"] = 5.into();
+    assert!(plan::encrypt_phase_result(&ck, s(&v, "sessionId"), Executor::Device, &g, &agent_n, &mut rng).is_err());
     let forged = session::encrypt_field(
         &ck,
         s(&v, "sessionId"),
@@ -490,7 +500,7 @@ fn garde_fous() {
     )
     .unwrap();
     assert_eq!(
-        plan::decrypt_phase_result(&ck, s(&v, "sessionId"), s(&v, "planId"), Executor::Device, 1, &forged)
+        plan::decrypt_phase_result(&ck, s(&v, "sessionId"), s(&v, "planId"), Executor::Device, 1, &g, &forged)
             .unwrap_err()
             .code(),
         "plan_invalid"

@@ -133,11 +133,11 @@ const graph = ap.validatePlan(plan, { sessionId: planVec.sessionId, maxLifetimeS
 check(JSON.stringify(graph.levels()) === JSON.stringify(planVec.planLevels), 'plan validé, niveaux identiques (validatePlan)');
 const digests = await ap.planServerDigests(plan);
 check(digests.get(5) === planVec.serverDigests[0].sha256Hex, 'serverDigests identique (planServerDigests)');
-const result = await ap.decryptPhaseResult(planCk, planVec.sessionId, planVec.planId, 'device', 1, planVec.planResultValue);
+const result = await ap.decryptPhaseResult(planCk, planVec.sessionId, planVec.planId, 'device', 1, graph, planVec.planResultValue);
 check(result.outcomes.length === 4, 'plan_result:1 déchiffré et recontrôlé (decryptPhaseResult)');
 let crossed = false;
 try {
-    await ap.decryptPhaseResult(planCk, planVec.sessionId, planVec.planId, 'agent', 1, planVec.planResultValue);
+    await ap.decryptPhaseResult(planCk, planVec.sessionId, planVec.planId, 'agent', 1, graph, planVec.planResultValue);
 } catch (e) {
     crossed = (e as { code?: string }).code === 'field_authentication_failed';
 }

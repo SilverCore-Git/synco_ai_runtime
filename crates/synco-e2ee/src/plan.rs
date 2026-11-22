@@ -264,8 +264,10 @@ impl ActionState {
 }
 
 /// Clair d'un résultat de phase : `{ v: 1, planId, phase, outcomes: [{ n, state, output? }] }`
-/// (12 §9), `outcomes` dans l'ordre strict de `n`, `output` = objet d'identifiants.
-fn check_phase_result(value: &Value, plan_id: &str, phase: u64) -> Result<()> {
+/// (12 §9), `outcomes` dans l'ordre strict de `n`, chaque `n` action du plan (`graph`) confiée à
+/// l'exécutant de l'AAD (`executor`), état final (ni `pending` ni `executing`), `output` = objet
+/// d'identifiants.
+fn check_phase_result(value: &Value, plan_id: &str, phase: u64, executor: Executor, graph: &PlanGraph) -> Result<()> {
     let fail = Error::PlanInvalid;
     let map = value.as_object().ok_or(fail)?;
     if map.keys().any(|k| !matches!(k.as_str(), "v" | "planId" | "phase" | "outcomes"))
@@ -282,8 +284,9 @@ fn check_phase_result(value: &Value, plan_id: &str, phase: u64) -> Result<()> {
             return Err(fail);
         }
         let n = o.get("n").and_then(Value::as_u64).ok_or(fail)?;
-        ActionState::parse(str_field(o, "state").ok_or(fail)?).map_err(|_| fail)?;
-        if n <= last || usize::try_from(n).map_or(true, |n| n > MAX_ACTIONS) {
+        let state = ActionState::parse(str_field(o, "state").ok_or(fail)?).map_err(|_| fail)?;
+        let action = index(n).and_then(|i| graph.actions.get(i)).ok_or(fail)?;
+        if n <= last || action.executor != executor || !state.is_final() {
             return Err(fail);
         }
         last = n;
@@ -298,36 +301,39 @@ fn check_phase_result(value: &Value, plan_id: &str, phase: u64) -> Result<()> {
 }
 
 /// Chiffre un résultat de phase (`planId` et `phase` lus dans le clair, contrôlés comme à la
-/// lecture).
+/// lecture, contre le graphe du plan).
 pub fn encrypt_phase_result(
     ck: &SymmetricKey,
     session_id: &str,
     executor: Executor,
+    graph: &PlanGraph,
     result: &Value,
     rng: &mut impl RandomSource,
 ) -> Result<String> {
     let map = result.as_object().ok_or(Error::InvalidInput)?;
     let plan_id = str_field(map, "planId").ok_or(Error::InvalidInput)?;
     let phase = map.get("phase").and_then(Value::as_u64).ok_or(Error::InvalidInput)?;
-    check_phase_result(result, plan_id, phase)?;
+    check_phase_result(result, plan_id, phase, executor, graph)?;
     session::encrypt_field(ck, session_id, plan_id, &executor.result_field(phase), &jcs(result)?, rng)
 }
 
 /// Déchiffre et recontrôle (12 §8.3 étape 1) un résultat de phase : AAD de cet exécutant et de cette
-/// phase, puis `planId`, `phase` et forme du clair ([`Error::PlanInvalid`]).
+/// phase, puis `planId`, `phase`, forme du clair et, contre `graph` (le plan déchiffré et validé),
+/// appartenance de chaque `n` au plan et à cet exécutant et état final ([`Error::PlanInvalid`]).
 pub fn decrypt_phase_result(
     ck: &SymmetricKey,
     session_id: &str,
     plan_id: &str,
     executor: Executor,
     phase: u64,
+    graph: &PlanGraph,
     value: &str,
 ) -> Result<Value> {
     let field = executor.result_field(phase).to_aad_part()?;
     check_value_len(value)?;
     let clear = session::decrypt_field(ck, session_id, plan_id, &field, value)?;
     let result = parse_clear(&clear)?;
-    check_phase_result(&result, plan_id, phase)?;
+    check_phase_result(&result, plan_id, phase, executor, graph)?;
     Ok(result)
 }
 

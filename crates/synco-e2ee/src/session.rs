@@ -75,6 +75,12 @@ pub enum FieldName {
     },
     /// `answer:<toolCallId>`.
     Answer(String),
+    /// `plan` (avec le `messageId` = `planId`, 12 §3.3).
+    Plan,
+    /// `plan_result:<k>` : résultat de la phase d'appareil `k ≥ 1` (12 §9).
+    PlanResult(u64),
+    /// `plan_agent_result:<k>` : résultat de la phase d'agent `k ≥ 1` (12 §9).
+    PlanAgentResult(u64),
 }
 
 impl FieldName {
@@ -102,6 +108,15 @@ impl FieldName {
             Self::Answer(id) => {
                 check_id(id)?;
                 Ok(format!("answer:{id}"))
+            }
+            Self::Plan => Ok("plan".to_owned()),
+            Self::PlanResult(k) | Self::PlanAgentResult(k) => {
+                check_uint(*k)?;
+                if *k == 0 {
+                    return Err(Error::InvalidInput);
+                }
+                let label = if matches!(self, Self::PlanResult(_)) { "plan_result" } else { "plan_agent_result" };
+                Ok(format!("{label}:{k}"))
             }
         }
     }
@@ -153,9 +168,10 @@ pub fn encrypt_json_field(
     encrypt_field(key, session_id, message_id, field, &plaintext, rng)
 }
 
-/// Déchiffre une valeur `gcm1:`. **Stricte** : une valeur sans préfixe est une erreur
-/// ([`Error::FieldUnknownVersion`]). `field_name` est la partie brute de l'AAD : la lecture reste
-/// tolérante aux identifiants historiques.
+/// Déchiffre une valeur `gcm1:`. **Stricte** : `sessionId` et `messageId` conformes à 00 §3.2
+/// ([`Error::InvalidInput`] avant de construire l'AAD, qu'un `:` rendrait ambiguë), puis une valeur
+/// sans préfixe est une erreur ([`Error::FieldUnknownVersion`]). `field_name` est la partie brute de
+/// l'AAD : la lecture reste tolérante aux noms de champ historiques.
 pub fn decrypt_field(
     key: &SymmetricKey,
     session_id: &str,
@@ -163,6 +179,8 @@ pub fn decrypt_field(
     field_name: &str,
     wire_value: &str,
 ) -> Result<String> {
+    check_id(session_id)?;
+    check_id(message_id)?;
     let encoded = wire_value.strip_prefix(VERSION_PREFIX).ok_or(Error::FieldUnknownVersion)?;
     let raw = crate::encoding::from_b64(encoded).map_err(|_| Error::FieldInvalidBase64)?;
     if raw.len() < IV_LENGTH.saturating_add(TAG_LENGTH) {

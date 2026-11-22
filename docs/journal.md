@@ -1297,3 +1297,42 @@ l'expiration d'un plan accepté) validés tels quels. **PC61** : plan de 100 act
 d'`after`, clair ≤ 256 Kio, corps de `POST …/plans` ≤ 1 Mio, `plan_too_large` rendu au modèle qui découpe (consigne de
 12 §3.1), groupes 1 à 50 repliés par défaut au-delà de 30 actions (12 §17). Vecteurs : cas à 100 / 101 actions,
 2 000 / 2 001 dépendances, 65 Kio / > 256 Kio ; revérifiés en Rust (71) et en TS (107), code jetable supprimé.
+
+## 2026-11-22 — L01c, mandat v2 et fonctions pures du plan d'action (Rust et TS)
+
+- **Rust** (`synco-e2ee`) : `delegation` lit le mandat v1 (comme `plan`) et v2 (`verify_mandate_versioned*`,
+  `accept_delegation_versioned`, `rt1_verdict`) ; nouveau module `plan` : `jcs` (tri UTF-16, entiers sûrs), AAD
+  `plan` / `plan_result:<k>` / `plan_agent_result:<k>` (`FieldName::Plan`, `PlanResult`, `PlanAgentResult`),
+  chiffrement sous `CK` avec recontrôle du clair, `server_digest` et `check_server_call` (verrou de 12 §8.4),
+  `validate_plan` (règles 1 à 6, bornes PC61, motif `detail`), `PlanGraph` (niveaux, cascade, règle 8) et `PlanRun`
+  (actions prêtes, échec limité aux dépendantes, arrêt, expiration, statut). Codes `plan_invalid`,
+  `action_not_accepted`.
+- **TS** (`synco_app`) : mêmes fonctions dans `runtimeDelegation.ts` (mandat v2) et `aiActionPlan.ts` ; vecteurs
+  copiés à l'identique dans `scripts/e2ee-vectors/`.
+- **Vecteurs** : `mandate-v2.json` (21 cas de mandat, 6 `rt1Policy`) et `action-plan.json` (107 vérifications)
+  rejoués des deux côtés ; le test croisé `read-from-worker.ts` relit aussi le plan, `plan_result` et le mandat v2
+  avec le code de l'app.
+- **Interprétations** : délai de l'org fourni par l'appelant (vecteurs : 604 800 s) ; longueurs de chaînes en points
+  de code ; manifeste lu en JSON Schema ou sous la forme abrégée des vecteurs ; extensions de `file.create_text`
+  recopiées de `textFileFormats.ts` (à garder synchronisées) ; la règle 7 (annuaire local) reste à L10.
+
+## 2026-11-22 — L01c, constats mineurs de la revue cryptographique
+
+Rust et TS rendent le même verdict sur les mêmes octets ; règle la plus stricte retenue à chaque écart.
+
+- **Nombres** : `decrypt_plan` / `decrypt_phase_result` refusent (`field_invalid_json`) un clair que JCS refuserait
+  (`1.0`, `1e2`, `-0`, entier hors de 2⁵³ − 1) ; l'app a un parseur strict (`parseJsonStrict`).
+- **Unicode** : demi-paires (`"\ud800"`, `"\udc00"`) et BOM initial refusés des deux côtés.
+- **`__proto__`** : clé ordinaire dans les arguments exécutés de `check_server_call` / `checkServerCall`.
+- **Extension** de `file.create_text` : pliée en minuscules ASCII seulement des deux côtés.
+- **PC61** : valeur `gcm1:` bornée à `MAX_PLAN_VALUE_LEN` = 5 + 4·⌈(12 + 262 144 + 16) / 3⌉ = 349 569 octets
+  avant base64, AES-GCM et JSON ; actions (> 100) et dépendances (> 2 000) comptées avant JCS.
+- **Résultats de phase** : `encrypt_phase_result` / `decrypt_phase_result` prennent le `PlanGraph` ; chaque `n`
+  appartient au plan et à l'exécutant de l'AAD, état final exigé.
+- **`rt1_verdict`** : paramètre `production` (défaut `true` côté app) ; un mandat v1 y est `rejected`,
+  `tofu_warning` hors production seulement.
+- **Identifiants** : `check_id` en tête de `decrypt_field`, `decrypt_plan`, `decrypt_phase_result`
+  (`invalid_input` avant l'AAD) ; le cas « séparateur | » de `conversation-fields.json` attend `invalid_input`.
+- **Vecteurs** : `action-plan.json` passe de 107 à 143 vérifications (sections `clearCases`, `boundCases`, plus
+  des cas de validation, de chiffrement et du verrou) ; `mandate-v2.json` à 8 cas `rt1Policy`. Rejoués en Rust et en
+  TS, test croisé OK.

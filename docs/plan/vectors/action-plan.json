@@ -731,6 +731,59 @@
         }
       },
       "expect": "action_not_accepted"
+    },
+    {
+      "name": "argsRefs et refs sur la clé __proto__ : clé ordinaire dans les arguments exécutés (sans plan, condensat de l'appel)",
+      "n": 5,
+      "serverDigest": "15feeb6a75b9df2c02284e77c2d0ebdf011184bc59dc9efdbf60d78d52ae0b10",
+      "recordedOutputs": {
+        "1": {
+          "id": "cm3threadnew0000000000001",
+          "spaceId": "cm3spaceexample0000000001"
+        }
+      },
+      "call": {
+        "tool": "create_task",
+        "args": {
+          "title": "Valider le budget"
+        },
+        "argsRefs": {
+          "__proto__": "$1.id"
+        },
+        "refs": {
+          "__proto__": "cm3threadnew0000000000001"
+        }
+      },
+      "expect": "ok",
+      "effectiveArgs": {
+        "title": "Valider le budget",
+        "__proto__": "cm3threadnew0000000000001"
+      }
+    },
+    {
+      "name": "__proto__ fixé à la fois par args et par argsRefs : refusé",
+      "n": 5,
+      "serverDigest": "ac70a571e750c38f6c86f718268436080d24c889d955bad2b92f7b2d076df90f",
+      "recordedOutputs": {
+        "1": {
+          "id": "cm3threadnew0000000000001",
+          "spaceId": "cm3spaceexample0000000001"
+        }
+      },
+      "call": {
+        "tool": "create_task",
+        "args": {
+          "title": "Valider le budget",
+          "__proto__": "cm3autre000000000000000001"
+        },
+        "argsRefs": {
+          "__proto__": "$1.id"
+        },
+        "refs": {
+          "__proto__": "cm3threadnew0000000000001"
+        }
+      },
+      "expect": "action_not_accepted"
     }
   ],
   "pendingToolCall": {
@@ -909,6 +962,30 @@
       "fieldName": "plan_agent_result:2",
       "value": "gcm1:cnJycnJycnJycnJyvwTn4l8tB4IlAzBGlg4k6em0kGZwn1234gwvzY8D7q55y1ezwaZUvbzcRERlW1hcnHqkYke/20X7Y6YER4Dp3leo/ZEmEQeGa/NnC/nOQ2t1vkj1J8QdqtfIN78RNjWR+nMsuCUem3qpmQ6J8gGaoQrLHbA1YTCR/3EJj7vjgWfzw91A2vqhDbJC7ETauhyeiJU+5/WhunLx1o9eg+zDOpI=",
       "expect": "field_authentication_failed"
+    },
+    {
+      "name": "sessionId avec « : » (AAD ambiguë) : invalid_input avant l'AAD",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100:x",
+      "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "value": "gcm1:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ",
+      "expect": "invalid_input"
+    },
+    {
+      "name": "messageId (planId) vide : invalid_input",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "messageId": "",
+      "fieldName": "plan",
+      "value": "gcm1:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ",
+      "expect": "invalid_input"
+    },
+    {
+      "name": "identifiant invalide et préfixe gcm2: : invalid_input d'abord",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100 ",
+      "messageId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "value": "gcm2:bW1tbW1tbW1tbW1trnZlRLH+gB5Zjdf6Dx3wEBH9FBwyIJUeY1aOk9EZmV69dpwD1Ehbl2mmbTMAUrg8pYRqCykLHgmPH294FUGhYonHhk4ANyTnttX59FSddYUwBO6doOKTxKuY86PRTac4hBlk6G1m8AD1oY8juzNNJ3nM0pmMZj/9s7wHbCySRM0WHmOM/JPGIgtetPA0f0wnGsDRuJPOLxukQi4FNzC1WFFl56OXNw2dZML9F1fA5Ni506kyfze+rStJXq5a5YtiMgDc4nk3x5qSX3Nl02D9QyHpOfmla6Lz37JvfzKJ5F2YaQKMbAqEVEUWurqhtntvnzK8ZOOOctVylGb6NqrQ9Hy1qp16J3Amdlgj+Wm8q9UxxJJ2lJsqEh6CGoRuglkeUmR1lg++ZA19dXwQnTrZEewkVbFA6vlVzS6nzbwy2eMmY1rn+7vykfkJOP30fdUCq2wSmWG77JFAeWjFCuuNzF1jtoNoT3WzIVTAPnwqPGUYt4KRQws6anuhDo+ksihgwu3H7pcAL4z7XxepW6skCZQBwb5YpLkjDjgY52x6Oth9ZOFRlgQoZUHAd40uopuyb6UzOrmYHrtp1Qa9vN41ECIvdykxho/7VD/2zVTie/5HbeVX+rVopSNGyGHCWtE62+Mz8xEwDOVeucictKP9ofXCsQ72a5CboVUvfrbOB8406Egi5SF6MphqKMNsaAdH2G3vO/Q1/WJEoe+wqQ0SZMVepKvdyGHO93bkF+G+u7Rw+QSXQmwCzyNY4haVcWUXlinSr6usS7Pr4bdPMJnQRcxhH1Z1nAwGjDXHo9wpFCVkc0bF3bPWuyReUNHWUNm95OnLT4IEqmmxQUbAsTptRxjnbEh7u1n5fe2vHInlSl1Gz/0R5lGx7Or7UQS9YEKuGdeQ7Mxy4HQ0lh+i//grEkGBEwq7V6bIUb4kUeUR2nLAwth+9VoJMh5sP07ZBVSWQaQC8gAbxTmOC9UDfRLA0H6EMeUEhNneShFHdXFeJKAqOP6bPGOQY5rhmQxJJWG8uVptG/C6T1yoQ4SBT32A+PPIOdVEzJ5gOYjDqFoTDLpfpJzIGcC90lpm7/acOBRDWcBAj2Qzq8splsPvLqiQ7PpcY4slr91/i7ALBjm7yBi6SM5htPsAjvzHBN2E5/KMfJxKUgG9U0ufmAvhC8gsOByJ+t+rKhLJP2N6a7dRNsyfn777LBGmfodoKNzKc2xB4Qa222ykEm0cjxORRVwsSbnBGISH7l4C9y5bnMbkINbZ",
+      "expect": "invalid_input"
     }
   ],
   "validationCases": [
@@ -11843,6 +11920,3914 @@
       },
       "expect": "plan_invalid",
       "detail": "plan_too_large"
+    },
+    {
+      "name": "extension en capitales ASCII (Plan.MD) : minuscules ASCII, admise",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Plan.MD",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "extension en capitales pleine chasse (plan.ＭＤ) : aucune casse hors ASCII, refusée",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1795000000,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "thread.create",
+            "args": {
+              "name": "budget",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "thread.create",
+            "args": {
+              "name": "annonces",
+              "type": "text",
+              "spaceId": "cm3spaceexample0000000001"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "Lancement"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "file.create_text",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "plan.ＭＤ",
+              "content": "# Plan de lancement\n\n- budget\n- annonces\n"
+            },
+            "after": [
+              3
+            ],
+            "argsRefs": {
+              "folderId": "$3.id"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "server.call",
+            "tool": "create_task",
+            "args": {
+              "title": "Valider le budget"
+            },
+            "after": [
+              1
+            ],
+            "argsRefs": {
+              "description": "$1.id"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid",
+      "detail": "plan_args"
+    },
+    {
+      "name": "101 actions et un nombre décimal : plan_too_large avant le calcul de JCS",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1.5,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d1"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d2"
+            }
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d3"
+            }
+          },
+          {
+            "n": 4,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d4"
+            }
+          },
+          {
+            "n": 5,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d5"
+            }
+          },
+          {
+            "n": 6,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d6"
+            }
+          },
+          {
+            "n": 7,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d7"
+            }
+          },
+          {
+            "n": 8,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d8"
+            }
+          },
+          {
+            "n": 9,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d9"
+            }
+          },
+          {
+            "n": 10,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d10"
+            }
+          },
+          {
+            "n": 11,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d11"
+            }
+          },
+          {
+            "n": 12,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d12"
+            }
+          },
+          {
+            "n": 13,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d13"
+            }
+          },
+          {
+            "n": 14,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d14"
+            }
+          },
+          {
+            "n": 15,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d15"
+            }
+          },
+          {
+            "n": 16,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d16"
+            }
+          },
+          {
+            "n": 17,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d17"
+            }
+          },
+          {
+            "n": 18,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d18"
+            }
+          },
+          {
+            "n": 19,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d19"
+            }
+          },
+          {
+            "n": 20,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d20"
+            }
+          },
+          {
+            "n": 21,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d21"
+            }
+          },
+          {
+            "n": 22,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d22"
+            }
+          },
+          {
+            "n": 23,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d23"
+            }
+          },
+          {
+            "n": 24,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d24"
+            }
+          },
+          {
+            "n": 25,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d25"
+            }
+          },
+          {
+            "n": 26,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d26"
+            }
+          },
+          {
+            "n": 27,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d27"
+            }
+          },
+          {
+            "n": 28,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d28"
+            }
+          },
+          {
+            "n": 29,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d29"
+            }
+          },
+          {
+            "n": 30,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d30"
+            }
+          },
+          {
+            "n": 31,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d31"
+            }
+          },
+          {
+            "n": 32,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d32"
+            }
+          },
+          {
+            "n": 33,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d33"
+            }
+          },
+          {
+            "n": 34,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d34"
+            }
+          },
+          {
+            "n": 35,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d35"
+            }
+          },
+          {
+            "n": 36,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d36"
+            }
+          },
+          {
+            "n": 37,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d37"
+            }
+          },
+          {
+            "n": 38,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d38"
+            }
+          },
+          {
+            "n": 39,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d39"
+            }
+          },
+          {
+            "n": 40,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d40"
+            }
+          },
+          {
+            "n": 41,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d41"
+            }
+          },
+          {
+            "n": 42,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d42"
+            }
+          },
+          {
+            "n": 43,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d43"
+            }
+          },
+          {
+            "n": 44,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d44"
+            }
+          },
+          {
+            "n": 45,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d45"
+            }
+          },
+          {
+            "n": 46,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d46"
+            }
+          },
+          {
+            "n": 47,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d47"
+            }
+          },
+          {
+            "n": 48,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d48"
+            }
+          },
+          {
+            "n": 49,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d49"
+            }
+          },
+          {
+            "n": 50,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d50"
+            }
+          },
+          {
+            "n": 51,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d51"
+            }
+          },
+          {
+            "n": 52,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d52"
+            }
+          },
+          {
+            "n": 53,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d53"
+            }
+          },
+          {
+            "n": 54,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d54"
+            }
+          },
+          {
+            "n": 55,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d55"
+            }
+          },
+          {
+            "n": 56,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d56"
+            }
+          },
+          {
+            "n": 57,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d57"
+            }
+          },
+          {
+            "n": 58,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d58"
+            }
+          },
+          {
+            "n": 59,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d59"
+            }
+          },
+          {
+            "n": 60,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d60"
+            }
+          },
+          {
+            "n": 61,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d61"
+            }
+          },
+          {
+            "n": 62,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d62"
+            }
+          },
+          {
+            "n": 63,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d63"
+            }
+          },
+          {
+            "n": 64,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d64"
+            }
+          },
+          {
+            "n": 65,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d65"
+            }
+          },
+          {
+            "n": 66,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d66"
+            }
+          },
+          {
+            "n": 67,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d67"
+            }
+          },
+          {
+            "n": 68,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d68"
+            }
+          },
+          {
+            "n": 69,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d69"
+            }
+          },
+          {
+            "n": 70,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d70"
+            }
+          },
+          {
+            "n": 71,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d71"
+            }
+          },
+          {
+            "n": 72,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d72"
+            }
+          },
+          {
+            "n": 73,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d73"
+            }
+          },
+          {
+            "n": 74,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d74"
+            }
+          },
+          {
+            "n": 75,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d75"
+            }
+          },
+          {
+            "n": 76,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d76"
+            }
+          },
+          {
+            "n": 77,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d77"
+            }
+          },
+          {
+            "n": 78,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d78"
+            }
+          },
+          {
+            "n": 79,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d79"
+            }
+          },
+          {
+            "n": 80,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d80"
+            }
+          },
+          {
+            "n": 81,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d81"
+            }
+          },
+          {
+            "n": 82,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d82"
+            }
+          },
+          {
+            "n": 83,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d83"
+            }
+          },
+          {
+            "n": 84,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d84"
+            }
+          },
+          {
+            "n": 85,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d85"
+            }
+          },
+          {
+            "n": 86,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d86"
+            }
+          },
+          {
+            "n": 87,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d87"
+            }
+          },
+          {
+            "n": 88,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d88"
+            }
+          },
+          {
+            "n": 89,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d89"
+            }
+          },
+          {
+            "n": 90,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d90"
+            }
+          },
+          {
+            "n": 91,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d91"
+            }
+          },
+          {
+            "n": 92,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d92"
+            }
+          },
+          {
+            "n": 93,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d93"
+            }
+          },
+          {
+            "n": 94,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d94"
+            }
+          },
+          {
+            "n": 95,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d95"
+            }
+          },
+          {
+            "n": 96,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d96"
+            }
+          },
+          {
+            "n": 97,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d97"
+            }
+          },
+          {
+            "n": 98,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d98"
+            }
+          },
+          {
+            "n": 99,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d99"
+            }
+          },
+          {
+            "n": 100,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d100"
+            }
+          },
+          {
+            "n": 101,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d101"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid",
+      "detail": "plan_too_large"
+    },
+    {
+      "name": "2 001 dépendances et un nombre décimal : plan_too_large avant le calcul de JCS",
+      "plan": {
+        "v": 1,
+        "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+        "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+        "toolCallId": "call_7",
+        "createdAt": 1.5,
+        "expiresAt": 1795604800,
+        "summary": "Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.",
+        "actions": [
+          {
+            "n": 1,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d1"
+            }
+          },
+          {
+            "n": 2,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d2"
+            },
+            "after": [
+              1
+            ]
+          },
+          {
+            "n": 3,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d3"
+            },
+            "after": [
+              1,
+              2
+            ]
+          },
+          {
+            "n": 4,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d4"
+            },
+            "after": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "n": 5,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d5"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          {
+            "n": 6,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d6"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          {
+            "n": 7,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d7"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
+          },
+          {
+            "n": 8,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d8"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ]
+          },
+          {
+            "n": 9,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d9"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ]
+          },
+          {
+            "n": 10,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d10"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9
+            ]
+          },
+          {
+            "n": 11,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d11"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10
+            ]
+          },
+          {
+            "n": 12,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d12"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11
+            ]
+          },
+          {
+            "n": 13,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d13"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12
+            ]
+          },
+          {
+            "n": 14,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d14"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13
+            ]
+          },
+          {
+            "n": 15,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d15"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14
+            ]
+          },
+          {
+            "n": 16,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d16"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          {
+            "n": 17,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d17"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ]
+          },
+          {
+            "n": 18,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d18"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17
+            ]
+          },
+          {
+            "n": 19,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d19"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18
+            ]
+          },
+          {
+            "n": 20,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d20"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19
+            ]
+          },
+          {
+            "n": 21,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d21"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20
+            ]
+          },
+          {
+            "n": 22,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d22"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21
+            ]
+          },
+          {
+            "n": 23,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d23"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22
+            ]
+          },
+          {
+            "n": 24,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d24"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23
+            ]
+          },
+          {
+            "n": 25,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d25"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24
+            ]
+          },
+          {
+            "n": 26,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d26"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25
+            ]
+          },
+          {
+            "n": 27,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d27"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26
+            ]
+          },
+          {
+            "n": 28,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d28"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27
+            ]
+          },
+          {
+            "n": 29,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d29"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28
+            ]
+          },
+          {
+            "n": 30,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d30"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29
+            ]
+          },
+          {
+            "n": 31,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d31"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30
+            ]
+          },
+          {
+            "n": 32,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d32"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31
+            ]
+          },
+          {
+            "n": 33,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d33"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32
+            ]
+          },
+          {
+            "n": 34,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d34"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33
+            ]
+          },
+          {
+            "n": 35,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d35"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34
+            ]
+          },
+          {
+            "n": 36,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d36"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35
+            ]
+          },
+          {
+            "n": 37,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d37"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36
+            ]
+          },
+          {
+            "n": 38,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d38"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37
+            ]
+          },
+          {
+            "n": 39,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d39"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38
+            ]
+          },
+          {
+            "n": 40,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d40"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39
+            ]
+          },
+          {
+            "n": 41,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d41"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40
+            ]
+          },
+          {
+            "n": 42,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d42"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41
+            ]
+          },
+          {
+            "n": 43,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d43"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42
+            ]
+          },
+          {
+            "n": 44,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d44"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43
+            ]
+          },
+          {
+            "n": 45,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d45"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44
+            ]
+          },
+          {
+            "n": 46,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d46"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45
+            ]
+          },
+          {
+            "n": 47,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d47"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46
+            ]
+          },
+          {
+            "n": 48,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d48"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47
+            ]
+          },
+          {
+            "n": 49,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d49"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48
+            ]
+          },
+          {
+            "n": 50,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d50"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49
+            ]
+          },
+          {
+            "n": 51,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d51"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50
+            ]
+          },
+          {
+            "n": 52,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d52"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51
+            ]
+          },
+          {
+            "n": 53,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d53"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52
+            ]
+          },
+          {
+            "n": 54,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d54"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53
+            ]
+          },
+          {
+            "n": 55,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d55"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54
+            ]
+          },
+          {
+            "n": 56,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d56"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55
+            ]
+          },
+          {
+            "n": 57,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d57"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56
+            ]
+          },
+          {
+            "n": 58,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d58"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57
+            ]
+          },
+          {
+            "n": 59,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d59"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58
+            ]
+          },
+          {
+            "n": 60,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d60"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59
+            ]
+          },
+          {
+            "n": 61,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d61"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60
+            ]
+          },
+          {
+            "n": 62,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d62"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60,
+              61
+            ]
+          },
+          {
+            "n": 63,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d63"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59,
+              60,
+              61,
+              62
+            ]
+          },
+          {
+            "n": 64,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d64"
+            },
+            "after": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30,
+              31,
+              32,
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43,
+              44,
+              45,
+              46,
+              47,
+              48
+            ]
+          },
+          {
+            "n": 65,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d65"
+            }
+          },
+          {
+            "n": 66,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d66"
+            }
+          },
+          {
+            "n": 67,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d67"
+            }
+          },
+          {
+            "n": 68,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d68"
+            }
+          },
+          {
+            "n": 69,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d69"
+            }
+          },
+          {
+            "n": 70,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d70"
+            }
+          },
+          {
+            "n": 71,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d71"
+            }
+          },
+          {
+            "n": 72,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d72"
+            }
+          },
+          {
+            "n": 73,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d73"
+            }
+          },
+          {
+            "n": 74,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d74"
+            }
+          },
+          {
+            "n": 75,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d75"
+            }
+          },
+          {
+            "n": 76,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d76"
+            }
+          },
+          {
+            "n": 77,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d77"
+            }
+          },
+          {
+            "n": 78,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d78"
+            }
+          },
+          {
+            "n": 79,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d79"
+            }
+          },
+          {
+            "n": 80,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d80"
+            }
+          },
+          {
+            "n": 81,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d81"
+            }
+          },
+          {
+            "n": 82,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d82"
+            }
+          },
+          {
+            "n": 83,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d83"
+            }
+          },
+          {
+            "n": 84,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d84"
+            }
+          },
+          {
+            "n": 85,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d85"
+            }
+          },
+          {
+            "n": 86,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d86"
+            }
+          },
+          {
+            "n": 87,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d87"
+            }
+          },
+          {
+            "n": 88,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d88"
+            }
+          },
+          {
+            "n": 89,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d89"
+            }
+          },
+          {
+            "n": 90,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d90"
+            }
+          },
+          {
+            "n": 91,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d91"
+            }
+          },
+          {
+            "n": 92,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d92"
+            }
+          },
+          {
+            "n": 93,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d93"
+            }
+          },
+          {
+            "n": 94,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d94"
+            }
+          },
+          {
+            "n": 95,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d95"
+            }
+          },
+          {
+            "n": 96,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d96"
+            }
+          },
+          {
+            "n": 97,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d97"
+            }
+          },
+          {
+            "n": 98,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d98"
+            }
+          },
+          {
+            "n": 99,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d99"
+            }
+          },
+          {
+            "n": 100,
+            "kind": "folder.create",
+            "args": {
+              "spaceId": "cm3spaceexample0000000001",
+              "name": "d100"
+            }
+          }
+        ]
+      },
+      "expect": "plan_invalid",
+      "detail": "plan_too_large"
     }
   ],
   "levelCases": [
@@ -12830,5 +16815,302 @@
       },
       "expectStatus": "failed"
     }
-  }
+  },
+  "clearCases": [
+    {
+      "name": "plan_result : n écrit 1.0 (pas un entier JSON)",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result:1",
+      "plan": "plan",
+      "clear": "{\"outcomes\":[{\"n\":1.0,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"skipped\"},{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+      "ivHex": "a0a0a0a0a0a0a0a0a0a0a0a0",
+      "value": "gcm1:oKCgoKCgoKCgoKCgWe82ExtymoA3nMJP6DPYfV7OiJsm7I2PV6oHrP8Wn9iov9TolNM/6mEM2VNXZA2Ev6A3CiFpSwAhzz1qMIyeCYbP0oVO6QbNEZjZKjrdexsn7386q/RQP3CPzkhq5Q2b/Zq9m995oFMiRnEr/UlGLcbn01VMDKXF2iJ9FJXFFE+aVcKx1levHQ3nnF8+SrWa/evD1iX5cJv3pMlY1qu40sKboPaqSr4wTiiWCu0kOFU5Vp4KDlfxpSIKh1oB62UN5yaNAQb3m9RL7pKM6N7UEpga7pSrhkUOv/lAH5EzlctvoyHS1TmdC9GJWjkUSflzAf8/4sadJ97mJSYJVC02n3CIjPuIMbXv4KTNwYSJ4WNXc/On18VP6BncALcfxPCLREyG5lcjfnan23VAOJbzTq260oCEjhefiEUFqJ1SsWX8befQfvXh7hThKlWbT4o8yEmh340oifH5tyk0qMYebn7qlk+lgmUPe6qG2SZeqI6+Oh85FR0tjG9k92El52RlfBtsgd1gZorwurZFJ68nZJgIS9B6wzBxVfYEfs1xsRGaH9/usKN7UPpoKmqYMkw6zAzoxg==",
+      "expect": "field_invalid_json"
+    },
+    {
+      "name": "plan_result : phase écrite 1e0",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result:1",
+      "plan": "plan",
+      "clear": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"skipped\"},{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"}],\"phase\":1e0,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+      "ivHex": "a1a1a1a1a1a1a1a1a1a1a1a1",
+      "value": "gcm1:oaGhoaGhoaGhoaGh+5DGArF127oMTBIraCFUMqzCvDTJuK6xxGlcCFAt1e49eio1U+pGhp90kEQ6PqCEZMuihhp4PLQDwqIi7FS36WNezRKTOVRVo0P4VBE2XO17NS/EwSqqDA0oT2OmTOnpVS5e2FOXc3fB18recUUVOH4MHqRaBm9fEBUopsAgUjyUOVfygBqufPWBjt+jSKuNeu7XJLBb7OANZQM/TYvbz4myhZ0oA4UXBKrA5xbZW2iMmC2ALQgP5YJHAU4zoJ97kpNfL8zgDAzf1nfSzmPYhVsjtyWV9PBql+EuPb0hwAuvP/VBjp9Dp3+xnfA4IXJKi2FgMpPPc4JqaVDS3ljgR7bkow5hCtCj4VP9zPvuzuhBqRlEMLyMw1292FxIFvgnLD0PwankjuGj7CAwP8yBgCu1XqM6dmBSXzA5jPgCBFoVJ/UrBsR6lC5SqHlqhm/V9q3667qY7ujROvHc2VXAAkfd6wlcr2Wv5P8ipJzfT+B4DDZuIT1ORWGbVMaFQwTXuTYNQxDPCsKjzbMAHQwjIClOOSSMrSdltePtxMDwati+RtDUcsG7PNGuqd8HtXxZdo047g==",
+      "expect": "field_invalid_json"
+    },
+    {
+      "name": "plan_result : v écrit -0",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result:1",
+      "plan": "plan",
+      "clear": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"skipped\"},{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":-0}",
+      "ivHex": "a2a2a2a2a2a2a2a2a2a2a2a2",
+      "value": "gcm1:oqKioqKioqKioqKiTvmlV/kGSgNzM7ks1ltpZ+b8gIN1FwX1xfbMu+fAguhPJdAT3qZnb6gEgdmWR+wSdLK0INs44goB/AJAz/q3T4byDRnSodebvpv2X2vb3dzZY8Enpi4nrgxsEwgfVADMOJRqTS2a1/2cYrMP8zpxzVHzNyZazbO2e0f3FNJdLcUToP+HjWHen/PsZZydPNKHI/sWSMQmFKDgq7n4ZaiqKCYxd4A5AEIEtDPBZpcL2NY1YE9FX6Ibr+dbx1xeO6XGJ+a8zK5ZPubFSfGLBXVaCNxd70R0HunaZTlqP93kX/S931lattBkGqWwI5hUIbDWCfl+QIc1PVkZng/AwccTMdyXRk6TMMhOsgx5YKcLTRVidtqnpI/ntqy+UPnBfTTc3U4lkwCWvMDhjsbqgYbuaMkc/lp11hjXYycU1RMygHfC/hgCgbUQZRUvMe9JF40B9j/RgCwTOtYr4cVtKNv5VQqWppwvgDKe/AdDzfFlhyDZz6ITE1QFH714PHgjdEMmJjzHxHdjutcE7CAWx557LHv7tm7KGeokhfHVT0A4BPuk+L22tSD8K0L1n7ZXYJjhk+0Z",
+      "expect": "field_invalid_json"
+    },
+    {
+      "name": "plan_result : v écrit 1.0",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result:1",
+      "plan": "plan",
+      "clear": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"skipped\"},{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1.0}",
+      "ivHex": "a3a3a3a3a3a3a3a3a3a3a3a3",
+      "value": "gcm1:o6Ojo6Ojo6Ojo6Ojpjjzs6a2lOb8x8yfa9HYySFL0NIWPCbHO2TXxQNYBHMGNZtpIOY6FQiwLDbwEP42r2ATH86OKbKv/lbpelDNCM0BzRFCn7GvogcG2TANHxkQX18CZbTBV5DZD99WPXP1gTL4ciXjzC/Oj8MLacuMOE34POFl2yTdoFSp2Tx6i8nFDR1kBVU8WPJv4DpLkewW4+EUT83VBzNu/mnkXtlEwb/eXKKdUXS35zhB688ly0R6GZgepBFmy+eYS6QXwyEkY63e3wx9R7cBJWJ+yOeBC/a3xvhet5mzg0ZW4CzLkwidanbDFWdOL2OaFCLJuhoSgxgt2tLsFbSa7TOpvMzRDMMlYz791/z3TeyY7Sa3pWPe2prxDSmdHiNPCBhYkB5oWUO6MQm6lvCIxVPulKvVZVIX/dHlkwGKVExcOdtJDqIzn9t1VIKZ/FOkKtZdFM1CbJq6fNu9N9bz3EYLs0JlrjleS2PO+8LqmAFUP/ShrBcnlGirydFrDLNmGB0xVUi00pr7qx/hqcfQtrUZysumYT85/66wPaXnODRAuMqMiYKdYPS9BCyulpN5c4ngah5ZS+cedw==",
+      "expect": "field_invalid_json"
+    },
+    {
+      "name": "plan : after écrit [3.0]",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "plan": "plan",
+      "clear": "{\"actions\":[{\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":1},{\"args\":{\"name\":\"annonces\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":2},{\"args\":{\"name\":\"Lancement\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3.0],\"args\":{\"content\":\"# Plan de lancement\\n\\n- budget\\n- annonces\\n\",\"name\":\"plan.md\",\"spaceId\":\"cm3spaceexample0000000001\"},\"argsRefs\":{\"folderId\":\"$3.id\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[1],\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.\",\"toolCallId\":\"call_7\",\"v\":1}",
+      "ivHex": "a4a4a4a4a4a4a4a4a4a4a4a4",
+      "value": "gcm1:pKSkpKSkpKSkpKSk2rBH8ljnNGx5LAc4M23GliijvTIVP6cVNLpqUa4xuZ+7hzJUGWXfKKrO8jGFF699gRtMzsEAOkaXvxLp8xUztDhPqYksVGCwPApVc1nrwsgVPdUZ94lDDIqxKFuhaslXEhxtVNQeswRJ+H61ilkTI9WB38By2VctUAOvN/yAms5tbndp3oU1bG5B7gmsyHguoYoOLSJ0DFosjmED8wr+/aXPL96HU38cDpUR2doMkxJt7QgqgIkvgOV3rWIgkJKnD089+FJUbcR2fh8/MfY/FsF+IkUfvnGR9XBzdNhiFDFxl7DgjNKLpyH/SfRT+r1r9szibUbs0WjPz2PE8Zg0MyOCakWgQjrofknNV9jnnek7KvIukhVRLYFKYdGbCgRYTmqv0HXTK4Lx+FAAumUfuSFanGGMHUwO9YuH9I83XvVy/3pKFj9oB0Z/9/h7e8s8DgZM3jiuCs9nlifymGKRIdK8qDkyEqYpAQiGLp9xfZ0MCHgVdiriyWf2iBuvXcw4TQ8ko5uPJJiq0Yn/GqwiNFWIyvkZhXW/EPQZh/9dNe0vx/1KlGRaNJyliT5BQWM46LDnXAGaZrxvIe4yHpEVp/q8UtAMpqi5bVu10Tn92fl6s0G2YVRAZCsgjHGe8qzC28U/9re2zepF6cxGkLFX/sur/sUfCJ28YluHyjIb+/1xn7oU0ZdAJl37/bCTAPnZA/TfWYVSDaZ5W+BZWK3RvbatA8JjI7K5lXMWGOhIWs8Z6f72TtTBYfRShrHI56I4QlkEZ3tMb3diT9INdKdLtfODUxxE6GM6fa1jk4+re0dEkVxzGj9I/CtCbRqpTin3DvnXR3/BPZx+eJGuSnMgVQlMZuBs5ZFAncqiKcgS05QghmgcoH7HpHTq5W8Kos4b/1XhwJx9ebdvT9GCgq+qFvcnxCmiRmI5jM3R0g+XcWxfecrxM6vuGO2jtLW+J9r7veyjqyaUYWUUNABCxR4Z1A/T/R2LzIPfJlPnhOjkhqg1TVNuXfbsU1CkaMyCg3+UHt9gaAHLOkVOS+1b2+ZyXFnylEkCdwKR5L6d4u4ZRSS861pI9HbpEJdIPJOMQ/vt7HVrzc3R5Y/PNvtvtUgzYJhL3DjDdMBd3qq4A1y5PVZ6VHKoV9eeYVIQl816AKolx9jsLoR3/aQVS+eFUs7ZVhCqnxtDy/4nTbd57AYPhI1hTbGnd7ezVGoGsIQZzjyrKJmNqPhBYFgk9pP2Mo0vFAze3Z2CVLCcjBRv7gyrVUplaWA=",
+      "expect": "field_invalid_json"
+    },
+    {
+      "name": "plan : n écrit 1e2",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "plan": "plan",
+      "clear": "{\"actions\":[{\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":1},{\"args\":{\"name\":\"annonces\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":2},{\"args\":{\"name\":\"Lancement\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\\n- budget\\n- annonces\\n\",\"name\":\"plan.md\",\"spaceId\":\"cm3spaceexample0000000001\"},\"argsRefs\":{\"folderId\":\"$3.id\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[1],\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"kind\":\"server.call\",\"n\":1e2,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.\",\"toolCallId\":\"call_7\",\"v\":1}",
+      "ivHex": "a5a5a5a5a5a5a5a5a5a5a5a5",
+      "value": "gcm1:paWlpaWlpaWlpaWl53qzGgQ2jH71rVPbTc0ST9m7OshCwB4TSknS+Vuw+8+fVQziXjpAAkBRSX7b1xyxn9lP54tVD6BW4zsOP33GP424wYej57f8WVNw715aUOyNj9D0qPDvYp468C2KeXRwN1cghsDyRDjEoBnh/jF4HSJQ+zR5GhvNfKGX8D+QsfwwRlLv1m43CEsEATS5Hr3tjC/rMolDwnAe+PyD3FirREhltebVrclLfAU+X55iifXGuNKIp0p/TtTcTDhBYxI2t1aIOyyo4KAvGsby21P4uz1YsTyDNfPP/xx9qiCt0r620H54Ix/6aB9QOoze3Gl8ghAIpJBwHrl1m32V05v8inLjMR9rqZCR2HJZ5wt5yvghFOtMsz57afDPOyLmWxSuVx6O2ZiMjNtSQVndygmOsokfwv6mNxTVFvudaFlebCRimerEkzvYOGelKwFj8IWEXo16Q7kVWvs+XHeQ5Lv7hwzVaLr02kUWx6LuYPaKNgNPtHkhnD0xUzMPpiQHolWmFXDE0UmLkAoD4wxtRrlJBVRkLQh6WormyMvf6gDpxb+jedcS7Qu76lA7glq2tM7Qu8RtXrJ3zacpz6JGvyX9gWFDMfi/kiMDMXRZ0gCdC5TODQ5wJ8Fe1EBN5jo+3Qk6rR8UUu2Qs8MvnqpdZBOdkK6JIOWZ602BkQ81FD93+HUYmOJ3ISraXWtxigbIW6i2jchYS10BVUsCjE+bV4ef2/Ao6OREX7FtI2AQiRenH7TGUgDMaEvRfarHAKWh/c+raxC8Sbkfsg3eyXr39ZfUl1bf76iA7wbFvhHT9Z3eb/dK+E9NWFUD7pwhl/aqDzlrwCNZiW0zCVlX91Vhnt3GQArkF1Pfc+u1Ou+IB+N4P7RZgD59yG3CV+cPw9dRAGppSoXz7kefMhWtixDowDpIrjFMFkoProbqIHFv6K0qlhYkOLS8Nch0rqAbMtbRpNJczZAO4uMihFKX3IxxtBZh0j3p0K3o3uu2lKwA4gL406ou9kvoyBGPZ9GqgV20urT3Ea64M23Gd5GOQYUogNVTVnjGG9rkdorJmCA/IULlpgxjsAPGDTYer+Om2zkUgZuHKD4Uxd9psABid6SBxoAXIAJ6J/5dL559VHwo5nValjigIGun0xLfTjxCzxOcGOPK0I4neHtaiY+pcvhMLfxMWTZRTu7SfmnKgaaPdG8I6esXVSs6FuzPpB/ZSZKY/A5vl346yXOZjABz1cruPIuWkgS75WuAcpaHTz4Q0TQBfDl1+SA=",
+      "expect": "field_invalid_json"
+    },
+    {
+      "name": "plan : n écrit -0",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "plan": "plan",
+      "clear": "{\"actions\":[{\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":-0},{\"args\":{\"name\":\"annonces\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":2},{\"args\":{\"name\":\"Lancement\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\\n- budget\\n- annonces\\n\",\"name\":\"plan.md\",\"spaceId\":\"cm3spaceexample0000000001\"},\"argsRefs\":{\"folderId\":\"$3.id\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[1],\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.\",\"toolCallId\":\"call_7\",\"v\":1}",
+      "ivHex": "a6a6a6a6a6a6a6a6a6a6a6a6",
+      "value": "gcm1:pqampqampqampqamjPJNvDMnkLeG0Z5G1f9yQeJPD49+t7G79gTGe91QwzSr9NvjyvNvG8T5jo9dQtq4w/jATJhJyoALjRprJt1ItGkfEskq6persJCvoHqPTUlRNJTFtBL1zwxb/ClcnlEWPuCWtXqUkEZBqaO/D9q1nO0TiMurQ0J6rKQw9cCGc3mFBxI2GmnJtOLkqrS6gq/9Oi5tux7x4fZ35rdddNVSWOw+2jtr4g7xqAP1YlMFSXmRxTuloBize3XHjT0Mo6QHMNC3pCfVUCM4eG5iBQ3MVsU5mOhoTWUfUy0kMHg1WOfEYNVlnf3CaDp6G74Yj74CI/nk1hdbaRzggwCrlHS84ye8HW1exTKnJhR6rBoGDun8gJHX/ulh+S4N8zxgMTFHB4JZNRdQXP+M9GCZT3fvu/g8Ry5UdRnHWiLZlh/zzwB9IldunO3kHNCga4gmfOdjeXbuSX0rY3pKeXEnNSDaKUcjT1FZjvx8eBDRGRmQKqbv6NjpVnrQD0usrUvTsCIjaVqzaKc9NxMvxDZ2dT07opYQnw4Le9uGTp+G/nMZOkS2NbV9fpK7SajJda4vA7FB5uLXaynR1YuchsqIA/1wW8zknlX1m6kc2jEaOVB86bbe/R5FZ/eii6VCZd4yCQwDuikZjoBtBKKhfDVuQz/MksDLVBNFNJZQ2UffxcT0oOx2LhNz+dPQpl+B8J5f+WAWDYv6t3aXR30zP+enKoKTnQSnVg98nruxb/3Eg/nXLl7nfTGj7jlOnWWe0285BZRtfgPIiiUaOl5kzp0NqVmmDyCkF48Ux9kuJp91DpVgINjAsHvXNFgxY4UoqxW60Aiofxxi2635B+4DoaICJu0n4An2twZ0LXnJV1qT9En3CIdaJl/YV3aeJnwlBpaAh/6BeFqkCu9iG64ScdzcaDlSUTm4C+kRwkKBE562Bpx5gttt8xsJam4oQhv9LU5MbQ7vzHmtDtmd0IMM1/798nSdKkNq0kV1N/jwdB/3xQ3P8NqRnJN7u6GU/Zg5cn1DoVm+tqhJQFWctOfs0iqDqzdpa2JJyIyt/lIy8aUze4OxdQ3/WdQXjrRwxrki7MECjBi8rSWtzPu2O3XD0YfM0JHSUSDtusyObO0utq3n3APLVicaVJzx9UpqPR4ZBdFTMFobSz06WAKOTuehnV7Zfi8Hch/8bHRuaXVol91CbC6klLIkHvlZ/qJhGmYHxG7xEUsixW/FhG3B51oYYKbmvRQDDU+eTnvZu7vx/bFbz97LOiofSw==",
+      "expect": "field_invalid_json"
+    },
+    {
+      "name": "plan : entier au-delà de 2^53 − 1",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "plan": "plan",
+      "clear": "{\"actions\":[{\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":1},{\"args\":{\"name\":\"annonces\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":2},{\"args\":{\"name\":\"Lancement\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\\n- budget\\n- annonces\\n\",\"name\":\"plan.md\",\"spaceId\":\"cm3spaceexample0000000001\"},\"argsRefs\":{\"folderId\":\"$3.id\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[1],\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":9007199254740992,\"expiresAt\":1795604800,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.\",\"toolCallId\":\"call_7\",\"v\":1}",
+      "ivHex": "a7a7a7a7a7a7a7a7a7a7a7a7",
+      "value": "gcm1:p6enp6enp6enp6ensi2ZTSgQd30p6HoR1w+P8FFe9r9x+4c0q4tdnYc9z17dlbHPDcLyqlaM3xKDwUKWTB3S+eR/lihs//XX1Ve3iu66c6dd7+oe4uRVcLh/zOoDOlFtukJX3Siu7bdKHN3fUynYCLrEwVcqKBuaCa/llQQZ8m0ktOB4k2DbufdCYJWqCcF97aaF91Zfz2G94G6XkZCfSs+3icZeidVpeBxhTcSlzX64meK/0Z9WuxMLKKqLZuPqPtb9+Ejmqhl4fgqq6unR2GsWEdDAPnfCpYbirlJdKYxd0ab6zonTN81+JaKilfQ+IMPuUbb+J72qZ3sj12V5B6BgbxuBb5mXix96ZbtBSxBjk5ZMbxJUdyqe1ZiKymQ4iJSiGQ9c+/Dy1NqYid20iJRnggfbJiSp5PnQQSZJP/nwr1/xfHw4TdZRZiZqLfycyNbzdFYbcNjeT6Ao4bO6Slhbn6EZ6hvopMdnxl1pZPlUGaMJYpzp4ZFqhc/znK2WQYBav/U/fChyWFzIbxv4DS7mc8NhinbFgtffQQyimwfsLr8nZ5z9qmQ+Xzc03lgc1F8TmKJmDY6Iw3QKdJq8FnzF9cHSSJELr3se90Y7RlsePGq4+OmAyjgrU9CUrhF8f+cjR0FTgItDZGBoABrIt3lHuRl3rcgZUJWOFML5CvYmmJog66jgjTM5HbzrnMaEYdSEocL4FAvkG+6nBDe9bPRo/h2E+asN+lK1zifPulIzY5unNdRlGF4SHYDU4QlHMVCVAFHey2e+q/a09e1cm9rA8+6y5WnLnmQg3nsNAByTASec61SZImpRsWDu86Yddme6e1oGihlsz1wyvtOKUPNfy68XMriH2IXTdLgVtu3dSqyCy3uOSkGDX3od915Xfi0XlBTkdmB7hGNNcZdLq4p6DeBL2DaZHsm2L0ozbW/nuigvCBjV///An51TQgd6sb4NFPKp7/XH3GR1rLJZ5sM7+wXzs/jBId9Kud2L9eQbyie+s3hHRPEtCeZ/PxV9gy+6HtfxzI5CCkJeCiFA/yiLuEPi7lWqYO5+H8j4lL+4Lhmc4qAA5N+iZiDnZBd/Tm1L8vFTMC5VeZpsJ59tV42DAh/C5z8IcSDcdEzsrJbqNT860iHTirjqXNo5/2UNh4S7d/r1hT2+cvV6Kjh2dVolfGKwzUqb4bBPernqds4R29VUyROxuu6Ou9UGJXrXjdZJklKUW/Q+g7hBhue0gVU7R4johVT7hJTS1ySINPlbPQsFMaX0eKPTY8Phz4xWkqiZ",
+      "expect": "field_invalid_json"
+    },
+    {
+      "name": "plan_result avec espaces : relu, même JCS",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result:1",
+      "plan": "plan",
+      "clear": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"skipped\"},{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"}],\"phase\" : 1 ,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+      "ivHex": "a8a8a8a8a8a8a8a8a8a8a8a8",
+      "value": "gcm1:qKioqKioqKioqKions+tC6JpaOt5fWOL3sMUhvCizX0kXSF/Ex5M92JCO4pUbx+giFK0USaN1uOciJZN/QvLakmn6FY+ujao72I6hW1xn5Sjg/yocQNA07LgCF5FTg4Rhu1FKFr1CAk4k5XlGRO/RiAvtxCz3QNOabVON5vb2ga3F+8yYgEpkd+6hDEyHVwZ6oEngbWP/g2ajWOCHl8MaFy7xRwJVdBCzxO4gH3Z3v2cMP6iN8yjtn7PwVWl8x1X8d/Hx7QyBqCY+iZlxxu8eORKc4J/g0B3PGtTCPOb/5PnxhZDMfO1sqa1v4EBAN+jaQ/Gb/85UPNEWTqyqz4Jwts2xq2ndJwR32jb681GXIv4wNLTheyHti1e0YLm28EQPGzoc7nQCPK2qmH8e/GraYtIk+79+++xhinU+FcZAn4t4fJiaTLpBfHbaAYlW82uFZLDPURhHEo10bZMck6SiJogaILEspD6fR5YN3So19IlnXB6JpISTYIBlC811SnzktRbxGhE1Dg+SyNmnBKym66VNzIaixkIC5XjHCnaRo86iRYUFkBgkX4eKnmDCo5WHN0xG54GdHRMXk3GwP6jBcc=",
+      "expect": "ok",
+      "canonical": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"skipped\"},{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}"
+    },
+    {
+      "name": "plan : demi-paire haute seule (\\ud800)",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "plan": "plan",
+      "clear": "{\"actions\":[{\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":1},{\"args\":{\"name\":\"annonces\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":2},{\"args\":{\"name\":\"Lancement\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\\n- budget\\n- annonces\\n\",\"name\":\"plan.md\",\"spaceId\":\"cm3spaceexample0000000001\"},\"argsRefs\":{\"folderId\":\"$3.id\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[1],\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"\\ud800Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.\",\"toolCallId\":\"call_7\",\"v\":1}",
+      "ivHex": "a9a9a9a9a9a9a9a9a9a9a9a9",
+      "value": "gcm1:qampqampqampqampBy7psCxqx8E+RliQ7lZP8SvGDA9kT7PYisihmj8NOCH7Ff294Y4PTWQgcHaMYgXkt4TCmToLA5omHv+iVsof4pwb5eLTpgPKctQKUeIGka+7OHPcGIBUPM+C3nnoLyZ8JGqxAXkKgj/xyOCxQ/htiJc2xJQfZsiKs2DKwwgerGTKA8L/8kyJYrtCI+LxajVbAkEfAwDr8cmyNmoQFGO6wSmjhH9v5rmd+EEkiKeA4uMDMkzBM/H+HGtiS8rTZh95ic12Ld3mSjiFvfn7yilIksLgO9aNxzRkN94d6mVRo0oxpqzMD5Eleot3qLxb1FZsOuVAKheS1zGV5ZEHvQPfxfv4it98tFQTWpPWJc9qZvf4foSNyw7ZS1bnK3zTkbYTvLXCx944lz1zj/evpDIq6xNSK7hZcW3bb2ZgxvmqXfOABRQNe7PTeO9FAmno4iN81zV99TZEY8jQdIpeG/dtkn9Bqoxg9tWlOpGMDGdY4IHk8fQW203brt0t36bZDGdkt5qXxNkCL2X59QTwU8GTf9RSCtXhwQqhs/286NUarTz58QtOcXm/MEtW6f3a2Xl9JzYm5O+HWpXMusjgCS3Gwhcim14aOj1zs0xOc5U12h/Xg7zJ4FhnwG1tl79GjUz0rGkpLT8cmzM2ierFBCtaEQA4c5mm8CUN1ijuoZ++GrKclciPpD8MnoFQdgWU40/b9ZI7Pet2z/vLFiuWGljVD+9oPCi99AlV+31aWngN/WrpjY1DKfFMjNSSr2kv7M5MbS+uusKFDIYaPNim7C9aR/NsyhTl/6E0d/1rZIZjiObm1hmMYDlJYNLa4pMYiNXA5iMkusGbH31FRizNrwkyOfsbjqdBRSMv+qKj1KCROg7MEMoSaEo9G3VeXvsicU1cpVgHh0oVajtezrtD6NaS06oc10ZN3hh6gjI6FbDfUMDc5kR0mZl0PvrQndECuB8oDqDjq6vDagidEp0//zx849vqxgAd2oGF30yS1QJLxisUbWNCWPEgy4aKg23T+g9z5rcl66ModJ15ckkZ97jCppPKqUz/TEZBlWU7DNRfLrEFf/JNI7/uGRxmfoJ3vPuz4XJVkbRHuIIV7A+56iLo4YykicD5g7VQMyx3v0HUUrRumqCiGIZa5zcMdor8Q7rbamX8Qpaj0UJhECaoz470U0qGJ6udVWZy6I/aXhiQpDDynmzetvMGAN5b18h9Zk6F3Tg2hUNcyviYHQlCKi3APkmw6SbVTncyJA78TvI7Y/8ZRADtldnA",
+      "expect": "field_invalid_json"
+    },
+    {
+      "name": "plan : demi-paire basse seule (\\udc00)",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "plan": "plan",
+      "clear": "{\"actions\":[{\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":1},{\"args\":{\"name\":\"annonces\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":2},{\"args\":{\"name\":\"Lancement\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\\n- budget\\n- annonces\\n\",\"name\":\"plan.md\",\"spaceId\":\"cm3spaceexample0000000001\"},\"argsRefs\":{\"folderId\":\"$3.id\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[1],\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"\\udc00Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.\",\"toolCallId\":\"call_7\",\"v\":1}",
+      "ivHex": "aaaaaaaaaaaaaaaaaaaaaaaa",
+      "value": "gcm1:qqqqqqqqqqqqqqqqCMCGEcDbGC6++hpCZpulKpykKFSxnykwR1EyXJxXLaTKwOpDXMh6A9MDqjuDRGbyw841e1fHBo0YBmH6gm7KFPiE+tPJD+IeRnZPbAXt9IdjAXxEgaT8liZnFXg9fIt25rC+XsYwaf1Si2d/jQkyovr6i62osFZifdbv9vwa1Dy6PIt8fLqn/7Pv07aqpQIpH12jo1N0Xq99npWSVGPLyFp5c6CTKwS8/MhmUmJDHPpuGyCgxB3S5ljBAQTneW1RnQtjIuwYwV/M20vwcmAZPH8aRgQrgt4Jk5VdRagk9VA/bW6JrLqIy2CLtQpozsEz+R5xDqLBY71X4DgGoqccq0mtlVYg8odjrsaGiu3ppGM0o3JTDZmMMnbBpycls7Od0EpalXyz6mPrH4WuEY/OeiSNpl3Inb9rT1JKu0u+irgh5VExW6CgrVZnukMV2Bd7PnhQEdHLjyr4Qv/+orzV9n6nJKByuei1lUMtDRKEv1vWBCy3EEciXknUbasuzHlJDNeNKnvBkPbV4sM5AfddOzlHZCrbEYdQ2fGfVMtVsaFUr32SMv01f8PHSIYEyn+ZdE18TNp5YREvCRRkH0gtDP9RCXJM0hxiJsbE01RVxorDneppSq44NrST15Dfc8XalkVKco6LniwrYSaTXxM05Nb4L7Cxh6ihFxWR9ONUt7e2fDDgki0sZwoh/GsW47OeZItVrnIblc1zmVW/MTBR0cwmsvsoLL7ndr42oPrSHH5A3PmphZdG1vcI1Xk6j3UP4D0H3cm8x35M01lc6L4Lkq8U82/rk8uDWwbDnuCffFx7R1mQEblFNKT5ebtjqKjvxBok6pQK9GR5pTwad1q/BNnlzzXbcNplSQchHke550rng3vYaMxX5fDARMpv5/154eeMn6IKxIc842++XU92Q/DxYvPhAqGigFc3hiy51RE4VsccFZx/MM2c1U9NpmAncroEtXJ9FpVtfJYgDn449rc76hIPKJ4/QGcyQ5bpjagJl/YeoE4/zBmrNE6wnmUlZ1ffFTYvAF3O3LavIUhUN7t5XCYQAjsk/oeDudRTnnOMZVaAtiLO5lq6rDiwtOuNthifTKJEixQaps7xU2opM8i5F3q+cxujIhdqcgoKFDtZvni8bO2eqgHz+SAGZrsAlEQVtdezp0T44/hA36Oun/TD0aX0LNuaGczvNU9zq5mEA8IH1SR6rYJklAWSP8TkgdjYbkAPN/bXesfw0CWa7KDXo+L0z6r1JrcrIrI154vzk6rGki/I",
+      "expect": "field_invalid_json"
+    },
+    {
+      "name": "plan : demi-paire haute suivie d'un autre échappement (\\ud800\\u0041)",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "plan": "plan",
+      "clear": "{\"actions\":[{\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":1},{\"args\":{\"name\":\"annonces\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":2},{\"args\":{\"name\":\"Lancement\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\\n- budget\\n- annonces\\n\",\"name\":\"plan.md\",\"spaceId\":\"cm3spaceexample0000000001\"},\"argsRefs\":{\"folderId\":\"$3.id\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[1],\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"\\ud800\\u0041Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.\",\"toolCallId\":\"call_7\",\"v\":1}",
+      "ivHex": "abababababababababababab",
+      "value": "gcm1:q6urq6urq6urq6urvyRvTSrUAGP9r/aKvbNPs1nfzU74EW9aIU4iI+sdlCS08c60yU14ihy+8tAsOsMjlIGTeOgT7TNchDeduWQ9pLDOjyowX6zAQl4m3Td6B27iiCKdrS0oRjCx09+fvjmfy6EgvG8E+h2enkJHXPdg7UMUBHApZJYhpkW2/iTcqF7QJN6Gf2ZoZJYdjRYgONnaQJ7/2APhA1N+2LC+88SrAqmUl04IaNqs7ciTPjO+6ewaePzLs5XnCTz+txTe1QUZmqRvd+w8WJg4D53ShKTpK6nrNgo/+8+/312w+inMf1E5Zzr11HrJMI/0lsKngh4P3jZ/wNHQiM2LL8vlEpp92Qymk7AGaRvmeQ5axmNPP3t9DeWxY8Igaohv3R1V6VljnWr52PGnfp8CEzELE+PFRVD8LMmzXC4yPklok1hE+wNBsymyq7pHQQGPMKxdi+3b0nm7Rd10s/BTckMgDw0U3Ns34184x+s0tdECGWxyf5rZDp5TUDxN4E/TpIKwewvMQElBUrTfAmL5kWY9MaT4pRC55hyNGXt+RRstKD776sWw3IKDvHBH5bFYSwl09dWf6Qwy+3TYhGBbjWunQcTmGcQuRdxzwDNHPFzYuGkGH7LJ5tfuSrEhzenFdmEPjcinAqr8q+Ikc/eIMPpuNiPjVgfETxW8yat5SSqgXYlOjJcTulry61GCjzFPKcqXnowjyoNrjiFNZ3nfPCehiowWJsRRxeNklt5CbqP+fxLO9KsiQvJfkOIjJ2Map3Kf3Ss2voz14OXGlebA1eaA2WBPwqdWQW/qeI4myuAt4W4wlTTsRzfx90XZxcHweuULgHb9iHTqBBX7Rqbl5H7u/pfO5XUvgb4bOg780pRSNZxu6jeD9RQd0d1bZVnBQnaDzdLlofjKp9Kw/5iqplxr2h4ts0ljdG889IrXnjN3YV7IYf4wp0QOuYHEtNcYle4cu5v5yruVa9KKalCR+B8i6vl7haDLyNVH3obrTGxbuwkTtG3cmpkVbtjQAH9wuiAx1T2dzSQm3DFPRplRZ5DHbfX345AvQrbyEiHTaDTwB3zlwejwLaW3OS0kEBgV6RbzFtsIyUMNZ6BpDi1W1XKt9mjiStFbYDHzX02wZ44wBabc6K+WdI/LgySvGPP2ipoJnAzbL5SxE8ZqB6jFal+AsbBksQbB9C6aQ8Yjm09RuQm4sFp8A4LYqDegXPgSel1SW3iySeWdCQdwFBd0doUZ7H40J2qfbswlfQveF3nlsd3oemlA1C8TdYkZAl72uHbg",
+      "expect": "field_invalid_json"
+    },
+    {
+      "name": "plan : paire complète échappée (\\ud83d\\ude00), relue",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "plan": "plan",
+      "clear": "{\"actions\":[{\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":1},{\"args\":{\"name\":\"annonces\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":2},{\"args\":{\"name\":\"Lancement\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\\n- budget\\n- annonces\\n\",\"name\":\"plan.md\",\"spaceId\":\"cm3spaceexample0000000001\"},\"argsRefs\":{\"folderId\":\"$3.id\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[1],\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"\\ud83d\\ude00Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.\",\"toolCallId\":\"call_7\",\"v\":1}",
+      "ivHex": "acacacacacacacacacacacac",
+      "value": "gcm1:rKysrKysrKysrKysleZPrCzWmp0EiZxPh5s6nkk0F7dmcpfy973OlRdIMF2YKXvrV2tCYGZ9Vph4EegxQehBCjs7w6uXs+RYnVV/qvpMbXm1v61NnIZv+rqMvex7+lN8eWBBSyhTIL3vFCdeHglNNm9pLv1dsuKH6P3W3liZDhIYmz2xeD8KI1hIsUPtzC7Z8ajK0tB9TGCGKxaiD0vUQdCDrQxVRB/RVivL1x5Hy0uhMK5dYRLyDrCYWhnfvSVzhUrmeBpyB3wGyOTn9w4wmT/E0834/0NM2mkAb/h81TdvZ/ZpxGr2vksFwcoS51cd8//vziUx77TqlBGBdck8l9j87h7+lNNpffEhXQ0lh9Ke90VcktwTHhiAkKoHzstOQTdHdEGaeKEzH4LXDEdbp1+ZjjYAFcobMTiQzlUwua2JmL2LG2p3jmxEyi8lsSaXSj/Ln/PMBmmwRwZe7UCG0NytHk1/JGmllR1q22WvpKGfT5Bd9r9wqJmzFkQjZKHCrQRSBftAlio2K8A9Qu5R3Jqz7JWY6uVRUYIVld8MowEk7AfcvJPV5ztdWcDb5AEgwiQTgv+rgbglGN5JAVrjJv+GHmcIOZS2W5UhJOQkl7/DlSio9zeVN7TpStxzjxTBudNnO9JE6NxjtN1PYNIYtvPwjkgU1HlmpJcm2vQmXsBnDVUOIhmajf67uhXzps9G1jqwVa06cKhplJX9Gc/i+4vAe1gsbVas5b8FzH0Qko7yUTC4H3HPA9PJCIE4oKfWNw6dhw0XnvRbVi8WwuDWeLDzaGcmt9MsnEivQ71jiXBijoCMZecA8X7Zw+nW17byJ+kx1WvEgGmGH7tBYW8VsSYnJZKkcFR2d1WifbStN2KFypFQaCR1s0pEz4yglEm5ZTkqjFH6tKtDJmNI2yzlSlUEVJWcrfkcPRzEFzFbQ3UAqSPIDh1tqyEv7zLf5mmy6MWtF8NSUrjo5qyMYIzit3xlWdatgtvm2/Up5gbeHu4skDdINmSMcg11NBsezG6lyOywZEVcuG2Lf1XtM3w9zFhQL50y5gYog+tsuDFrbIWpJFCE41vfi255O0E+0lSNdhlBoIfEhW5g7U8IdM7yS4Tybv5aea8CnWDiMZit6F2/y0cV7JVHV8vGbxKOry1Xm6liHj0PhuEnRrL+2muEqS9sEVSK5EPweMS77MJlUJHInfH72ACPbEVBiLl9OCfL1OYjLBOfGrEllHckYSXL7sux3fsBcqxKoSXf/UTvR5DUZiWZqeaDuNH+uzTauwG69C3TnVOSorXj",
+      "expect": "ok",
+      "canonical": "{\"actions\":[{\"args\":{\"name\":\"budget\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":1},{\"args\":{\"name\":\"annonces\",\"spaceId\":\"cm3spaceexample0000000001\",\"type\":\"text\"},\"kind\":\"thread.create\",\"n\":2},{\"args\":{\"name\":\"Lancement\",\"spaceId\":\"cm3spaceexample0000000001\"},\"kind\":\"folder.create\",\"n\":3},{\"after\":[3],\"args\":{\"content\":\"# Plan de lancement\\n\\n- budget\\n- annonces\\n\",\"name\":\"plan.md\",\"spaceId\":\"cm3spaceexample0000000001\"},\"argsRefs\":{\"folderId\":\"$3.id\"},\"kind\":\"file.create_text\",\"n\":4},{\"after\":[1],\"args\":{\"title\":\"Valider le budget\"},\"argsRefs\":{\"description\":\"$1.id\"},\"kind\":\"server.call\",\"n\":5,\"tool\":\"create_task\"}],\"createdAt\":1795000000,\"expiresAt\":1795604800,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"sessionId\":\"0f0e0d0c-0b0a-4908-8706-050403020100\",\"summary\":\"😀Je prépare l'espace Lancement : deux salons, un dossier, une note et une tâche.\",\"toolCallId\":\"call_7\",\"v\":1}"
+    },
+    {
+      "name": "plan_result précédé d'un BOM",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result:1",
+      "plan": "plan",
+      "clear": "﻿{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"skipped\"},{\"n\":3,\"output\":{\"id\":\"cm3foldernew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":4,\"output\":{\"id\":\"cm3filenew00000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+      "ivHex": "adadadadadadadadadadadad",
+      "value": "gcm1:ra2tra2tra2tra2tqtaeuwMxiaEDgMoO33Um4dhm6qyPe0M14tBdVp7hRWTgkxu5XAfWAamH6htEHj+WFOxQRSkf1IqUuFqJmWPM1Q5201jCEUqmmLFplPvW3qYePUvIby5TS6wiLwnUrht2owZ0jlN4V1FbpBW2Oz8s7h9fCuCV/6JQ+TY5vESG9gmGuvu/Hfk4KBpo3wJSaUVceSAkS7n2r0/LT2uZPKuJFPD1XSmPHRtnWTD7UsrpdBOEMP41y+cnB19BEEBFYEbOjhXwj0R7lS539HC2ZhAbCUzQJjohOXdwfl5eJKwq3i7CUZXKmmLO4Mnb0iktzAkc1F968LhUMF8NXukI2ta77yfWm6hu1E+Gh3gFfNe7Wakch3hbnXt0h9Jq1Luo7Ejv/J7zQ68bcO7cl4twiMbcY64cKEENiU/ZxuzJyPlf7k1RaIUi8uzI/dpQo141iVb3up3yDIcYmtqaSxyvlJeSrFSPS+G2EoKeiVrmS1SqqcdRpCo7bwbxck292q0AhXw2+ujaSWZq29+Q3tHrtHm0WFUAr/fX/OBQVugTO3Gno6wkffYEUvWHrTY9N9IaGSqaZItVcuo=",
+      "expect": "field_invalid_json"
+    },
+    {
+      "name": "plan_result : n = 5, action de l'agent",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result:1",
+      "plan": "plan",
+      "clear": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":5,\"output\":{\"id\":\"cm3tasknew00000000000001\"},\"state\":\"done\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+      "ivHex": "aeaeaeaeaeaeaeaeaeaeaeae",
+      "value": "gcm1:rq6urq6urq6urq6u0B3j4kkb6WkdJBOCLdz07DnKplPzF00aY8HqnMtcAk040DFbNC4EB6CxvcgMRNlmTplLeKVnQOY3sv3m1BTgEQjNSCCtUOiS8q8mC0iEarOmjEiGBnd8VTEYyHWg0BGfVUVjnFRwC5RRnYU9DKaA4RavoRKs74ca6p8Ur+i3sxwC/aqOw6PK0X3JGPYTpjdse6xdSBpQM/3xMJS3P0BzGWH69AaKJRYbTDMl1tf82qxOwVme8j4uC33g9eu+gF64RVYalmE573vfYY3n0ffUnbF7VSkdTJOw5HLBpUbgzow/UrI7wN5p3Z3GDzg9/e9YCdj70Y9TLiQak5FZE2saSMaAmVaRO8uiXA==",
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "plan_result : n = 6, hors du plan de 5 actions",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result:1",
+      "plan": "plan",
+      "clear": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":6,\"state\":\"done\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+      "ivHex": "afafafafafafafafafafafaf",
+      "value": "gcm1:r6+vr6+vr6+vr6+v1PBDSDiPHDHsZYrOm8UOtw5U8HEbEG4MrFAHqG2QKv1noJFCpFoTT7XK/MQ+No1guZuFQbxIJvjD+GS9ICGu+h/RH5KDq4VNBk7YxuGw2GD6gw/AFBnNl82iAk9aj13qlz5/X0hxljb64TJ45JU8UG2QjoDV7UGqxHma+kGseQ5axipF1GVhXGHG7qimzbP4HCqY/Imh66LPDQzOHtqA1sqb94Y5Q9pTAgMnFABSezxfEt5JNbfjmSE1H9MMa/Z+W+xzyEp+LMP1wAqP1Oo7SO2imZvc7qgy0MmDGLnw",
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "plan_result : état pending (pas final)",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result:1",
+      "plan": "plan",
+      "clear": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"},{\"n\":2,\"state\":\"pending\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+      "ivHex": "b0b0b0b0b0b0b0b0b0b0b0b0",
+      "value": "gcm1:sLCwsLCwsLCwsLCwhUvDc852oEgYpFTsjfb0/DyQfC1LtA7tBNEpa6ERops/cieL6ZRdYnQysNnD59C1yqwgL3njzsJ2swAWFehr0Z07ExVjVS/yKzfwVgRU3yE+IUKG9I/U2mA4AbWbzOdh7et/9R7/XTbjJgKLrd3lgPyaYN5k/XWgYA1uhtFTAbh+XMH7xOeyrIDb4gpW3G5RicwU3jvKsytZ8zMtrDSFGPbeYZIOOP0I0/noSP/vUy8MrPymXdm0J9CNNe3V7mTMqCTNVR/phKZVQXvc9LwlqgfyY9Qveb6MsWARtcVZRS7M",
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "plan_result : état executing (pas final)",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result:1",
+      "plan": "plan",
+      "clear": "{\"outcomes\":[{\"n\":1,\"state\":\"executing\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+      "ivHex": "b1b1b1b1b1b1b1b1b1b1b1b1",
+      "value": "gcm1:sbGxsbGxsbGxsbGxh8f0BainWU41tkgvftm1qiWob3WtOxBB5yUhI2GUX01viyQpuoHuW7El2RJblgzF5R9cYjUbXMb+3mKisNimSqjgYQ5h6LlrLcqSYq26SUMhP9+KSnWpN9O48bqJbnen04h16MksrnUkFuVEjp7Ty3eEy9LB5AGCMf8=",
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "plan_agent_result : n = 1, action de l'appareil",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_agent_result:1",
+      "plan": "plan",
+      "clear": "{\"outcomes\":[{\"n\":1,\"output\":{\"id\":\"cm3threadnew0000000000001\",\"spaceId\":\"cm3spaceexample0000000001\"},\"state\":\"done\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+      "ivHex": "b2b2b2b2b2b2b2b2b2b2b2b2",
+      "value": "gcm1:srKysrKysrKysrKySuOsP45IEudDeASFuFh5GLoRdznSvRxSct66Cpxxa3herg1wcdxndUMKez6eyG5gebRH6+bYccMpEWgs5LDkDOn3vHgfwHF/FWStK7Ald+sgQMzhIUPBNtYzz/pRgnewx2zQHRKKtiCFkK3HdNE1llUMVnpmHcICPPSimofh9AF/7YGBJvYW3lr+OP2bgrkc5ZargkGXuvsTZPXs+yd7bwe4PrKlr1wtQq2Mp7KCV4lVm2Yp1gtd5J2tnkwycqWGm1oDjH3ctg==",
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "plan_agent_result : n = 5 (agent), issue inconnue : admis",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_agent_result:1",
+      "plan": "plan",
+      "clear": "{\"outcomes\":[{\"n\":5,\"state\":\"unknown_outcome\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}",
+      "ivHex": "b3b3b3b3b3b3b3b3b3b3b3b3",
+      "value": "gcm1:s7Ozs7Ozs7Ozs7Oz9zprUQ/BRnYlqV2zwHXXU3WsO8eEoVtGx1zWkHoenth/FrXKKVhnRzn95+vlnvD47P6cc/6znfAJWw+cOUxh1tv6zYma9bjmGyaZBLUtq8RNzSNKQFTcHbu1J/VgovfxIznbui86ALW0aygwhWfHdOfgK1zZOdg/vLXxYhMLWa0=",
+      "expect": "ok",
+      "canonical": "{\"outcomes\":[{\"n\":5,\"state\":\"unknown_outcome\"}],\"phase\":1,\"planId\":\"5b1c2d3e-4f50-4a61-8b72-938495a6b7c8\",\"v\":1}"
+    }
+  ],
+  "boundCases": [
+    {
+      "name": "valeur gcm1: de 349 569 octets (plafond : 5 + 4·⌈(12 + 262 144 + 16) / 3⌉) : déchiffrée, tag faux",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "valuePrefix": "gcm1:",
+      "fill": "A",
+      "fillLength": 349564,
+      "expect": "field_authentication_failed"
+    },
+    {
+      "name": "valeur gcm1: de 349 573 octets : refusée avant le base64",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "valuePrefix": "gcm1:",
+      "fill": "A",
+      "fillLength": 349568,
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "plan_result de 349 573 octets : refusé avant le base64",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result:1",
+      "valuePrefix": "gcm1:",
+      "fill": "A",
+      "fillLength": 349568,
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "valeur de 174 788 caractères mais 349 571 octets UTF-8 : bornée en octets, refusée",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan",
+      "valuePrefix": "gcm1:",
+      "fill": "é",
+      "fillLength": 174783,
+      "expect": "plan_invalid"
+    },
+    {
+      "name": "decrypt_plan : planId avec « : », invalid_input avant l'AAD",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8:plan",
+      "fieldName": "plan",
+      "valuePrefix": "gcm1:",
+      "fill": "A",
+      "fillLength": 4,
+      "expect": "invalid_input"
+    },
+    {
+      "name": "decrypt_phase_result : sessionId avec une espace, invalid_input avant l'AAD",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100 ",
+      "planId": "5b1c2d3e-4f50-4a61-8b72-938495a6b7c8",
+      "fieldName": "plan_result:1",
+      "valuePrefix": "gcm1:",
+      "fill": "A",
+      "fillLength": 4,
+      "expect": "invalid_input"
+    },
+    {
+      "name": "planId de 65 caractères et valeur trop longue : invalid_input avant la borne de longueur",
+      "sessionId": "0f0e0d0c-0b0a-4908-8706-050403020100",
+      "planId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fieldName": "plan",
+      "valuePrefix": "gcm1:",
+      "fill": "A",
+      "fillLength": 349568,
+      "expect": "invalid_input"
+    }
+  ]
 }

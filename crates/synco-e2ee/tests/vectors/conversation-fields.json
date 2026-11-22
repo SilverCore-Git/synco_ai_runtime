@@ -375,7 +375,7 @@
       "value": "gcm1:ERERERERERERERERSe7orpnncXfmR2L782DWQHkFGxDbHbtDNUIeceugY58PtiPvx+NipiaE",
       "plaintext": "Bonjour depuis le runtime.",
       "ivHex": "111111111111111111111111",
-      "expect": "field_authentication_failed",
+      "expect": "invalid_input",
       "mode": "strict"
     },
     {

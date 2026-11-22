@@ -53,6 +53,10 @@ pub enum Error {
     PairCodeMismatch,
     /// URL de runtime non canonisable (01 §3).
     UrlInvalid,
+    /// Plan d'action hors des règles de 12 §5 (le motif est dans [`crate::plan::PlanInvalid`]).
+    PlanInvalid,
+    /// Appel d'exécution refusé par le verrou de 12 §8.4 (condensat ou `refs`).
+    ActionNotAccepted,
 }
 
 impl Error {
@@ -83,6 +87,8 @@ impl Error {
             Self::PairCodeInvalid => "pair_code_invalid",
             Self::PairCodeMismatch => "pair_code_mismatch",
             Self::UrlInvalid => "url_invalid",
+            Self::PlanInvalid => "plan_invalid",
+            Self::ActionNotAccepted => "action_not_accepted",
         }
     }
 }

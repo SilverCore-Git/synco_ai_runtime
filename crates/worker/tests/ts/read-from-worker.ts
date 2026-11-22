@@ -6,7 +6,8 @@
  *   SYNCO_APP=/chemin/vers/synco_app bun crates/worker/tests/ts/read-from-worker.ts   (sinon, ex. worktree)
  *
  * Lecture seule de synco_app : `decryptAiField` (crypto.ts), `decryptThreadKeyWithRsa` (crypto.ts),
- * `verifyRt1Envelope` (runtimeDelegation.ts) sont importés ; `decryptGatewaySessionMessages` et
+ * `verifyRt1Envelope`, `verifyMandateVersioned`, `rt1Verdict` (runtimeDelegation.ts) et les fonctions
+ * du plan d'action (aiActionPlan.ts, L01c) sont importés ; `decryptGatewaySessionMessages` et
  * `convertStoredMessagesToChatMessages` (non exportés d'AIService.ts) sont extraits du source tel
  * quel et transpilés par Bun, sans rien écrire dans synco_app.
  * Fixture : crates/worker/tests/fixtures/transcript-from-worker.json (régénérée par
@@ -116,6 +117,41 @@ try {
     reposeForged = true;
 }
 check(reposeForged, 'enveloppe reposée refusée pour la délégation du créateur');
+
+// 5. Plan d'action et mandat v2 (L01c) : le code de l'app relit les chiffrés et les signatures produits
+//    par la crate (docs/plan/vectors, figés par L00f) avec ses fonctions pures.
+const ap = await import(join(app, 'src/assets/utils/aiActionPlan.ts'));
+const vectors = join(here, '../../../../docs/plan/vectors');
+const planVec = JSON.parse(readFileSync(join(vectors, 'action-plan.json'), 'utf8'));
+const mandateVec = JSON.parse(readFileSync(join(vectors, 'mandate-v2.json'), 'utf8'));
+const planCk = hexToBytes(planVec.ckHex);
+const ptc = planVec.pendingToolCall;
+const plan = await ap.decryptPlan(planCk, planVec.sessionId, ptc.planId, ptc.args);
+check(ap.jcs(plan) === planVec.planCanonical, 'plan de pendingToolCall déchiffré (decryptPlan), JCS identique');
+const manifest = ap.ToolManifest.fromJson(planVec.toolManifest);
+const graph = ap.validatePlan(plan, { sessionId: planVec.sessionId, maxLifetimeSecs: 604800, manifest, mode: 'plan', createThreadAsk: true });
+check(JSON.stringify(graph.levels()) === JSON.stringify(planVec.planLevels), 'plan validé, niveaux identiques (validatePlan)');
+const digests = await ap.planServerDigests(plan);
+check(digests.get(5) === planVec.serverDigests[0].sha256Hex, 'serverDigests identique (planServerDigests)');
+const result = await ap.decryptPhaseResult(planCk, planVec.sessionId, planVec.planId, 'device', 1, graph, planVec.planResultValue);
+check(result.outcomes.length === 4, 'plan_result:1 déchiffré et recontrôlé (decryptPhaseResult)');
+let crossed = false;
+try {
+    await ap.decryptPhaseResult(planCk, planVec.sessionId, planVec.planId, 'agent', 1, graph, planVec.planResultValue);
+} catch (e) {
+    crossed = (e as { code?: string }).code === 'field_authentication_failed';
+}
+check(crossed, 'plan_result refusé comme plan_agent_result');
+const owner = mandateVec.keys.ownerRsaSpkiHex;
+const m = await rd.verifyMandateVersioned(mandateVec.userSignKey, mandateVec.context, mandateVec.fprHex, mandateVec.wrap, mandateVec.signatureAuto, { mandateVersion: 2, mode: 'auto', ownerRsaSpkiHex: owner });
+check(m.mode === 'auto' && rd.rt1Verdict(m, true) === 'verified', 'mandat v2 auto signé par la crate vérifié (verifyMandateVersioned)');
+let swapped = false;
+try {
+    await rd.verifyMandateVersioned(mandateVec.userSignKey, mandateVec.context, mandateVec.fprHex, mandateVec.wrap, mandateVec.signatureAuto, { mandateVersion: 2, mode: 'plan', ownerRsaSpkiHex: owner });
+} catch {
+    swapped = true;
+}
+check(swapped, 'mandat v2 auto présenté en plan : refusé');
 
 if (failures > 0) {
     console.error(`${failures} échec(s)`);

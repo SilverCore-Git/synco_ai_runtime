@@ -1315,3 +1315,24 @@ d'`after`, clair ≤ 256 Kio, corps de `POST …/plans` ≤ 1 Mio, `plan_too_lar
 - **Interprétations** : délai de l'org fourni par l'appelant (vecteurs : 604 800 s) ; longueurs de chaînes en points
   de code ; manifeste lu en JSON Schema ou sous la forme abrégée des vecteurs ; extensions de `file.create_text`
   recopiées de `textFileFormats.ts` (à garder synchronisées) ; la règle 7 (annuaire local) reste à L10.
+
+## 2026-11-22 — L01c, constats mineurs de la revue cryptographique
+
+Rust et TS rendent le même verdict sur les mêmes octets ; règle la plus stricte retenue à chaque écart.
+
+- **Nombres** : `decrypt_plan` / `decrypt_phase_result` refusent (`field_invalid_json`) un clair que JCS refuserait
+  (`1.0`, `1e2`, `-0`, entier hors de 2⁵³ − 1) ; l'app a un parseur strict (`parseJsonStrict`).
+- **Unicode** : demi-paires (`"\ud800"`, `"\udc00"`) et BOM initial refusés des deux côtés.
+- **`__proto__`** : clé ordinaire dans les arguments exécutés de `check_server_call` / `checkServerCall`.
+- **Extension** de `file.create_text` : pliée en minuscules ASCII seulement des deux côtés.
+- **PC61** : valeur `gcm1:` bornée à `MAX_PLAN_VALUE_LEN` = 5 + 4·⌈(12 + 262 144 + 16) / 3⌉ = 349 569 octets
+  avant base64, AES-GCM et JSON ; actions (> 100) et dépendances (> 2 000) comptées avant JCS.
+- **Résultats de phase** : `encrypt_phase_result` / `decrypt_phase_result` prennent le `PlanGraph` ; chaque `n`
+  appartient au plan et à l'exécutant de l'AAD, état final exigé.
+- **`rt1_verdict`** : paramètre `production` (défaut `true` côté app) ; un mandat v1 y est `rejected`,
+  `tofu_warning` hors production seulement.
+- **Identifiants** : `check_id` en tête de `decrypt_field`, `decrypt_plan`, `decrypt_phase_result`
+  (`invalid_input` avant l'AAD) ; le cas « séparateur | » de `conversation-fields.json` attend `invalid_input`.
+- **Vecteurs** : `action-plan.json` passe de 107 à 145 vérifications (sections `clearCases`, `boundCases`, plus
+  des cas de validation, de chiffrement et du verrou) ; `mandate-v2.json` à 8 cas `rt1Policy`. Rejoués en Rust et en
+  TS, test croisé OK.

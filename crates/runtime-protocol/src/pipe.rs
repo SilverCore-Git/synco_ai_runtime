@@ -648,7 +648,7 @@ pub struct SignedResponse {
     pub id: String,
     /// Statut HTTP. `0` : pas de réponse de l'API, la cause est dans `error`.
     pub status: u16,
-    /// En-têtes utiles (`content-type`).
+    /// En-têtes utiles (`content-type`, `retry-after` en secondes entières).
     pub headers: BTreeMap<String, String>,
     /// Morceau du corps (`b64`).
     pub body: String,

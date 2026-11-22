@@ -624,3 +624,21 @@ async fn outil_ask_masque_appele_quand_meme_est_refuse() {
         assert!(!st.pushes.contains(&"AI_AWAITING_CONFIRMATION".to_owned()), "{:?}", st.pushes);
     });
 }
+
+#[tokio::test]
+async fn retry_after_de_l_api_attendu_et_plafonne() {
+    // Un 429 avec `Retry-After: 1` : le worker attend la seconde de l'API (et non 10 ms).
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    let pid = propose(&api, &llm, &args(&[task(1, "a", &[])]), plan_init(PlanMode::Plan, 4)).await;
+    api.with(|st| {
+        st.throttle_429 = 1;
+        st.retry_after_secs = Some(1);
+    });
+    api.decide(&pid, &[1]);
+    let started = std::time::Instant::now();
+    let peer = resume(&api, &llm, plan_init(PlanMode::Plan, 4)).await;
+    assert_eq!(peer.wait_done().await, DoneReason::Idle);
+    assert!(started.elapsed() >= Duration::from_millis(950), "Retry-After respecté : {:?}", started.elapsed());
+    api.with(|st| assert_eq!((st.throttled, st.tool_runs.len()), (1, 1)));
+}

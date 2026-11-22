@@ -46,6 +46,8 @@ pub struct Relayed {
     pub status: u16,
     /// Code `relay_*` quand `status = 0`.
     pub error: Option<String>,
+    /// `retry-after` (secondes), s'il est présent et entier.
+    pub retry_after: Option<u64>,
     /// Corps.
     pub body: Vec<u8>,
 }
@@ -187,16 +189,27 @@ async fn reader<S: AsyncRead + Send>(mut rd: ReadHalf<S>, inner: Arc<Inner>, ctl
             SupervisorMsg::SignedRequestResponse(r) => {
                 let done = if r.status == 0 && r.error.is_some() {
                     parts.remove(&r.id);
-                    Some(Relayed { status: 0, error: r.error, body: Vec::new() })
+                    Some(Relayed { status: 0, error: r.error, retry_after: None, body: Vec::new() })
                 } else {
                     let buf = parts.entry(r.id.clone()).or_default();
                     match buf.push(r.part, &r.body, MAX_RELAY_RESPONSE_BYTES) {
                         Err(code) => {
                             parts.remove(&r.id);
-                            Some(Relayed { status: 0, error: Some(code.to_owned()), body: Vec::new() })
+                            Some(Relayed {
+                                status: 0,
+                                error: Some(code.to_owned()),
+                                retry_after: None,
+                                body: Vec::new(),
+                            })
                         }
                         Ok(()) if r.last => {
-                            parts.remove(&r.id).map(|b| Relayed { status: r.status, error: None, body: b.into_body() })
+                            let retry_after = r.headers.get("retry-after").and_then(|v| v.parse::<u64>().ok());
+                            parts.remove(&r.id).map(|b| Relayed {
+                                status: r.status,
+                                error: None,
+                                retry_after,
+                                body: b.into_body(),
+                            })
                         }
                         Ok(()) => None,
                     }

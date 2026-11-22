@@ -15,6 +15,8 @@ pub struct ApiResponse {
     pub body: Value,
     /// Code `relay_*` si `status = 0`.
     pub relay_error: Option<String>,
+    /// `retry-after` de l'API (secondes), s'il est présent.
+    pub retry_after: Option<u64>,
 }
 
 impl core::fmt::Debug for ApiResponse {
@@ -71,7 +73,7 @@ impl Api {
         let bytes = body.map(|b| b.to_string().into_bytes()).unwrap_or_default();
         let r = self.link.request(method, path, &bytes, true).await?;
         let body = if r.body.is_empty() { Value::Null } else { serde_json::from_slice(&r.body).unwrap_or(Value::Null) };
-        Ok(ApiResponse { status: r.status, body, relay_error: r.error })
+        Ok(ApiResponse { status: r.status, body, relay_error: r.error, retry_after: r.retry_after })
     }
 
     /// Requête sur une route de la conversation.

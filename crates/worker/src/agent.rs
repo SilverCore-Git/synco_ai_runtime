@@ -1731,7 +1731,7 @@ mod tests {
     use super::*;
 
     fn resp(status: u16, body: Value, relay: Option<&str>) -> ApiResponse {
-        ApiResponse { status, body, relay_error: relay.map(str::to_owned) }
+        ApiResponse { status, body, relay_error: relay.map(str::to_owned), retry_after: None }
     }
 
     #[test]

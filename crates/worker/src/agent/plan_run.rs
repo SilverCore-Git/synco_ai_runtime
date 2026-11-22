@@ -28,6 +28,9 @@ use crate::plan::{self, PROPOSE_ACTIONS, PlanView};
 use crate::tools::{self, Outcome, ToolCtx};
 use crate::transcript::{PendingToolCall, ToolCall, ToolStatus};
 
+/// Plafond du `Retry-After` relayé par l'API (secondes).
+const MAX_RETRY_AFTER_SECS: u64 = 30;
+
 /// Reprises consécutives sans progrès avant d'abandonner (garde-fou contre une API qui boucle).
 const MAX_REFRESH: usize = 8;
 
@@ -120,6 +123,11 @@ fn jitter(d: Duration) -> Duration {
     d.mul_f64(f64::from(pct) / 100.0)
 }
 
+/// Attente avant un nouvel essai : `Retry-After` plafonné, sinon `d` ± 20 %.
+fn retry_wait(retry_after: Option<u64>, d: Duration) -> Duration {
+    retry_after.map_or_else(|| jitter(d), |s| Duration::from_secs(s.min(MAX_RETRY_AFTER_SECS)))
+}
+
 fn halve(limit: &AtomicUsize) {
     let _ = limit.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |l| Some((l / 2).max(1)));
 }
@@ -160,16 +168,18 @@ async fn run_job(
     let report = |state, output, code: Option<String>, lease_lost| Report { n: job.n, state, output, code, lease_lost };
     let mut attempt = 0usize;
     loop {
-        let (outcome, rate_limited) = match job.kind {
+        let (outcome, limited) = match job.kind {
             ActionKind::ServerCall => call_server(&api, epoch, &plan_id, &job).await,
             _ => call_thread(&api, epoch, &user_id, &plan_id, &job).await,
         };
-        if rate_limited {
+        if let Some(retry_after) = limited {
             halve(&limit);
             match delays.get(attempt) {
                 Some(d) => {
                     attempt = attempt.saturating_add(1);
-                    tokio::time::sleep(jitter(*d)).await;
+                    // `Retry-After` de l'API (plafonné à 30 s) ; sinon 1, 2, 4 s ± 20 %.
+                    let wait = retry_wait(retry_after, *d);
+                    tokio::time::sleep(wait).await;
                     continue;
                 }
                 None => return report(Some(ActionState::Failed), None, Some("rate_limited".into()), false),
@@ -195,7 +205,7 @@ enum Called {
 
 /// `server.call` : `POST …/tools/:name/execute` avec `plan`, `args` **non résolus**, `argsRefs` et
 /// `refs` (12 §8.4).
-async fn call_server(api: &Api, epoch: u64, plan_id: &str, job: &Job) -> (Called, bool) {
+async fn call_server(api: &Api, epoch: u64, plan_id: &str, job: &Job) -> (Called, Option<Option<u64>>) {
     let mut body = json!({ "leaseEpoch": epoch, "args": job.args, "plan": { "planId": plan_id, "n": job.n } });
     if let Some(r) = &job.args_refs {
         crate::json_set(&mut body, "argsRefs", Value::Object(r.clone()));
@@ -207,44 +217,44 @@ async fn call_server(api: &Api, epoch: u64, plan_id: &str, job: &Job) -> (Called
     if let Ok(r) = &raw
         && (r.status == 429 || (r.status == 0 && r.relay_error.as_deref() == Some("relay_rate_limited")))
     {
-        return (Called::Unknown, true);
+        return (Called::Unknown, Some(r.retry_after));
     }
     let r = match tools::sent(raw) {
         tools::Sent::Answered(r) => r,
-        tools::Sent::LocallyRefused => return (Called::Failed("tool_failed".into()), false),
+        tools::Sent::LocallyRefused => return (Called::Failed("tool_failed".into()), None),
         tools::Sent::Unknown => {
-            return (if job.mutating { Called::Unknown } else { Called::Failed("tool_failed".into()) }, false);
+            return (if job.mutating { Called::Unknown } else { Called::Failed("tool_failed".into()) }, None);
         }
     };
     if r.ok() {
         return match r.body.get("ok").and_then(Value::as_bool) {
-            Some(true) => (Called::Done(r.body.get("data").and_then(server_output)), false),
-            _ => (Called::Failed("tool_failed".into()), false),
+            Some(true) => (Called::Done(r.body.get("data").and_then(server_output)), None),
+            _ => (Called::Failed("tool_failed".into()), None),
         };
     }
     match r.code() {
-        Some("lease_conflict") => (Called::LeaseLost, false),
-        Some(c) if is_blocked(c) => (Called::Blocked(c.to_owned()), false),
-        Some(c) => (Called::Failed(clean_code(c)), false),
-        None => (Called::Failed("tool_failed".into()), false),
+        Some("lease_conflict") => (Called::LeaseLost, None),
+        Some(c) if is_blocked(c) => (Called::Blocked(c.to_owned()), None),
+        Some(c) => (Called::Failed(clean_code(c)), None),
+        None => (Called::Failed("tool_failed".into()), None),
     }
 }
 
 /// `thread.create` du mode autonome (politique `ask`) : `POST /e2ee/threads` avec `rt1` et `plan`.
-async fn call_thread(api: &Api, epoch: u64, user_id: &str, plan_id: &str, job: &Job) -> (Called, bool) {
+async fn call_thread(api: &Api, epoch: u64, user_id: &str, plan_id: &str, job: &Job) -> (Called, Option<Option<u64>>) {
     let ctx = ToolCtx { api, lease_epoch: epoch, user_id, plan: Some((plan_id, job.n)) };
     let args = json!({ "threads": [Value::Object(job.args.clone())] });
     match tools::threads::run(&ctx, &args).await {
-        Outcome::Done(v) => (Called::Done(thread_output(&v)), false),
-        Outcome::LeaseLost => (Called::LeaseLost, false),
-        Outcome::NeedKey { .. } => (Called::Failed("key_unavailable".into()), false),
+        Outcome::Done(v) => (Called::Done(thread_output(&v)), None),
+        Outcome::LeaseLost => (Called::LeaseLost, None),
+        Outcome::NeedKey { .. } => (Called::Failed("key_unavailable".into()), None),
         Outcome::Failed(v) => {
             let code = v.get("error").and_then(Value::as_str).unwrap_or("tool_failed");
             match code {
-                "unknown_outcome" => (Called::Unknown, false),
-                "rate_limited" | "rt_rate_limited" => (Called::Unknown, true),
-                c if is_blocked(c) => (Called::Blocked(c.to_owned()), false),
-                c => (Called::Failed(clean_code(c)), false),
+                "unknown_outcome" => (Called::Unknown, None),
+                "rate_limited" | "rt_rate_limited" => (Called::Unknown, Some(None)),
+                c if is_blocked(c) => (Called::Blocked(c.to_owned()), None),
+                c => (Called::Failed(clean_code(c)), None),
             }
         }
     }
@@ -781,5 +791,19 @@ fn merge_outputs(outputs: &mut BTreeMap<u64, Map<String, Value>>, clear: &Value)
         {
             outputs.insert(n, out.clone());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retry_after_plafonne_a_30_secondes() {
+        let d = Duration::from_secs(1);
+        assert_eq!(retry_wait(Some(5), d), Duration::from_secs(5));
+        assert_eq!(retry_wait(Some(3_600), d), Duration::from_secs(30));
+        let j = retry_wait(None, d);
+        assert!(j >= Duration::from_millis(800) && j <= Duration::from_millis(1_200), "{j:?}");
     }
 }

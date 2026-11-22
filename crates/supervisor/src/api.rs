@@ -86,8 +86,16 @@ pub struct RawResponse {
     pub status: u16,
     /// `content-type`.
     pub content_type: Option<String>,
+    /// `retry-after` en secondes entières (les autres formes sont ignorées).
+    pub retry_after: Option<String>,
     /// Corps.
     pub body: Vec<u8>,
+}
+
+/// `Retry-After` relayé au worker : secondes entières seulement (la date HTTP est ignorée).
+fn retry_after_secs(v: &str) -> Option<String> {
+    let v = v.trim();
+    (!v.is_empty() && v.len() <= 6 && v.bytes().all(|b| b.is_ascii_digit())).then(|| v.to_owned())
 }
 
 /// Méthodes utilisées.
@@ -270,6 +278,7 @@ impl ApiClient {
         let status = resp.status().as_u16();
         let content_type =
             resp.headers().get("content-type").and_then(|v| v.to_str().ok()).map(|s| s.chars().take(100).collect());
+        let retry_after = resp.headers().get("retry-after").and_then(|v| v.to_str().ok()).and_then(retry_after_secs);
         let mut body = Vec::new();
         while let Some(chunk) = resp.chunk().await.map_err(|_| ApiError::Network)? {
             if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
@@ -277,7 +286,7 @@ impl ApiClient {
             }
             body.extend_from_slice(&chunk);
         }
-        Ok(RawResponse { status, content_type, body })
+        Ok(RawResponse { status, content_type, retry_after, body })
     }
 
     fn check(r: RawResponse) -> Result<RawResponse, ApiError> {
@@ -494,6 +503,14 @@ impl ApiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retry_after_secondes_entieres_seulement() {
+        assert_eq!(retry_after_secs(" 12 ").as_deref(), Some("12"));
+        for bad in ["", "-1", "1.5", "Wed, 21 Oct 2026 07:28:00 GMT", "1234567", "1 2"] {
+            assert_eq!(retry_after_secs(bad), None, "{bad:?}");
+        }
+    }
 
     #[test]
     fn code_journalise_restreint() {

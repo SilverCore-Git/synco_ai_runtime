@@ -847,8 +847,13 @@ async fn relay(
                     }
                     return;
                 }
-                let headers =
-                    r.content_type.map(|c| [("content-type".to_owned(), c)].into_iter().collect()).unwrap_or_default();
+                // `content-type` et `retry-after` (secondes entières) : les seuls en-têtes relayés.
+                let headers: std::collections::BTreeMap<String, String> = r
+                    .content_type
+                    .map(|c| ("content-type".to_owned(), c))
+                    .into_iter()
+                    .chain(r.retry_after.map(|v| ("retry-after".to_owned(), v)))
+                    .collect();
                 SignedResponse::split(&req.id, r.status, &headers, &r.body)
             }
             Err(e) => {

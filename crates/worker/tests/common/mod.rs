@@ -133,6 +133,8 @@ pub struct ApiState {
     pub plan_execs: Vec<Value>,
     /// Les N prochains appels d'exécution d'un plan répondent `429`.
     pub throttle_429: u32,
+    /// `Retry-After` (secondes) relayé avec les `429`.
+    pub retry_after_secs: Option<u64>,
     /// Appels refusés en `429` jusqu'ici.
     pub throttled: u32,
     /// Durée d'une exécution d'action de plan (ms), pour observer le parallélisme.
@@ -1034,7 +1036,11 @@ where
                                     }
                                     let (status, resp) = api.handle(head.method.as_str(), &head.path, &body).await;
                                     let bytes = if resp.is_null() { Vec::new() } else { resp.to_string().into_bytes() };
-                                    for p in SignedResponse::split(&id, status, &BTreeMap::new(), &bytes) {
+                                    let mut headers = BTreeMap::new();
+                                    if let (429, Some(s)) = (status, api.with(|st| st.retry_after_secs)) {
+                                        headers.insert("retry-after".to_owned(), s.to_string());
+                                    }
+                                    for p in SignedResponse::split(&id, status, &headers, &bytes) {
                                         let _ = wtx.send(Ok(SupervisorMsg::SignedRequestResponse(p))).await;
                                     }
                                 });

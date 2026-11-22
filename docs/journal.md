@@ -1336,3 +1336,41 @@ Rust et TS rendent le même verdict sur les mêmes octets ; règle la plus stric
 - **Vecteurs** : `action-plan.json` passe de 107 à 143 vérifications (sections `clearCases`, `boundCases`, plus
   des cas de validation, de chiffrement et du verrou) ; `mandate-v2.json` à 8 cas `rt1Policy`. Rejoués en Rust et en
   TS, test croisé OK.
+
+## 2026-11-22 — L08d, plans d'action côté runtime (superviseur et worker)
+
+- **Superviseur** : le coffre garde le mandat **vérifié** (`accept_delegation_versioned`, champs servis
+  `mandateVersion` / `mode` / `ownerRsaSpkiHex` de `DelegationRecord` utilisés seulement pour reconstruire les
+  octets signés). `init.plan` (`PlanInit`) donne au worker le mode effectif (`auto` seulement pour un mandat v2
+  `auto` et `autonomy.allowed`), `plan.concurrency` ([1, 8], défaut 4, refus au démarrage hors intervalle) et
+  `confirmationTimeoutSecs` de l'org (borné [1 h, 7 j]). `created_key` et la réparation `repose` exigent un mandat
+  v2 `auto` vérifié (`autonomy_required` ; la réparation reste dans la file) ; `autonomy.allowed = false` traite
+  tout `auto` comme `plan` et lève l'alerte `autonomy_disabled_by_config`. PC46 : pour un mandat v2,
+  `ownerRsaSpkiHex` prime sur l'épingle TOFU de `member-rsa-pins.json` (clé servie différente : `member_key_changed`
+  et alerte `member_rsa_key_changed`, sans rotation par chaîne). Trame client `plan_result` (WebSocket).
+- **Worker** : `propose_actions` (description de 12 §3.1 reprise telle quelle) ; plan construit, validé (règles 1 à 6,
+  bornes PC61, outils `deny` refusés) et chiffré avec les fonctions de `synco-e2ee` ; écriture par `POST …/plans`
+  (corps : dates ISO 8601, `actions: [{ n, executor, after }]`, `serverDigests`) ; `pendingToolCall.planId` et
+  plan chiffré sous l'AAD du plan (lecture stricte, rejoué sous un autre `planId` refusé). En mode `plan`, le modèle
+  ne voit plus les outils mutants `ask` ni ceux d'appareil. Reprise : l'état se relit **toujours** dans `PlanView` ;
+  phase d'agent en parallèle (`JoinSet`, plus petite `n` d'abord, place reprise aussitôt), `429` réessayé 3 fois
+  (1, 2, 4 s ± 20 %) avec concurrence divisée par 2, `refs` résolues depuis des sorties **authentifiées**
+  (`plan_result` déchiffrés, `plan_agent_result` relus) et comparées à celles de l'API, `plan_agent_result:<k>`,
+  fermeture avec le bilan (état, sortie, code), message reçu pendant un plan accepté différé jusqu'à la fermeture,
+  `confirm` visant `propose_actions` ignoré, arrêt (`stopped`) et expiration (aucune action ne démarre), 3 plans par
+  tour (`plan_limit`), `thread.create` du mode autonome par `POST /e2ee/threads` avec `plan`.
+- **Tests** : 13 tests `crates/worker/tests/plan.rs` (API simulée qui tient le graphe, les états, les sorties et le
+  verrou avec les vraies `check_server_call` / `plan_server_digests`), 3 tests de superviseur (`created_key`, réparation,
+  épingle PC46), config, trame client, transcript, `with_local`, identifiants de boîte. Test croisé TS : OK.
+- **Écarts et ambiguïtés de la spec (choix provisoires)** :
+  1. **Aucune route ne permet au worker de faire échouer une action d'agent qui n'est pas partie** (`429`
+     épuisé, issue inconnue, `refs` incohérentes, refus du verrou) : l'API la garde `pending` et refuse
+     `agent-result` (action prête). Choix : issue **locale** (`PlanView::with_local`, dépendantes `skipped`, PC54) ;
+     si le plan est fini ainsi, `propose_actions` est clos avec ce bilan, sinon il est clos `plan_aborted` (détail :
+     `refs_inconsistent`, `action_not_accepted`…). Le plan reste côté API jusqu'à `expiresAt`. À trancher avec L03g
+     (route ou tolérance d'`agent-result`).
+  2. Aucun en-tête `Retry-After` n'arrive au worker (le relais ne rend que `content-type`) : délais 1, 2, 4 s.
+  3. Le worker pousse `AI_AWAITING_CONFIRMATION` après `POST …/plans` ; si l'API le fait déjà, doublon à retirer.
+  4. `refs` ou plan incohérent à la reprise (résultat de phase illisible, graphe servi différent) : `tool_call_unverified`.
+  5. Le mode (`init.plan.mode`) est celui de la délégation au lancement du worker ; un changement en cours de
+     route n'est vu qu'au prochain lancement (une action `thread.create` d'agent hors `auto` échoue `autonomy_required`).

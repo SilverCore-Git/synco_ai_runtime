@@ -920,6 +920,7 @@ pub fn validate_plan(plan: &Value, ctx: &PlanContext<'_>) -> core::result::Resul
             }
         }
         if kind == ActionKind::FileCreateText {
+            // Minuscules ASCII seulement, des deux côtés (l'app n'utilise pas `toLowerCase`).
             let ext = str_field(args, "name").and_then(|name| name.rsplit_once('.')).map(|(_, ext)| ext);
             if !ext.is_some_and(|e| TEXT_FILE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str())) {
                 return Err(P::Args);

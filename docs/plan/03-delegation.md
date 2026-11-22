@@ -619,7 +619,7 @@ réalisée dans le code à ce jour sauf mention) :
 - **(c) Route « chaîne de transitions »** (une route S+A du canal servant la chaîne d'identité de **tout**
   membre de l'org, pour accepter automatiquement la rotation d'un membre qui n'a jamais délégué) :
   **reportée** (non décidée pour la v1).
-- **PC28 (2026-11-21), épingles hybrides : décidé, implémentation au lot L05c ; le code actuel applique encore 2 000 par org (`member_pins_limit`)**. Cible : plafond de sécurité de **50 000 par org**, réglable dans la configuration ; épingles **inactives depuis plus de 180 jours archivées en compact** (empreinte seule, toujours détectées au retour du membre) ; **éviction de la plus ancienne archive** en cas de débordement ; **alerte du dashboard à 80 %**. Limite de 1 000 membres par org (PC30) : voir 00 §6.
+- **PC28 (2026-11-21), épingles hybrides : réalisé par L05c (2026-11-22)**. Plafond de sécurité de **50 000 par org**, archives comprises, réglable (`limits.max_member_pins_per_org`) ; épingle **inactive depuis plus de 180 jours archivée en compact** (empreinte SPKI seule, `lastSeen`), **toujours détectée** (une autre clé donne `member_key_changed`, jamais une première vue ; même clé : l'épingle redevient active) ; **éviction de la plus ancienne archive** au débordement, tracée (journal `member_pin_archive_evicted`, alerte `member_pins_archive_evicted`, compteur persistant) ; **alerte du dashboard `member_pins_near_limit` à 80 %**. Détail : 06 §4.3. Limite de 1 000 membres par org (PC30) : voir 00 §6.
 - **PC29** : `AiThreadEnvelopeEvent` conservé **1 an**, purge bornée côté API (lot L03e, en cours ; 07 §5).
 
 ## 11. Salon créé par un autre membre en l'absence de l'utilisateur

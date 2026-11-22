@@ -207,16 +207,32 @@ relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pi
   aussi gardée l'empreinte RFC 7638 (`SHA-256` du JWK canonique minimal), la même que
   `computeKeyFingerprint` de l'app sur une clé légitime, pour l'affichage.
 - **Stockage** : `<state_dir>/member-rsa-pins.json`, données publiques (empreintes, jamais la clé),
-  `{ "v": 1, "orgs": { org: { userId: { fingerprint, thumbprint, firstSeen, previous[], pending? } } } }`,
+  `{ "v": 2, "orgs": { org: { userId: { fingerprint, thumbprint, firstSeen, lastSeen?, previous[], pending? } } }, "archive": { org: { userId: { fingerprint, firstSeen, lastSeen } } }, "evicted": { org: n } }` (format 1 relu, toujours réécrit en 2),
   écriture atomique (`fsync` + `rename`) **une fois par étape de contrôle, hors du verrou d'état**
   (`spawn_blocking`, photos ordonnées : une plus ancienne n'écrase jamais une plus récente) ; la
   réponse n'est rendue au worker qu'après l'écriture (échec : refus fermé `member_pins_unavailable`
   et alerte `member_pins_not_saved`, l'état complet est réécrit à la prochaine occasion). Absent :
-  vide ; illisible ou de version inconnue (`v` ≠ 1, revue M5) : le superviseur ne démarre pas (pas de
-  remise à zéro silencieuse). **Bornes** (revue I3 ; PC28 les remplacera au lot L05c, ci-dessous) : 2 000 épingles par org (au-delà, refus
+  vide ; illisible ou de version inconnue (`v` ∉ {1, 2}, revue M5) : le superviseur ne démarre pas (pas de
+  remise à zéro silencieuse). **Bornes** (revue I3, remplacées par PC28 au lot L05c, ci-dessous) : plafond par org (défaut 50 000, archives comprises ; sans archive à évincer, refus
   fermé `member_pins_limit` et alerte), 16 empreintes précédentes par membre, 100 clés en attente
   par org (au-delà, le refus reste fermé sans être mémorisé). Mesure : 2 000 premières vues dans une
   réponse en 0,12 s, verrou d'état tenu au plus 16 ms (`integration.rs::cles_rsa_charge_et_plafond`).
+- **Épingles hybrides (PC28, L05c)** : `sweep` (au plus une fois par heure, au contrôle d'une réponse)
+  archive en forme compacte (`archive`, empreinte SPKI + `firstSeen` + `lastSeen`) toute épingle sans changement
+  en attente et inactive depuis plus de **180 jours** ; `lastSeen` n'est réécrit qu'au plus une fois par jour. Une
+  épingle de format 1 (sans `lastSeen`) reçoit l'heure du premier balayage : l'inactivité compte depuis là. Une
+  archive n'est **jamais** une première vue : `check` la réactive d'abord (même empreinte, le total de l'org ne
+  change pas), puis compare : même clé → acceptée ; autre clé → `member_key_changed`, refus et mise en attente
+  comme pour une épingle active. Le plafond compte épingles actives et archives. Première vue au plafond :
+  la plus ancienne archive (par `lastSeen`) est évincée, jamais une épingle active ; sans archive, refus fermé
+  `member_pins_limit`. **Seul cas qui rouvre un TOFU pour une identité déjà vue** : l'éviction, car son empreinte
+  n'est plus conservée ; il est tracé (journal `member_pin_archive_evicted`, alerte `member_pins_archive_evicted`,
+  compteur `evicted` persistant par org). Alerte `member_pins_near_limit` à 80 % du plafond (une fois par
+  franchissement, réarmée sous le seuil). Le fichier reste public et non scellé (empreintes seulement), écrit
+  par `write_atomic` comme avant. Choix provisoires (L05c) : `previous` n'est pas gardé dans l'archive (la protection
+  contre le retour arrière d'une clé précédente est perdue après archivage ; la rotation exige de toute façon une
+  chaîne d'identité valide) ; un plafond abaissé sous l'occupation n'évince rien tant qu'aucune première vue ne se
+  présente.
 - **Règle**, pour chaque membre de la réponse dont la clé est lisible et dans les bornes (sinon le
   worker l'écarte, `skippedRecipients`) : première vue du couple (org, utilisateur) → épinglée ;
   même empreinte → acceptée ; empreinte différente → **rotation** acceptée seulement selon une
@@ -264,7 +280,7 @@ actuel (revue I4 ci-dessus) ; (b) un mandat v2 liera l'empreinte SPKI de la clé
 runtime lisant v1 et v2 ; (d) une réinitialisation E2EE sans transition signée bloque la création de
 salons jusqu'à l'acceptation par l'admin du runtime (v1, comportement actuel) ; (e) refus global en v1, avec
 un raffinement `scope=owner` plus tard ; (c) la route « chaîne de transitions » est reportée. Bornes
-de `member-rsa-pins.json` : **PC28 (2026-11-21), épingles hybrides : décidé, implémentation au lot L05c ; le code actuel applique encore 2 000 par org (`member_pins_limit`)**. Cible : plafond de sécurité de **50 000 par org**, réglable dans la configuration ; épingles **inactives depuis plus de 180 jours archivées en compact** (empreinte seule, toujours détectées au retour du membre) ; **éviction de la plus ancienne archive** en cas de débordement ; **alerte du dashboard à 80 %**. Limite de 1 000 membres par org (PC30) : voir 00 §6. Purge d'`AiThreadEnvelopeEvent` : 1 an (PC29, 07 §5).
+de `member-rsa-pins.json` : **PC28 (2026-11-21), épingles hybrides : réalisé par L05c (2026-11-22)**. Plafond de sécurité de **50 000 par org**, archives comprises, réglable (`limits.max_member_pins_per_org`) ; épingle **inactive depuis plus de 180 jours archivée en compact** (empreinte SPKI seule, `lastSeen`), **toujours détectée** (une autre clé donne `member_key_changed`, jamais une première vue ; même clé : l'épingle redevient active) ; **éviction de la plus ancienne archive** au débordement, tracée (journal `member_pin_archive_evicted`, alerte `member_pins_archive_evicted`, compteur persistant) ; **alerte du dashboard `member_pins_near_limit` à 80 %**. Détail : 06 §4.3. Limite de 1 000 membres par org (PC30) : voir 00 §6. Purge d'`AiThreadEnvelopeEvent` : 1 an (PC29, 07 §5).
 
 ## 5. Métriques (sans contenu, P9)
 

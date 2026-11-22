@@ -45,6 +45,8 @@ pub(super) struct PlanSt {
     /// `plan_result` lus mais **non consommés** : ils restent dans la boîte jusqu'à la fermeture du
     /// plan, pour qu'une reprise du worker retrouve les sorties d'appareil authentifiées.
     pub held: Vec<String>,
+    /// Actions d'agent déjà présentes dans un `plan_agent_result` déposé (relu à chaque reprise).
+    pub reported: BTreeSet<u64>,
 }
 
 /// Suite de la conduite d'un plan.
@@ -354,11 +356,13 @@ impl Agent {
                 codes: BTreeMap::new(),
                 local: BTreeMap::new(),
                 held: Vec::new(),
+                reported: BTreeSet::new(),
             });
         }
         let ck = self.ck.clone();
         let sid = self.init.session_id.clone();
         let Some(st) = self.plan.as_mut() else { return false };
+        st.reported.clear();
         for (phase, value) in &view.agent_results {
             let Ok(clear) =
                 synco_e2ee::plan::decrypt_phase_result(&ck, &sid, &plan_id, Executor::Agent, *phase, &st.graph, value)
@@ -366,6 +370,7 @@ impl Agent {
                 return false;
             };
             merge_outputs(&mut st.outputs, &clear);
+            reported_in(&mut st.reported, &clear);
         }
         true
     }
@@ -503,7 +508,15 @@ impl Agent {
     fn bilan(&self, plan_id: &str, view: &PlanView) -> Value {
         let empty = BTreeMap::new();
         let (outputs, codes) = self.plan.as_ref().map_or((&empty, BTreeMap::new()), |s| (&s.outputs, s.codes.clone()));
-        plan::bilan(plan_id, view, outputs, &codes)
+        // Action d'agent `done` dont la sortie n'est dans aucun résultat lu (exécutée avant une reprise,
+        // pas encore déposée) : la sortie enregistrée par l'API, pour que le bilan ne la perde pas.
+        let mut merged = outputs.clone();
+        for a in view.actions.iter().filter(|a| a.executor == Executor::Agent && a.state == ActionState::Done) {
+            if let (false, Some(o)) = (merged.contains_key(&a.n), a.output.as_ref()) {
+                merged.insert(a.n, o.clone());
+            }
+        }
+        plan::bilan(plan_id, view, &merged, &codes)
     }
 
     /// Phase d'agent (12 §8.3) : lance les actions prêtes en parallèle, une place libérée est reprise
@@ -517,7 +530,7 @@ impl Agent {
         let limit = Arc::new(AtomicUsize::new(usize::from(cfg.concurrency.clamp(1, 8))));
         let mut set: JoinSet<Report> = JoinSet::new();
         let (mut started, mut in_flight): (BTreeSet<u64>, BTreeSet<u64>) = (BTreeSet::new(), BTreeSet::new());
-        let mut outcomes = Outcomes::new();
+        let mut outcomes = self.unreported_outcomes(&view);
         let mut blocked: Vec<String> = Vec::new();
         let mut stopping = false;
         let mut running = self.status == "running";
@@ -624,6 +637,27 @@ impl Agent {
         self.post_agent_result(plan_id, &view, &outcomes).await
     }
 
+    /// Actions d'agent devenues finales (`done`, `failed`, `unknown_outcome`) et absentes des
+    /// `plan_agent_result` déjà déposés : elles figurent dans le prochain, même après un `Retry`, un
+    /// `Interrupted` ou une reprise du worker (le bilan garde ainsi leurs sorties).
+    fn unreported_outcomes(&self, view: &PlanView) -> Outcomes {
+        let Some(st) = self.plan.as_ref() else { return Outcomes::new() };
+        view.actions
+            .iter()
+            .filter(|a| {
+                a.executor == Executor::Agent
+                    && matches!(a.state, ActionState::Done | ActionState::Failed | ActionState::UnknownOutcome)
+                    && !st.reported.contains(&a.n)
+            })
+            .map(|a| {
+                let out = (a.state == ActionState::Done)
+                    .then(|| st.outputs.get(&a.n).or(a.output.as_ref()).cloned())
+                    .flatten();
+                (a.n, (a.state, out))
+            })
+            .collect()
+    }
+
     /// `POST …/agent-result` (12 §8.3, étape 3, §12.2).
     async fn post_agent_result(&mut self, plan_id: &str, view: &PlanView, outcomes: &Outcomes) -> Result<Phase, Stop> {
         let phase = view.agent_phases.saturating_add(1);
@@ -718,6 +752,15 @@ fn ready_agent_actions(view: &PlanView, started: &BTreeSet<u64>) -> Vec<u64> {
         })
         .map(|a| a.n)
         .collect()
+}
+
+/// Actions citées par un résultat de phase déjà recontrôlé (quel que soit l'état).
+fn reported_in(reported: &mut BTreeSet<u64>, clear: &Value) {
+    for o in clear.get("outcomes").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default() {
+        if let Some(n) = o.get("n").and_then(Value::as_u64) {
+            reported.insert(n);
+        }
+    }
 }
 
 /// Sorties d'un résultat de phase déjà recontrôlé : seulement celles des actions `done`.

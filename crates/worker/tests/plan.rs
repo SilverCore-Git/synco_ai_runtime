@@ -514,3 +514,52 @@ async fn action_echouee_sur_place_ne_repart_jamais_apres_un_retry() {
         assert!(st.tool_runs.is_empty());
     });
 }
+
+#[tokio::test]
+async fn actions_finales_non_rapportees_figurent_dans_le_resultat_et_le_bilan() {
+    use synco_e2ee::plan::{Executor, GraphAction, PlanGraph, decrypt_phase_result};
+    // 1 (agent) déjà `done` sur place, jamais rapportée (worker précédent mort avant le dépôt) ;
+    // 2 (appareil) ; 3 (agent) a besoin de 1 et de 2.
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    let actions = [
+        task(1, "a", &[]),
+        json!({ "n": 2, "kind": "category.create", "args": { "name": "Finance" } }),
+        json!({ "n": 3, "kind": "server.call", "tool": "create_task", "args": {}, "after": [1, 2],
+            "argsRefs": { "title": "$2.id" } }),
+    ];
+    let pid = propose(&api, &llm, &args(&actions), plan_init(PlanMode::Plan, 4)).await;
+    api.decide(&pid, &[1, 2, 3]);
+    api.with(|st| {
+        let a = &mut st.plans.get_mut(&pid).unwrap().actions[0];
+        a.state = "done".into();
+        a.output = Some(json!({ "id": "cm3dejafait0000000001" }));
+    });
+    let (peer, _t) = spawn_worker(&api, &llm, plan_init(PlanMode::Plan, 4), default_keys(true));
+    assert_eq!(peer.wait_done().await, DoneReason::Awaiting);
+    let graph = api.with(|st| {
+        PlanGraph::new(
+            st.plans[&pid]
+                .actions
+                .iter()
+                .map(|a| GraphAction {
+                    n: a.n,
+                    executor: Executor::parse(&a.executor).unwrap(),
+                    after: a.after.clone(),
+                })
+                .collect(),
+        )
+        .unwrap()
+    });
+    let value = api.with(|st| st.plans[&pid].agent_results[0].1.clone());
+    let clear = decrypt_phase_result(&ck(), SID, &pid, Executor::Agent, 1, &graph, &value).unwrap();
+    assert_eq!(clear["outcomes"], json!([{ "n": 1, "state": "done", "output": { "id": "cm3dejafait0000000001" } }]));
+
+    // Après la phase d'appareil, le bilan garde la sortie de 1 (relue dans le résultat déposé).
+    api.device_phase(&pid, 1, &[(2, "done", Some("cm3categorie0000000002"))], None);
+    let peer = resume(&api, &llm, plan_init(PlanMode::Plan, 4)).await;
+    assert_eq!(peer.wait_done().await, DoneReason::Idle);
+    let r = plan_result(&api);
+    assert_eq!(r["status"], "done");
+    assert_eq!(r["actions"][0]["output"]["id"], "cm3dejafait0000000001");
+}

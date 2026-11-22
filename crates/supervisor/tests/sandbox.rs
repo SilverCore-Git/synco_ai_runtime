@@ -82,6 +82,7 @@ fn init() -> Init {
         },
         tool_policy: BTreeMap::new(),
         log_level: "info".into(),
+        plan: None,
     }
 }
 

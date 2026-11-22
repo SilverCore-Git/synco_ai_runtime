@@ -273,6 +273,7 @@ d'enveloppe du créateur, `autonomy.allowed`) est repris tel quel dans 12.
 | PC62 | Un plan accepté qui expire relance la conversation pour un bilan : validé | 12 §7.1, 08 |
 | PC69 | **Empreintes à la décision** : pour chaque action serveur acceptée, la décision porte l'empreinte recalculée par l'app depuis le plan déchiffré ; l'API refuse toute empreinte différente de `serverDigests` (`409 plan_digest_mismatch`) ; `serverDigests` exposé dans la vue du plan | 12 §8.4, §12.1, §14 |
 | PC70 | **`cancel` pendant un plan accepté** vaut `stop` du plan (plus de nouvelle action, `executing` jusqu'au terme, bilan, messages plus retenus après l'arrêt) | 12 §7.1, §8.6 |
+| PC74 | **Abandons d'actions d'agent** : `agent-result` accepte `abandoned: [{ n, state: failed \| unknown_outcome, code }]` (codes en liste fermée) ; l'API les applique avant le contrôle des actions occupées (`pending` accepté seulement, cascade PC54, rejeu idempotent), `value` facultatif si le plan devient terminal ; le runtime n'abandonne plus un plan par `plan_aborted` | 12 §8.3, §8.7, §9, §12.2, §14 |
 
 ## 5 bis. Analyse des décisions (pour mémoire)
 

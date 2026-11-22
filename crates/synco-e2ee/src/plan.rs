@@ -283,7 +283,7 @@ fn check_phase_result(value: &Value, plan_id: &str, phase: u64, executor: Execut
     let mut last = 0u64;
     for outcome in map.get("outcomes").and_then(Value::as_array).ok_or(fail)? {
         let o = outcome.as_object().ok_or(fail)?;
-        if o.keys().any(|k| !matches!(k.as_str(), "n" | "state" | "output")) {
+        if o.keys().any(|k| !matches!(k.as_str(), "n" | "state" | "output" | "code")) {
             return Err(fail);
         }
         let n = o.get("n").and_then(Value::as_u64).ok_or(fail)?;
@@ -293,6 +293,14 @@ fn check_phase_result(value: &Value, plan_id: &str, phase: u64, executor: Execut
             return Err(fail);
         }
         last = n;
+        // `code` : un abandon (12 §8.3, PC74), seulement `failed` / `unknown_outcome`, jamais de sortie.
+        if let Some(code) = o.get("code") {
+            let known = code.as_str().is_some_and(is_abandon_code);
+            if !known || o.contains_key("output") || !matches!(state, ActionState::Failed | ActionState::UnknownOutcome)
+            {
+                return Err(fail);
+            }
+        }
         if let Some(output) = o.get("output") {
             let output = output.as_object().ok_or(fail)?;
             if output.iter().any(|(k, v)| !is_export_field(k) || !v.as_str().is_some_and(is_valid_id)) {
@@ -301,6 +309,16 @@ fn check_phase_result(value: &Value, plan_id: &str, phase: u64, executor: Execut
         }
     }
     Ok(())
+}
+
+/// Codes d'abandon d'une action d'agent (12 §8.3, PC74), liste fermée.
+pub const ABANDON_CODES: [&str; 5] =
+    ["rate_limited", "refs_inconsistent", "action_not_accepted", "autonomy_required", "key_unavailable"];
+
+/// `code` d'abandon connu.
+#[must_use]
+pub fn is_abandon_code(code: &str) -> bool {
+    ABANDON_CODES.contains(&code)
 }
 
 /// Chiffre un résultat de phase (`planId` et `phase` lus dans le clair, contrôlés comme à la
@@ -1135,6 +1153,26 @@ impl PlanRun {
             }
         }
         Ok(())
+    }
+
+    /// Abandon d'une action d'agent (12 §8.7, PC74) : seule une action d'**agent** `pending` passe à
+    /// `failed` ou `unknown_outcome` (dépendantes `skipped`, PC54). Rend `false`, sans rien changer,
+    /// pour tout autre état ou exécutant (rejeu idempotent) ; jamais vers `done`.
+    pub fn abandon(&mut self, n: u64, outcome: ActionState) -> bool {
+        let agent = index(n).and_then(|i| self.graph.actions.get(i)).is_some_and(|a| a.executor == Executor::Agent);
+        if !agent
+            || self.state(n) != Some(ActionState::Pending)
+            || !matches!(outcome, ActionState::Failed | ActionState::UnknownOutcome)
+        {
+            return false;
+        }
+        let _ = self.set(n, outcome);
+        for m in self.graph.with_dependents(&BTreeSet::from([n])) {
+            if self.state(m) == Some(ActionState::Pending) {
+                let _ = self.set(m, ActionState::Skipped);
+            }
+        }
+        true
     }
 
     fn close(&mut self, status: PlanStatus) {

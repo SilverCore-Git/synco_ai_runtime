@@ -5,15 +5,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Instant;
 
-use runtime_protocol::api::{DelegationRecord, PendingConversation};
+use runtime_protocol::api::{DelegationRecord, LlmPolicy, PendingConversation};
 use runtime_protocol::client::CloseCode;
 use runtime_protocol::pipe::{
-    Init, KeyEntry, KeyFrame, KeyKind, KeyOp, LlmConfig, LlmProvider, Pricing, ReasoningEffort, ShutdownMsg,
-    ShutdownReason, SupervisorMsg, WorkerLimits,
+    Init, KeyEntry, KeyFrame, KeyKind, KeyOp, LlmConfig, LlmProvider, PlanInit, PlanMode, Pricing, ReasoningEffort,
+    ShutdownMsg, ShutdownReason, SupervisorMsg, WorkerLimits,
 };
 use runtime_protocol::stream::{ApiEvent, EntryKindName};
 use runtime_protocol::ticket::RevokedUser;
-use synco_e2ee::delegation::{DelegationContext, RuntimeSelf, Scope};
+use synco_e2ee::delegation::{DelegationContext, MandateMode, MandateVersion, RuntimeSelf, Scope, ServedMandate};
 use synco_e2ee::identity::IdentityTransition;
 use tokio::sync::{Mutex, Notify, watch};
 use zeroize::Zeroizing;
@@ -287,9 +287,28 @@ impl Runtime {
             kex: self.keys.kex(),
             max_lifetime_secs: self.config.delegation.max_lifetime_secs(),
         };
-        let mut opened =
-            OpenDelegation::accept(&me, now_secs(), ctx, &trusted.0, &record.wrap, &record.mandate_signature)
-                .map_err(|_| unusable)?;
+        let served = ServedMandate {
+            version: record.mandate_version,
+            mode: record.mode.as_deref(),
+            owner_rsa_spki_hex: record.owner_rsa_spki_hex.as_deref(),
+        };
+        let mut opened = OpenDelegation::accept_versioned(
+            &me,
+            now_secs(),
+            ctx,
+            &trusted.0,
+            &record.wrap,
+            &record.mandate_signature,
+            &served,
+        )
+        .map_err(|_| unusable)?;
+        if !self.config.autonomy.allowed
+            && opened.mandate().version == MandateVersion::V2
+            && opened.mandate().mode == MandateMode::Auto
+        {
+            // 12 §10.3 : traité comme `plan`, aucune signature `rt1` ; signalé au dashboard.
+            self.state.lock().await.alert(now_secs(), "autonomy_disabled_by_config");
+        }
         // Entrées, page par page.
         let mut after: Option<String> = None;
         loop {
@@ -748,9 +767,26 @@ impl Runtime {
             limits,
             tool_policy: policy.map(|p| p.runtime.tool_policy.clone()).unwrap_or_default(),
             log_level: self.config.log_level.clone(),
+            plan: Some(self.plan_init(st, user_id, policy)),
         };
         let route = route.map(|r| LlmRoute { budget: crate::launcher::LlmBudget::from_limits(&init.limits), ..r });
         Ok((init, keys, route))
+    }
+
+    /// Réglages des plans d'action du worker (12 §3.2, §8.7, §10.3) : mode du mandat **vérifié** de la
+    /// délégation courante du propriétaire (`auto` seulement si v2 `auto` et `autonomy.allowed`),
+    /// concurrence de la configuration, délai de l'org borné à [1 h, 7 j].
+    fn plan_init(&self, st: &State, user_id: &str, policy: Option<&LlmPolicy>) -> PlanInit {
+        let mode = st.vault.get(user_id).filter(|d| d.exp() > now_secs()).map_or(PlanMode::Plan, |d| {
+            match d.effective_mode(self.config.autonomy.allowed) {
+                MandateMode::Auto => PlanMode::Auto,
+                MandateMode::Plan => PlanMode::Plan,
+            }
+        });
+        let timeout = policy
+            .and_then(|p| p.runtime.limits.confirmation_timeout_secs)
+            .map_or(604_800, |t| t.clamp(3_600, 604_800));
+        PlanInit { mode, concurrency: self.config.plan.concurrency, confirmation_timeout_secs: timeout }
     }
 
     /// Arrête le worker d'une conversation, ferme ses clients (`4403`) et l'oublie.

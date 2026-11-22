@@ -49,6 +49,12 @@ pub struct Config {
     /// Dashboard (L08, docs/plan/11).
     #[serde(default)]
     pub dashboard: DashboardConfig,
+    /// Mode autonome (12 §10.3).
+    #[serde(default)]
+    pub autonomy: Autonomy,
+    /// Plans d'action de l'agent (12 §8.7).
+    #[serde(default)]
+    pub plan: PlanSettings,
     /// Journal : `error`, `warn`, `info`, `debug`.
     #[serde(default = "default_log_level")]
     pub log_level: String,
@@ -112,6 +118,46 @@ const fn default_retention_days() -> u32 {
 impl Default for DashboardConfig {
     fn default() -> Self {
         Self { retention_days: default_retention_days(), allowed_hosts: Vec::new(), trust_proxy_hops: 0 }
+    }
+}
+
+/// Mode autonome (12 §10.3) : seule protection que l'API ne peut pas contourner (C1 §4.5).
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Autonomy {
+    /// `false` : tout mandat `auto` est traité comme `plan` (aucune signature `rt1`) et signalé au
+    /// dashboard.
+    #[serde(default = "default_true")]
+    pub allowed: bool,
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+impl Default for Autonomy {
+    fn default() -> Self {
+        Self { allowed: true }
+    }
+}
+
+/// Plans d'action de l'agent (12 §8.7).
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PlanSettings {
+    /// Actions d'agent exécutées en parallèle par plan : 4 par défaut, de 1 à 8 (refus au démarrage
+    /// hors de cet intervalle).
+    #[serde(default = "default_concurrency")]
+    pub concurrency: u8,
+}
+
+const fn default_concurrency() -> u8 {
+    4
+}
+
+impl Default for PlanSettings {
+    fn default() -> Self {
+        Self { concurrency: default_concurrency() }
     }
 }
 
@@ -401,6 +447,9 @@ impl Config {
         if !(days.is_finite() && (1.0 / 24.0..=30.0).contains(&days)) {
             return Err(invalid("delegation.max_days : entre 1/24 (1 h) et 30"));
         }
+        if !(1..=8).contains(&self.plan.concurrency) {
+            return Err(invalid("plan.concurrency : de 1 à 8"));
+        }
         self.limits.validate()?;
         for (id, p) in &self.llm.providers {
             if !KNOWN_PROVIDERS.contains(&id.as_str()) {
@@ -549,6 +598,22 @@ allowed_origins = ["https://app.example.com"]
         assert_eq!(c.limits, Limits::default());
         assert_eq!(c.delegation.max_lifetime_secs(), 30 * 86_400);
         assert_eq!(c.key_sealing.mode, SealingMode::Auto);
+    }
+
+    #[test]
+    fn autonomie_et_concurrence_des_plans() {
+        let c = Config::parse(MIN).unwrap();
+        assert!(c.autonomy.allowed, "autonomie permise par défaut (12 §10.3)");
+        assert_eq!(c.plan.concurrency, 4);
+        let c = Config::parse(&format!("{MIN}\n[autonomy]\nallowed = false\n[plan]\nconcurrency = 8\n")).unwrap();
+        assert!(!c.autonomy.allowed);
+        assert_eq!(c.plan.concurrency, 8);
+        for bad in ["0", "9", "255"] {
+            assert!(
+                Config::parse(&format!("{MIN}\n[plan]\nconcurrency = {bad}\n")).is_err(),
+                "{bad} refusé au démarrage"
+            );
+        }
     }
 
     #[test]

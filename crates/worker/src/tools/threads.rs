@@ -255,6 +255,10 @@ pub async fn run(ctx: &ToolCtx<'_>, args: &Value) -> Outcome {
         if let Some(c) = category {
             crate::json_set(&mut body, "categoryId", json!(c));
         }
+        if let Some((plan_id, n)) = ctx.plan {
+            // Verrou du plan (12 §8.4) : l'action doit être acceptée et prête.
+            crate::json_set(&mut body, "plan", json!({ "planId": plan_id, "n": n }));
+        }
         let r = match super::sent(ctx.api.call(HttpMethod::Post, &format!("{PREFIX}/e2ee/threads"), Some(&body)).await)
         {
             super::Sent::Answered(r) => r,

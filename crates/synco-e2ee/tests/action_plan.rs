@@ -423,6 +423,27 @@ fn vecteurs_du_plan_d_action() {
         checks += 1;
     }
 
+    // Abandons d'actions d'agent (PC74) : `pending` accepté d'exécutant `agent` seulement.
+    for c in v["abandonCases"].as_array().unwrap() {
+        let name = s(c, "name");
+        let g = graph_of(named_plan(&v, s(c, "plan")), &v, &manifest);
+        let mut run = PlanRun::new(g, &ns(&c["accepted"])).unwrap();
+        for n in ns(&c["done"]) {
+            run.start(n).unwrap();
+            run.finish(n, ActionState::Done).unwrap();
+        }
+        let rounds = if c.get("replay").is_some() { 2 } else { 1 };
+        for _ in 0..rounds {
+            for a in c["abandoned"].as_array().unwrap() {
+                assert!(plan::is_abandon_code(s(a, "code")), "{name} : code hors liste");
+                run.abandon(a["n"].as_u64().unwrap(), ActionState::parse(s(a, "state")).unwrap());
+            }
+        }
+        check_states(&run, &c["expectStates"], name);
+        assert_eq!(run.status().as_str(), s(c, "expectStatus"), "{name}");
+        checks += 1;
+    }
+
     for c in v["runCases"].as_array().unwrap() {
         let name = s(c, "name");
         let g = graph_of(named_plan(&v, s(c, "plan")), &v, &manifest);
@@ -437,7 +458,7 @@ fn vecteurs_du_plan_d_action() {
     }
 
     println!("action-plan.json : {checks} vérifications rejouées");
-    assert_eq!(checks, 2 + 4 + 4 + 4 + 12 + 23 + 20 + 7 + 45 + 6 + 7 + 2 + 7, "un cas n'a pas été rejoué");
+    assert_eq!(checks, 2 + 4 + 4 + 4 + 12 + 23 + 20 + 7 + 45 + 6 + 7 + 2 + 8 + 7, "un cas n'a pas été rejoué");
 }
 
 /// Protections propres au code (hors vecteurs) : chacune échoue sans la règle qu'elle couvre.
@@ -521,4 +542,33 @@ fn garde_fous() {
     assert_eq!(run.status().as_str(), "executing");
     run.finish(4, ActionState::Done).unwrap();
     assert_eq!(run.status().as_str(), "stopped");
+}
+
+/// Résultat d'agent avec abandons (PC74) : `code` seulement avec `failed` / `unknown_outcome`, dans la
+/// liste fermée, jamais avec une sortie.
+#[test]
+fn resultat_d_agent_avec_abandons() {
+    let v = load();
+    let manifest = ToolManifest::from_json(&v["toolManifest"]);
+    let g = graph_of(named_plan(&v, "mixedPlan"), &v, &manifest);
+    let (ck, sid, pid) = (key(s(&v, "ckHex")), s(&v, "sessionId"), s(&v["mixedPlan"], "planId"));
+    let make = |outcomes: Value| {
+        let clear = serde_json::json!({ "v": 1, "planId": pid, "phase": 1, "outcomes": outcomes });
+        plan::encrypt_phase_result(&ck, sid, Executor::Agent, &g, &clear, &mut iv("a1a1a1a1a1a1a1a1a1a1a1a1"))
+    };
+    let ok = make(serde_json::json!([
+        { "n": 2, "state": "failed", "code": "rate_limited" },
+        { "n": 5, "state": "unknown_outcome", "code": "key_unavailable" }
+    ]))
+    .unwrap();
+    let clear = plan::decrypt_phase_result(&ck, sid, pid, Executor::Agent, 1, &g, &ok).unwrap();
+    assert_eq!(clear["outcomes"][0]["code"], "rate_limited");
+    for bad in [
+        serde_json::json!([{ "n": 2, "state": "failed", "code": "tool_failed" }]),
+        serde_json::json!([{ "n": 2, "state": "done", "code": "rate_limited" }]),
+        serde_json::json!([{ "n": 2, "state": "failed", "code": "rate_limited", "output": { "id": "cm3x00000000000000000001" } }]),
+        serde_json::json!([{ "n": 2, "state": "failed", "code": 7 }]),
+    ] {
+        assert!(make(bad.clone()).is_err(), "{bad}");
+    }
 }

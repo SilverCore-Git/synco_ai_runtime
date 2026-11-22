@@ -34,6 +34,10 @@ pub const MAX_ACTIONS: usize = 100;
 pub const MAX_AFTER_ENTRIES: usize = 2_000;
 /// Taille maximale de `utf8(JCS(plan))` (256 Kio, PC61).
 pub const MAX_PLAN_BYTES: usize = 262_144;
+/// Longueur maximale (en octets) d'une valeur `gcm1:` de plan ou de résultat de phase : celle d'un
+/// clair de [`MAX_PLAN_BYTES`], soit `5 + 4·⌈(12 + 262 144 + 16) / 3⌉ = 349 569`. Contrôlée **avant**
+/// le base64, AES-GCM et le JSON (PC61).
+pub const MAX_PLAN_VALUE_LEN: usize = session::VERSION_PREFIX.len() + 4 * (12 + MAX_PLAN_BYTES + 16).div_ceil(3);
 /// Durée de vie maximale d'un plan (7 jours, 09 §3).
 pub const MAX_PLAN_LIFETIME_SECS: u64 = 604_800;
 /// Nombre maximal de groupes (PC58).
@@ -179,6 +183,11 @@ pub fn encrypt_plan(ck: &SymmetricKey, plan: &Value, rng: &mut impl RandomSource
     session::encrypt_field(ck, session_id, plan_id, &FieldName::Plan, &clear, rng)
 }
 
+/// Borne de PC61 sur la valeur chiffrée, avant tout décodage ([`Error::PlanInvalid`]).
+const fn check_value_len(value: &str) -> Result<()> {
+    if value.len() > MAX_PLAN_VALUE_LEN { Err(Error::PlanInvalid) } else { Ok(()) }
+}
+
 /// Lecture stricte d'un clair de plan ou de résultat de phase : JSON de `serde_json` (demi-paire de
 /// substitution `"\ud800"` refusée, BOM initial refusé), puis nombres **entiers** sûrs seulement, écrits sans fraction ni exposant
 /// (`1.0`, `1e2` et `-0` sont des flottants pour `serde_json`), profondeur ≤ 64, comme [`jcs`]. Tout
@@ -192,6 +201,7 @@ fn parse_clear(clear: &str) -> Result<Value> {
 /// Déchiffre `pendingToolCall.args` d'un `propose_actions` (stricte) et vérifie que le clair porte
 /// ce `sessionId` et ce `planId` ([`Error::PlanInvalid`] sinon). La validation (§5) reste à faire.
 pub fn decrypt_plan(ck: &SymmetricKey, session_id: &str, plan_id: &str, value: &str) -> Result<Value> {
+    check_value_len(value)?;
     let aad_field = FieldName::Plan.to_aad_part()?;
     let clear = session::decrypt_field(ck, session_id, plan_id, &aad_field, value)?;
     let plan = parse_clear(&clear)?;
@@ -314,6 +324,7 @@ pub fn decrypt_phase_result(
     value: &str,
 ) -> Result<Value> {
     let field = executor.result_field(phase).to_aad_part()?;
+    check_value_len(value)?;
     let clear = session::decrypt_field(ck, session_id, plan_id, &field, value)?;
     let result = parse_clear(&clear)?;
     check_phase_result(&result, plan_id, phase)?;
@@ -845,13 +856,17 @@ pub fn validate_plan(plan: &Value, ctx: &PlanContext<'_>) -> core::result::Resul
     let root = plan.as_object().ok_or(P::Header)?;
     let actions = root.get("actions").and_then(Value::as_array).ok_or(P::Actions)?;
 
-    // Règle 3 (PC61) d'abord : le modèle doit savoir qu'il faut découper.
+    // Règle 3 (PC61) d'abord : le modèle doit savoir qu'il faut découper. Les comptes d'actions et de
+    // dépendances passent avant JCS, qui parcourt tout le plan.
     let after_total = actions
         .iter()
         .filter_map(|a| a.get("after").and_then(Value::as_array))
         .fold(0usize, |acc, list| acc.saturating_add(list.len()));
+    if actions.len() > MAX_ACTIONS || after_total > MAX_AFTER_ENTRIES {
+        return Err(P::TooLarge);
+    }
     let clear = jcs(plan).map_err(|_| P::Header)?;
-    if actions.len() > MAX_ACTIONS || after_total > MAX_AFTER_ENTRIES || clear.len() > MAX_PLAN_BYTES {
+    if clear.len() > MAX_PLAN_BYTES {
         return Err(P::TooLarge);
     }
 

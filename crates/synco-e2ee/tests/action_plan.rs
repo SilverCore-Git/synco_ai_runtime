@@ -347,6 +347,17 @@ fn vecteurs_du_plan_d_action() {
         checks += 1;
     }
 
+    // Borne de la valeur chiffrée (PC61), avant le base64.
+    assert_eq!(plan::MAX_PLAN_VALUE_LEN, 349_569);
+    for c in v["boundCases"].as_array().unwrap() {
+        let name = s(c, "name");
+        let fill = s(c, "fill").repeat(c["fillLength"].as_u64().unwrap().try_into().unwrap());
+        let value = format!("{}{fill}", s(c, "valuePrefix"));
+        let r = typed_decrypt(&ck, c, s(c, "fieldName"), &value);
+        assert_eq!(r.unwrap_err().code(), s(c, "expect"), "{name}");
+        checks += 1;
+    }
+
     // Validation (12 §5, PC61).
     for c in v["validationCases"].as_array().unwrap() {
         let name = s(c, "name");
@@ -422,7 +433,7 @@ fn vecteurs_du_plan_d_action() {
     }
 
     println!("action-plan.json : {checks} vérifications rejouées");
-    assert_eq!(checks, 2 + 4 + 4 + 4 + 12 + 20 + 14 + 43 + 6 + 7 + 2 + 7, "un cas n'a pas été rejoué");
+    assert_eq!(checks, 2 + 4 + 4 + 4 + 12 + 20 + 14 + 4 + 45 + 6 + 7 + 2 + 7, "un cas n'a pas été rejoué");
 }
 
 /// Protections propres au code (hors vecteurs) : chacune échoue sans la règle qu'elle couvre.

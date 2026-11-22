@@ -264,7 +264,8 @@ pub(crate) async fn created_key(
         .vault
         .get(user_id)
         .filter(|d| d.exp() > now_secs())
-        .is_some_and(|d| d.effective_mode(allowed) != synco_e2ee::delegation::MandateMode::Auto);
+        // Pas de délégation (retirée ou expirée) : refus avant de consommer `created_threads`.
+        .is_none_or(|d| d.effective_mode(allowed) != synco_e2ee::delegation::MandateMode::Auto);
     if non_autonomous {
         return created_key_error(&reference, "autonomy_required");
     }

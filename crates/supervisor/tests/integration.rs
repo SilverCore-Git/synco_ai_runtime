@@ -1894,6 +1894,10 @@ async fn created_key_reserve_aux_salons_crees_par_ce_worker() {
                 ack_rx.await.unwrap();
                 let c = created_key(&mut rd, &mut wr, &t, [9; 32]).await;
                 push("delegation", [9; 32], c);
+                // Le refus n'a pas consommé le salon : un second essai donne le même refus (et non
+                // `created_key_unknown_thread`).
+                let c = created_key(&mut rd, &mut wr, &t, [9; 32]).await;
+                push("delegation2", [9; 32], c);
                 // f. Trame de clés non admissible (espace) : le worker est tué.
                 let bad = wire::KeyFrame {
                     op: wire::KeyOp::Add,
@@ -1965,8 +1969,9 @@ async fn created_key_reserve_aux_salons_crees_par_ce_worker() {
     let ack = tokio::time::timeout(Duration::from_secs(10), remove_rx.recv()).await.unwrap().unwrap();
     rt.state.lock().await.vault.remove_user(USER);
     ack.send(()).unwrap();
-    wait_until("second worker", || report.lock().unwrap().first.len() == 36).await;
-    assert_eq!(report.lock().unwrap().first[35].2.error.as_deref(), Some("delegation_unavailable"));
+    wait_until("second worker", || report.lock().unwrap().first.len() == 37).await;
+    assert_eq!(report.lock().unwrap().first[35].2.error.as_deref(), Some("autonomy_required"));
+    assert_eq!(report.lock().unwrap().first[36].2.error.as_deref(), Some("autonomy_required"), "salon non consommé");
     for _ in 0..100 {
         if rt.state.lock().await.convs.get(SESSION).is_some_and(|c| !c.worker.is_active()) {
             break;

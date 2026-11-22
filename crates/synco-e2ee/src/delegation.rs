@@ -478,7 +478,8 @@ pub enum Rt1Verdict {
     Verified,
     /// Enveloppe fausse, mandat illisible, ou mandat v2 `plan`.
     Rejected,
-    /// Mandat v1 (hors production, PC32) et enveloppe valide : acceptée avec avertissement.
+    /// Mandat v1 et enveloppe valide, **hors production** seulement (PC32) : acceptée avec
+    /// avertissement.
     TofuWarning,
 }
 
@@ -495,12 +496,17 @@ impl Rt1Verdict {
 }
 
 /// Règle de 12 §10.2 : `mandate` = mandat **vérifié** (`None` s'il est illisible).
+///
+/// `production` : `true` en production (le choix par défaut de tout appelant), où un mandat v1 n'est
+/// jamais admis (PC32) et rend [`Rt1Verdict::Rejected`] ; `false` seulement hors production, où il
+/// rend [`Rt1Verdict::TofuWarning`]. Même paramètre que `rt1Verdict` de l'app (défaut `true`).
 #[must_use]
-pub fn rt1_verdict(mandate: Option<&VerifiedMandate>, envelope_valid: bool) -> Rt1Verdict {
+pub fn rt1_verdict(mandate: Option<&VerifiedMandate>, envelope_valid: bool, production: bool) -> Rt1Verdict {
     match (mandate, envelope_valid) {
         (Some(m), true) => match (m.version, m.mode) {
             (MandateVersion::V2, MandateMode::Auto) => Rt1Verdict::Verified,
             (MandateVersion::V2, MandateMode::Plan) => Rt1Verdict::Rejected,
+            (MandateVersion::V1, _) if production => Rt1Verdict::Rejected,
             (MandateVersion::V1, _) => Rt1Verdict::TofuWarning,
         },
         _ => Rt1Verdict::Rejected,

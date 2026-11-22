@@ -110,7 +110,7 @@ fn cas_de_mandat() {
 fn politique_rt1() {
     let v = load();
     let cases = v["rt1Policy"].as_array().unwrap();
-    assert_eq!(cases.len(), 6);
+    assert_eq!(cases.len(), 8);
     for c in cases {
         let mandate = if c.get("mandateUnusable").and_then(Value::as_bool) == Some(true) {
             None
@@ -125,7 +125,10 @@ fn politique_rt1() {
             };
             Some(VerifiedMandate { version, mode, owner_rsa_spki_hex: None })
         };
-        let verdict: Rt1Verdict = delegation::rt1_verdict(mandate.as_ref(), c["envelopeValid"].as_bool().unwrap());
+        // `production` absent : production (le défaut de l'app).
+        let production = c.get("production").is_none_or(|p| p.as_bool().unwrap());
+        let verdict: Rt1Verdict =
+            delegation::rt1_verdict(mandate.as_ref(), c["envelopeValid"].as_bool().unwrap(), production);
         assert_eq!(verdict.as_str(), s(c, "expect"), "{}", s(c, "name"));
     }
 }

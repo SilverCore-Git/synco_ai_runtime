@@ -378,6 +378,8 @@ pub struct MemberPinStore {
     warned: BTreeSet<String>,
     /// Orgs où une éviction a eu lieu depuis le dernier [`Self::take_alerts`].
     evicted_unreported: BTreeSet<String>,
+    /// Orgs dont l'occupation dépassait le plafond au démarrage, alerte non encore levée.
+    over_limit_unreported: BTreeSet<String>,
 }
 
 impl Default for MemberPinStore {
@@ -404,6 +406,7 @@ impl MemberPinStore {
             last_sweep: 0,
             warned: BTreeSet::new(),
             evicted_unreported: BTreeSet::new(),
+            over_limit_unreported: BTreeSet::new(),
         }
     }
 
@@ -411,6 +414,20 @@ impl MemberPinStore {
     /// archives à la prochaine première vue, jamais une épingle active.
     pub fn set_max_per_org(&mut self, max: usize) {
         self.max_per_org = max.max(1);
+        let orgs: BTreeSet<String> = self.file.orgs.keys().chain(self.file.archive.keys()).cloned().collect();
+        for org in orgs {
+            let total = self.total(&org);
+            if total > self.max_per_org {
+                tracing::error!(
+                    code = "member_pins_over_limit",
+                    org = %org,
+                    total,
+                    max = self.max_per_org,
+                    "occupation des épingles supérieure au plafond : rien n'est évincé"
+                );
+                self.over_limit_unreported.insert(org);
+            }
+        }
     }
 
     /// Ouvre `member-rsa-pins.json` (absent : vide). Illisible : erreur (jamais un épinglage remis
@@ -486,6 +503,11 @@ impl MemberPinStore {
             return Verdict::Trusted;
         }
         // Première vue : le plafond compte les épingles actives et les archives.
+        // N'évince que si l'éviction suffit : jamais d'archive perdue pour un refus au final.
+        let active = self.file.orgs.get(org_id).map_or(0, BTreeMap::len);
+        if active >= self.max_per_org {
+            return Verdict::Full;
+        }
         while self.total(org_id) >= self.max_per_org {
             if !self.evict_oldest_archive(org_id) {
                 return Verdict::Full;
@@ -610,6 +632,9 @@ impl MemberPinStore {
         let mut out = Vec::new();
         if self.evicted_unreported.remove(org_id) {
             out.push("member_pins_archive_evicted");
+        }
+        if self.over_limit_unreported.remove(org_id) {
+            out.push("member_pins_over_limit");
         }
         let near = self.total(org_id).saturating_mul(100) >= self.max_per_org.saturating_mul(WARN_PERCENT);
         if near {
@@ -967,6 +992,22 @@ mod tests {
         s.check("o", "b", &key(2), 1);
         assert_eq!(s.check("o", "c", &key(3), 2), Verdict::Full);
         assert_eq!(s.usage("o").evicted, 0);
+    }
+
+    #[test]
+    fn actives_au_plafond_ne_touchent_pas_l_archive() {
+        let mut s = MemberPinStore::in_memory();
+        s.set_max_per_org(3);
+        for (i, t) in [(1u8, 1u64), (2, 3 * YEAR), (3, 3 * YEAR)] {
+            s.check("o", &format!("u{i}"), &key(i), t);
+        }
+        s.sweep(3 * YEAR + 1); // u1 archivée ; 2 actives
+        s.set_max_per_org(2); // plafond abaissé : actives = plafond, une archive en trop
+        assert!(s.take_alerts("o").contains(&"member_pins_over_limit"), "dépassement signalé");
+        assert_eq!(s.check("o", "n", &key(9), 3 * YEAR + 2), Verdict::Full);
+        assert!(s.is_archived("o", "u1"), "archive intacte");
+        assert_eq!(s.usage("o"), PinUsage { active: 2, archived: 1, max: 2, evicted: 0 });
+        assert!(!s.take_alerts("o").contains(&"member_pins_archive_evicted"));
     }
 
     #[test]

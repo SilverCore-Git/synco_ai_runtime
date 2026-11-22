@@ -563,3 +563,24 @@ async fn actions_finales_non_rapportees_figurent_dans_le_resultat_et_le_bilan() 
     assert_eq!(r["status"], "done");
     assert_eq!(r["actions"][0]["output"]["id"], "cm3dejafait0000000001");
 }
+
+#[tokio::test]
+async fn cancel_pendant_un_plan_accepte_vaut_stop_et_clot_avec_le_bilan() {
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    let actions: Vec<Value> = (1..=3).map(|n| task(n, &format!("t{n}"), &[])).collect();
+    let pid = propose(&api, &llm, &args(&actions), plan_init(PlanMode::Plan, 4)).await;
+    // L'API a traité le `cancel` comme un `stop` (actions `pending` → `skipped`) et l'a déposé.
+    api.decide(&pid, &[1, 2, 3]);
+    api.stop_plan(&pid);
+    api.deposit("cancel:c1", json!({ "t": "cancel", "id": "c1" }));
+    let peer = resume(&api, &llm, plan_init(PlanMode::Plan, 4)).await;
+    assert_eq!(peer.wait_done().await, DoneReason::Idle, "la conversation n'est pas annulée");
+    let r = plan_result(&api);
+    assert_eq!(r["stopped"], true);
+    assert_eq!(state_of(&r, 1), "skipped");
+    api.with(|st| {
+        assert_ne!(st.status, "cancelled");
+        assert!(st.inbox.iter().all(|i| i.2), "cancel consommé");
+    });
+}

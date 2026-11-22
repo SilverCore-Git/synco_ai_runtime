@@ -774,6 +774,11 @@ impl Agent {
             let t = frame.get("t").and_then(Value::as_str).unwrap_or_default().to_owned();
             if t == "cancel" {
                 self.consumed.push(id);
+                // PC70 : pendant un plan accepté, le `cancel` vaut `stop` du plan (l'API l'a déjà
+                // arrêté) ; la conversation n'est pas annulée, `propose_actions` est clos avec le bilan.
+                if self.plan_defers_message().await? {
+                    continue;
+                }
                 out.cancelled = true;
                 return Ok(out);
             }

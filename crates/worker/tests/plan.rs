@@ -491,3 +491,26 @@ async fn plan_mixte_phases_alternees_et_reprise_apres_agent_result() {
     });
     assert_eq!(plan_result(&api)["status"], "done");
 }
+
+#[tokio::test]
+async fn action_echouee_sur_place_ne_repart_jamais_apres_un_retry() {
+    // 1 (agent, toujours limitée en 429) ; 2 (appareil, encore `pending`) ; 3 (agent) dépend de 1.
+    // L'API garde 1 `pending` et prête : `agent-result` est refusé (`plan_phase_mismatch`), le worker
+    // relit, mais l'action déjà `failed` sur place (vue superposée) ne doit pas repartir (08 §5).
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    let actions = [
+        task(1, "a", &[]),
+        json!({ "n": 2, "kind": "category.create", "args": { "name": "Finance" } }),
+        task(3, "c", &[1]),
+    ];
+    let pid = propose(&api, &llm, &args(&actions), plan_init(PlanMode::Plan, 4)).await;
+    api.with(|st| st.throttle_429 = 1000);
+    api.decide(&pid, &[1, 2, 3]);
+    let (peer, _t) = spawn_worker(&api, &llm, plan_init(PlanMode::Plan, 4), default_keys(true));
+    let _ = peer.wait_done().await;
+    api.with(|st| {
+        assert_eq!(st.throttled, 4, "1 essai + 3 nouveaux, jamais relancée après le Retry");
+        assert!(st.tool_runs.is_empty());
+    });
+}

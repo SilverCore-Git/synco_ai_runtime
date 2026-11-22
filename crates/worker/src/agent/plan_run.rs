@@ -328,10 +328,15 @@ impl Agent {
     /// [`Self::fetch_view`] avec les issues locales du worker ([`PlanView::with_local`]).
     async fn fetch_overlaid(&mut self, plan_id: &str) -> Result<Option<PlanView>, Stop> {
         let view = self.fetch_view(plan_id).await?;
-        Ok(match (view, self.plan.as_ref()) {
-            (Some(v), Some(st)) => Some(v.with_local(&st.local)),
-            (v, _) => v,
-        })
+        Ok(view.map(|v| self.overlay(v)))
+    }
+
+    /// Superpose les issues locales du worker à une vue de l'API.
+    fn overlay(&self, v: PlanView) -> PlanView {
+        match self.plan.as_ref() {
+            Some(st) => v.with_local(&st.local),
+            None => v,
+        }
     }
 
     /// Construit (ou met à jour) l'état du plan : graphe contrôlé contre ce que l'API sert (règle 8),
@@ -441,6 +446,9 @@ impl Agent {
                 self.close_plan(ToolStatus::Error, json!({ "error": "tool_call_unverified" })).await?;
                 return Ok(PlanFlow::Closed);
             }
+            // Vue superposée dès l'entrée : une action déjà `failed` / `unknown_outcome` sur place ne
+            // repart jamais (08 §5), même après un `Retry`.
+            let view = self.overlay(view);
             match view.status.as_str() {
                 "proposed" => return self.wait_decision().await,
                 "rejected" => {
@@ -501,7 +509,8 @@ impl Agent {
     /// Phase d'agent (12 §8.3) : lance les actions prêtes en parallèle, une place libérée est reprise
     /// aussitôt, plus petite `n` d'abord ; aucune action ne démarre après `expiresAt`, un arrêt ou
     /// une annulation ; celles en cours vont à leur terme.
-    async fn agent_phase(&mut self, plan_id: &str, mut view: PlanView) -> Result<Phase, Stop> {
+    async fn agent_phase(&mut self, plan_id: &str, view: PlanView) -> Result<Phase, Stop> {
+        let mut view = self.overlay(view);
         let Some(cfg) = self.init.plan else { return Ok(Phase::Finished(view)) };
         let expires_at =
             self.pending.as_ref().and_then(|p| p.args.get("expiresAt")).and_then(Value::as_u64).unwrap_or(0);

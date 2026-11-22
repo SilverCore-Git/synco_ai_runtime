@@ -728,7 +728,7 @@ Flux (04 §6) : `delegation.revoked.reason` peut valoir `autonomy_withdrawn` ; `
 | `GET /feature-policies` | U-admin | — | `200 { policies: [{ feature, mode, memberCount, enabledCount, updatedAt, updatedBy }] }` (fonctionnalités actives) | `403 forbidden` |
 | `PUT /feature-policies/:feature` | U-admin | `{ mode }` | `200 { feature, mode, revoked: <n> }` ; applique §11.4 | `400 invalid_body`, `403 forbidden`, `404 not_found`, `409 feature_reserved` |
 | `GET /feature-policies/:feature/members` | U-admin | `?after=<userId>&limit=1..100&q=<recherche>` | `200 { members: [{ userId, addedAt, enabled }], next }` | idem |
-| `POST /feature-policies/:feature/members` | U-admin | `{ userIds: [1..100] }` (membres de l'org) | `200 { added }` | `400 invalid_body` (non-membre), idem |
+| `POST /feature-policies/:feature/members` | U-admin | `{ userIds: [1..100] }` (membres de l'org) | `200 { added }` | `400 invalid_body` (non-membre, plafond de 1 000), `409 policy_not_list`, idem |
 | `POST /feature-policies/:feature/members/remove` | U-admin | `{ userIds: [1..100] }` | `200 { removed, revoked }` ; §11.4 | idem |
 | `GET /feature-policies/:feature/events` | U-admin | `?before=<id>&limit=1..100` | `200 { events: [...], next }` | idem |
 | `GET /feature-policies/me` | U | — | `200 { features: [{ feature, allowed, enabled, warningVersion }] }` | — |
@@ -767,6 +767,7 @@ phases, le claim et les résultats de phase d'agent (chiffrés). **Aucun contenu
 | `rate_limited` / `refs_inconsistent` / `key_unavailable` | `code` d'abandon (`abandoned`, résultat de phase, bilan) | Action d'agent jamais partie : `429` épuisé, `refs` différentes de la sortie enregistrée, clé du salon indisponible (§8.3, PC74) |
 | `feature_not_allowed` | API 403 | Politique d'org (ou opt-in absent) |
 | `feature_reserved` | API 409 | Fonctionnalité réservée (§11.1) |
+| `policy_not_list` | API 409 | `POST …/feature-policies/:feature/members` alors que la politique n'est pas en mode `list` (§12.3) |
 | `autonomy_withdrawn` | `revokedReason`, `delegation.revoked.reason` | Retrait du mode autonome (§11.4) |
 
 ## 15. Questions tranchées (PC44 à PC48, 2026-11-21)

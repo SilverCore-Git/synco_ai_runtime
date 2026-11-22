@@ -179,12 +179,22 @@ pub fn encrypt_plan(ck: &SymmetricKey, plan: &Value, rng: &mut impl RandomSource
     session::encrypt_field(ck, session_id, plan_id, &FieldName::Plan, &clear, rng)
 }
 
+/// Lecture stricte d'un clair de plan ou de résultat de phase : JSON de `serde_json` (demi-paires de
+/// substitution refusées), puis nombres **entiers** sûrs seulement, écrits sans fraction ni exposant
+/// (`1.0`, `1e2` et `-0` sont des flottants pour `serde_json`), profondeur ≤ 64, comme [`jcs`]. Tout
+/// écart est [`Error::FieldInvalidJson`], comme le parseur strict de l'app (`parseJsonStrict`).
+fn parse_clear(clear: &str) -> Result<Value> {
+    let value: Value = serde_json::from_str(clear).map_err(|_| Error::FieldInvalidJson)?;
+    jcs(&value).map_err(|_| Error::FieldInvalidJson)?;
+    Ok(value)
+}
+
 /// Déchiffre `pendingToolCall.args` d'un `propose_actions` (stricte) et vérifie que le clair porte
 /// ce `sessionId` et ce `planId` ([`Error::PlanInvalid`] sinon). La validation (§5) reste à faire.
 pub fn decrypt_plan(ck: &SymmetricKey, session_id: &str, plan_id: &str, value: &str) -> Result<Value> {
     let aad_field = FieldName::Plan.to_aad_part()?;
     let clear = session::decrypt_field(ck, session_id, plan_id, &aad_field, value)?;
-    let plan: Value = serde_json::from_str(&clear).map_err(|_| Error::FieldInvalidJson)?;
+    let plan = parse_clear(&clear)?;
     let map = plan.as_object().ok_or(Error::PlanInvalid)?;
     if str_field(map, "sessionId") != Some(session_id) || str_field(map, "planId") != Some(plan_id) {
         return Err(Error::PlanInvalid);
@@ -305,7 +315,7 @@ pub fn decrypt_phase_result(
 ) -> Result<Value> {
     let field = executor.result_field(phase).to_aad_part()?;
     let clear = session::decrypt_field(ck, session_id, plan_id, &field, value)?;
-    let result: Value = serde_json::from_str(&clear).map_err(|_| Error::FieldInvalidJson)?;
+    let result = parse_clear(&clear)?;
     check_phase_result(&result, plan_id, phase)?;
     Ok(result)
 }

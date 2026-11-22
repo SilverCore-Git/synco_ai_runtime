@@ -121,6 +121,26 @@ fn check_states(run: &PlanRun, expect: &Value, name: &str) {
     }
 }
 
+fn field_name(text: &str) -> session::FieldName {
+    match text.split_once(':') {
+        None => session::FieldName::Plan,
+        Some(("plan_result", k)) => session::FieldName::PlanResult(k.parse().unwrap()),
+        Some((_, k)) => session::FieldName::PlanAgentResult(k.parse().unwrap()),
+    }
+}
+
+/// Lecture typée d'un cas (`sessionId`, `planId`) : `decrypt_plan` ou `decrypt_phase_result`.
+fn typed_decrypt(ck: &SymmetricKey, c: &Value, field: &str, value: &str) -> Result<Value> {
+    let (sid, pid) = (s(c, "sessionId"), c.get("planId").or_else(|| c.get("messageId")).unwrap().as_str().unwrap());
+    match field.split_once(':') {
+        None => plan::decrypt_plan(ck, sid, pid, value),
+        Some((label, k)) => {
+            let executor = if label == "plan_result" { Executor::Device } else { Executor::Agent };
+            plan::decrypt_phase_result(ck, sid, pid, executor, k.parse().unwrap(), value)
+        }
+    }
+}
+
 #[test]
 fn vecteurs_du_plan_d_action() {
     let v = load();
@@ -297,6 +317,27 @@ fn vecteurs_du_plan_d_action() {
         checks += 1;
     }
 
+    // Clairs bruts (lecture stricte) : nombres, demi-paires, BOM, résultats de phase.
+    for c in v["clearCases"].as_array().unwrap() {
+        let name = s(c, "name");
+        let field = field_name(s(c, "fieldName"));
+        let rebuilt = session::encrypt_field(
+            &ck,
+            s(c, "sessionId"),
+            s(c, "planId"),
+            &field,
+            s(c, "clear"),
+            &mut iv(s(c, "ivHex")),
+        );
+        assert_eq!(rebuilt.unwrap(), s(c, "value"), "{name} : vecteur");
+        let r = typed_decrypt(&ck, c, s(c, "fieldName"), s(c, "value"));
+        match s(c, "expect") {
+            "ok" => assert_eq!(plan::jcs(&r.unwrap_or_else(|e| panic!("{name} : {e}"))).unwrap(), s(c, "canonical")),
+            code => assert_eq!(r.map(|_| ()).unwrap_err().code(), code, "{name}"),
+        }
+        checks += 1;
+    }
+
     // Validation (12 §5, PC61).
     for c in v["validationCases"].as_array().unwrap() {
         let name = s(c, "name");
@@ -372,7 +413,7 @@ fn vecteurs_du_plan_d_action() {
     }
 
     println!("action-plan.json : {checks} vérifications rejouées");
-    assert_eq!(checks, 2 + 4 + 4 + 4 + 10 + 20 + 41 + 6 + 7 + 2 + 7, "un cas n'a pas été rejoué");
+    assert_eq!(checks, 2 + 4 + 4 + 4 + 10 + 20 + 9 + 41 + 6 + 7 + 2 + 7, "un cas n'a pas été rejoué");
 }
 
 /// Protections propres au code (hors vecteurs) : chacune échoue sans la règle qu'elle couvre.
@@ -384,6 +425,10 @@ fn garde_fous() {
     // JCS : nombre décimal ou hors de 2⁵³ − 1 refusé ; tri par unités UTF-16 (≠ octets UTF-8).
     assert!(plan::jcs(&serde_json::json!({ "a": 1.5 })).is_err());
     assert!(plan::jcs(&serde_json::json!({ "a": 9_007_199_254_740_992u64 })).is_err());
+    // Profondeur : 65 tableaux imbriqués admis, 66 refusés (même borne que `parseJsonStrict`).
+    let nested = |k: usize| -> Value { serde_json::from_str(&format!("{}{}", "[".repeat(k), "]".repeat(k))).unwrap() };
+    assert!(plan::jcs(&nested(65)).is_ok());
+    assert!(plan::jcs(&nested(66)).is_err());
     assert_eq!(
         plan::jcs(&serde_json::json!({ "\u{ff61}": 1, "\u{1f600}": 2 })).unwrap(),
         "{\"\u{1f600}\":2,\"\u{ff61}\":1}"

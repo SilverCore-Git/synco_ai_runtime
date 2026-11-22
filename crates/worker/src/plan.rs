@@ -233,15 +233,30 @@ impl PlanView {
                 a.state = *s;
             }
         }
-        let snapshot: Vec<(u64, ActionState)> = v.actions.iter().map(|a| (a.n, a.state)).collect();
-        for a in &mut v.actions {
-            let bad = a.after.iter().any(|m| {
-                snapshot.iter().any(|(n, s)| {
-                    n == m && matches!(s, ActionState::Failed | ActionState::UnknownOutcome | ActionState::Skipped)
-                })
-            });
-            if bad && a.state == ActionState::Pending {
-                a.state = ActionState::Skipped;
+        // Cascade `skipped` jusqu'au point fixe, dans l'ordre de `n` (la décision d'une action tient
+        // compte des cascades déjà faites, pas d'un instantané).
+        v.actions.sort_by_key(|a| a.n);
+        loop {
+            let mut changed = false;
+            for i in 0..v.actions.len() {
+                let bad = v.actions.get(i).is_some_and(|a| {
+                    a.state == ActionState::Pending
+                        && a.after.iter().any(|m| {
+                            v.action(*m).is_some_and(|d| {
+                                matches!(
+                                    d.state,
+                                    ActionState::Failed | ActionState::UnknownOutcome | ActionState::Skipped
+                                )
+                            })
+                        })
+                });
+                if let (true, Some(a)) = (bad, v.actions.get_mut(i)) {
+                    a.state = ActionState::Skipped;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
             }
         }
         if !local.is_empty() && v.finished() && !v.terminal() {
@@ -382,6 +397,21 @@ mod tests {
         assert_eq!(states, ["failed", "skipped", "done"], "PC54 : seules les dépendantes transitives");
         assert!(v.finished() && v.terminal() && v.status == "failed");
         assert!(!view.finished(), "la vue de l'API n'est pas modifiée");
+    }
+
+    #[test]
+    fn cascade_locale_jusqu_au_point_fixe() {
+        // Chaîne 1 → 2 → 3 et 4 → 3, données dans le désordre : tout ce qui dépend d'un échec
+        // (transitivement) passe `skipped`, l'indépendante reste `pending`.
+        let view = PlanView::parse(&json!({ "status": "executing", "actions": [
+            { "n": 3, "executor": "agent", "after": [2, 4], "ready": false, "state": "pending", "output": null },
+            { "n": 1, "executor": "agent", "after": [], "ready": true, "state": "pending", "output": null },
+            { "n": 2, "executor": "agent", "after": [1], "ready": false, "state": "pending", "output": null },
+            { "n": 4, "executor": "agent", "after": [], "ready": true, "state": "pending", "output": null } ] }))
+        .unwrap();
+        let v = view.with_local(&BTreeMap::from([(1, ActionState::Failed)]));
+        let states: Vec<(u64, &str)> = v.actions.iter().map(|a| (a.n, a.state.as_str())).collect();
+        assert_eq!(states, [(1, "failed"), (2, "skipped"), (3, "skipped"), (4, "pending")]);
     }
 
     #[test]

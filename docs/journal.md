@@ -1354,8 +1354,10 @@ Rust et TS rendent le même verdict sur les mêmes octets ; règle la plus stric
   plan chiffré sous l'AAD du plan (lecture stricte, rejoué sous un autre `planId` refusé). En mode `plan`, le modèle
   ne voit plus les outils mutants `ask` ni ceux d'appareil. Reprise : l'état se relit **toujours** dans `PlanView` ;
   phase d'agent en parallèle (`JoinSet`, plus petite `n` d'abord, place reprise aussitôt), `429` réessayé 3 fois
-  (1, 2, 4 s ± 20 %) avec concurrence divisée par 2, `refs` résolues depuis des sorties **authentifiées**
-  (`plan_result` déchiffrés, `plan_agent_result` relus) et comparées à celles de l'API, `plan_agent_result:<k>`,
+  (1, 2, 4 s ± 20 %) avec concurrence divisée par 2, `refs` résolues depuis les sorties des `plan_result`
+  déchiffrés (authentifiées par `CK` pour l'appareil) et des `plan_agent_result` relus, comparées à celles de l'API ;
+  les `refs` venues d'une action d'**agent** ne sont pas authentifiées : elles reposent sur les réponses de l'API
+  (§8.5), le chiffrement sous `CK` ne protège que le contenu au repos. `plan_agent_result:<k>`,
   fermeture avec le bilan (état, sortie, code), message reçu pendant un plan accepté différé jusqu'à la fermeture,
   `confirm` visant `propose_actions` ignoré, arrêt (`stopped`) et expiration (aucune action ne démarre), 3 plans par
   tour (`plan_limit`), `thread.create` du mode autonome par `POST /e2ee/threads` avec `plan`.

@@ -473,6 +473,7 @@ pub fn init(epoch: u64) -> Init {
         limits: limits(),
         tool_policy: BTreeMap::new(),
         log_level: "info".into(),
+        plan: None,
     }
 }
 

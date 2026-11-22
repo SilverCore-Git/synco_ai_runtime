@@ -509,6 +509,32 @@ pub struct Init {
     pub tool_policy: BTreeMap<String, ToolPolicy>,
     /// Niveau de journal.
     pub log_level: String,
+    /// Plans d'action (12) : absent = ancien superviseur, aucun plan (confirmation outil par outil).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<PlanInit>,
+}
+
+/// Mode du mandat **vérifié** de la délégation courante du propriétaire (12 §10.1) ; `auto` seulement
+/// pour un mandat v2 `auto` quand `autonomy.allowed` est vrai (12 §10.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlanMode {
+    /// Plan d'action (défaut ; tout mandat v1).
+    Plan,
+    /// Mode autonome.
+    Auto,
+}
+
+/// Réglages des plans d'action donnés au worker (12 §8.7, §3.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PlanInit {
+    /// Mode du mandat vérifié.
+    pub mode: PlanMode,
+    /// Actions d'agent en parallèle (`plan.concurrency`, [1, 8]).
+    pub concurrency: u8,
+    /// `confirmationTimeoutSecs` de l'org, borné [3 600, 604 800] : durée de vie d'un plan.
+    pub confirmation_timeout_secs: u64,
 }
 
 /// Message superviseur → worker (trames `0x01`).
@@ -563,7 +589,7 @@ pub struct CreatedKeyMsg {
     /// Enveloppe et entrée (absentes en cas d'échec).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub envelope: Option<CreatedKeyEnvelope>,
-    /// Code machine d'échec : `created_key_limit`, `delegation_unavailable`, `created_key_failed`.
+    /// Code machine d'échec : `created_key_limit`, `delegation_unavailable`, `autonomy_required`, `created_key_failed`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }

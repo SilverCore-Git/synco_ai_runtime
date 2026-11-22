@@ -12,7 +12,10 @@ use std::collections::{BTreeMap, HashMap};
 
 use runtime_protocol::pipe::{KeyEntry, KeyKind};
 use synco_e2ee::SymmetricKey;
-use synco_e2ee::delegation::{self, DelegationContext, DelegationKey, EntryKind, RuntimeSelf};
+use synco_e2ee::delegation::{
+    self, DelegationContext, DelegationKey, EntryKind, MandateMode, MandateVersion, RuntimeSelf, ServedMandate,
+    VerifiedMandate,
+};
 use synco_e2ee::ec::EcPublicKey;
 use zeroize::Zeroizing;
 
@@ -31,6 +34,8 @@ pub struct KeyId {
 pub struct OpenDelegation {
     ctx: DelegationContext,
     dk: DelegationKey,
+    /// Mandat **vérifié** (v1 lu comme `plan`) : seule source du mode, jamais le champ servi.
+    mandate: VerifiedMandate,
     keys: BTreeMap<KeyId, SymmetricKey>,
     cursor: Option<String>,
     entries_rejected: u64,
@@ -59,8 +64,41 @@ impl OpenDelegation {
         wrap: &str,
         mandate_signature: &str,
     ) -> Result<Self, synco_e2ee::Error> {
-        let dk = delegation::accept_delegation(me, now, &ctx, user_sign_key, wrap, mandate_signature)?;
-        Ok(Self { ctx, dk, keys: BTreeMap::new(), cursor: None, entries_rejected: 0 })
+        Self::accept_versioned(me, now, ctx, user_sign_key, wrap, mandate_signature, &ServedMandate::default())
+    }
+
+    /// [`Self::accept`] pour un mandat v1 ou v2 (03 §4.1, `accept_delegation_versioned`) : les champs
+    /// servis (`mandateVersion`, `mode`, `ownerRsaSpkiHex`) ne servent qu'à reconstruire les octets
+    /// signés ; le mode retenu est celui du mandat dont la signature est vérifiée.
+    pub fn accept_versioned(
+        me: &RuntimeSelf<'_>,
+        now: u64,
+        ctx: DelegationContext,
+        user_sign_key: &EcPublicKey,
+        wrap: &str,
+        mandate_signature: &str,
+        served: &ServedMandate<'_>,
+    ) -> Result<Self, synco_e2ee::Error> {
+        let (dk, mandate) =
+            delegation::accept_delegation_versioned(me, now, &ctx, user_sign_key, wrap, mandate_signature, served)?;
+        Ok(Self { ctx, dk, mandate, keys: BTreeMap::new(), cursor: None, entries_rejected: 0 })
+    }
+
+    /// Mandat vérifié.
+    #[must_use]
+    pub const fn mandate(&self) -> &VerifiedMandate {
+        &self.mandate
+    }
+
+    /// Mode effectif (12 §10.3) : `auto` seulement pour un mandat **v2** `auto` **et** si la
+    /// configuration l'autorise (`autonomy.allowed`) ; sinon `plan`.
+    #[must_use]
+    pub fn effective_mode(&self, autonomy_allowed: bool) -> MandateMode {
+        if autonomy_allowed && self.mandate.version == MandateVersion::V2 && self.mandate.mode == MandateMode::Auto {
+            MandateMode::Auto
+        } else {
+            MandateMode::Plan
+        }
     }
 
     /// Ouvre une entrée (03 §5 : AAD recalculée depuis la délégation, `kind` en liste fermée) et la
@@ -190,6 +228,13 @@ impl Vault {
     /// Délégation (mutable) par identifiant.
     pub fn by_delegation_mut(&mut self, delegation_id: &str) -> Option<&mut OpenDelegation> {
         self.by_user.values_mut().find(|d| d.ctx.delegation_id == delegation_id)
+    }
+
+    /// Épingle RSA du propriétaire signée dans son mandat v2 courant (12 §10.3, PC46) ; `None` pour un
+    /// mandat v1 ou sans délégation ouverte.
+    #[must_use]
+    pub fn owner_pin(&self, user_id: &str, now: u64) -> Option<&str> {
+        self.by_user.get(user_id).filter(|d| d.ctx.exp > now)?.mandate.owner_rsa_spki_hex.as_deref()
     }
 
     /// Retire (efface) la délégation d'un utilisateur.

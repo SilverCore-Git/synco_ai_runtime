@@ -52,6 +52,15 @@ systemd_creds_user = false
 # dans cette limite (défaut 7 jours).
 max_days = 30
 
+[autonomy]
+# Mode autonome (docs/plan/12 §10.3) : à false, tout mandat « auto » est traité comme « plan » (aucune
+# enveloppe rt1 signée) et le dashboard le signale. Seule protection que l'API ne peut pas contourner.
+allowed = true
+
+[plan]
+# Actions d'agent exécutées en parallèle par plan d'action (de 1 à 8, défaut 4).
+concurrency = 4
+
 [limits]
 # Plafonds (valeurs par défaut adoptées, docs/plan/09 §2). L'org peut les abaisser, jamais les relever.
 max_steps_per_turn = 25

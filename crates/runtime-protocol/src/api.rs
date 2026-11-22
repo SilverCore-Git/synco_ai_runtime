@@ -68,6 +68,16 @@ pub struct DelegationRecord {
     /// l'identifiant. Donnée du serveur : jamais une preuve d'identité.
     #[serde(default)]
     pub display_name: Option<String>,
+    /// Version du mandat servie (`1` si absente, 03 §4.1) : ne vaut rien tant que la signature n'est
+    /// pas vérifiée.
+    #[serde(default)]
+    pub mandate_version: Option<u64>,
+    /// Mode servi (`plan` ou `auto`, mandat v2).
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// Empreinte RSA du propriétaire servie (mandat v2).
+    #[serde(default)]
+    pub owner_rsa_spki_hex: Option<String>,
 }
 
 /// Entrée de délégation.
@@ -246,6 +256,9 @@ pub struct OrgLimits {
     pub max_turn_duration_secs: u64,
     /// Tokens de sortie par appel.
     pub max_output_tokens_per_call: u64,
+    /// Délai des attentes `awaiting_confirmation` et durée de vie d'un plan (09 §3) ; absent = 7 j.
+    #[serde(default)]
+    pub confirmation_timeout_secs: Option<u64>,
 }
 
 /// Politique runtime de l'org.

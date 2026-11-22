@@ -584,3 +584,24 @@ async fn cancel_pendant_un_plan_accepte_vaut_stop_et_clot_avec_le_bilan() {
         assert!(st.inbox.iter().all(|i| i.2), "cancel consommé");
     });
 }
+
+#[tokio::test]
+async fn resultat_de_phase_d_un_autre_plan_est_ignore() {
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    let pid = propose(&api, &llm, &args(&[task(1, "a", &[])]), plan_init(PlanMode::Plan, 4)).await;
+    api.decide(&pid, &[1]);
+    // Résultat d'un plan périmé : consommé et ignoré, le plan courant va à son terme.
+    api.deposit(
+        "plan:autre-plan:1",
+        json!({ "t": "plan_result", "planId": "4d3c2b1a-8f7e-4d6c-9b5a-493827161599", "phase": 1, "value": "gcm1:xx" }),
+    );
+    let peer = resume(&api, &llm, plan_init(PlanMode::Plan, 4)).await;
+    assert_eq!(peer.wait_done().await, DoneReason::Idle);
+    let r = plan_result(&api);
+    assert_eq!(r["status"], "done", "pas de tool_call_unverified : {r}");
+    api.with(|st| {
+        assert_eq!(st.tool_runs.len(), 1);
+        assert!(st.inbox.iter().all(|i| i.2), "élément périmé consommé");
+    });
+}

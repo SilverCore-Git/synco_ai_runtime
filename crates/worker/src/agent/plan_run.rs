@@ -383,11 +383,18 @@ impl Agent {
             self.em.error("stale_decision", None).await?;
             return Ok(false);
         };
+        // Un autre `planId` (plan clos ou remplacé) : périmé, consommé et ignoré. Seule une AAD fausse
+        // sur le **même** plan vaut `tool_call_unverified`.
+        if frame.get("planId").and_then(Value::as_str) != Some(plan_id.as_str()) {
+            self.consumed.push(id);
+            self.em.error("stale_decision", None).await?;
+            return Ok(false);
+        }
         let phase = frame.get("phase").and_then(Value::as_u64);
         let value = frame.get("value").and_then(Value::as_str);
         let view = self.fetch_view(&plan_id).await?;
-        let verified = match (view, phase, value, frame.get("planId").and_then(Value::as_str)) {
-            (Some(view), Some(phase), Some(value), Some(fp)) if fp == plan_id && self.sync_plan(&view) => {
+        let verified = match (view, phase, value) {
+            (Some(view), Some(phase), Some(value)) if self.sync_plan(&view) => {
                 let sid = self.init.session_id.clone();
                 let ck = self.ck.clone();
                 self.plan.as_mut().and_then(|st| {

@@ -342,12 +342,26 @@ a rendu une prête, fin du plan, arrêt ou expiration) :
    - plan terminé (aucune action `pending` ni `executing`, ou plan `stopped` / `expired`) : il ferme
      `propose_actions` par un `tool_result` portant l'état et la sortie de chaque action (ordre de `n`),
      puis le tour continue (`running`) et traite les messages arrivés pendant le plan (§8.6) ;
-   - sinon : `POST …/plans/:planId/agent-result` (§12.2) avec `plan_agent_result:<k>` (§9). Dans une
-     transaction, l'API enregistre la valeur, repasse la conversation `awaiting_confirmation` (même
+   - sinon : `POST …/plans/:planId/agent-result` (§12.2) avec `plan_agent_result:<k>` (§9) et, s'il y en
+     a, les **abandons** (ci-dessous). Dans une transaction, l'API applique les abandons, enregistre la valeur, repasse la conversation `awaiting_confirmation` (même
      `pendingToolCall`) et, si des actions d'appareil sont prêtes sans claim, envoie le push
      `AI_AWAITING_CONFIRMATION` (« Votre plan continue : à poursuivre sur votre appareil », sans
      contenu) et `ai:session-status`. Le worker s'arrête. L'API refuse (`409 plan_phase_mismatch`) s'il
      reste une action d'agent prête : le worker relit et continue (pas de réveil perdu).
+
+   **Abandons (PC74)** : une action d'agent qui n'a pas pu partir et dont l'API n'a donc aucun état à
+   changer (`429` épuisé, `refs` incohérentes, verrou refusé `action_not_accepted`, mode autonome retiré
+   `autonomy_required`, clé de salon indisponible `key_unavailable`) resterait `pending` et prête côté
+   API, qui refuserait alors `agent-result` pour toujours. Le worker la **déclare abandonnée** dans
+   `agent-result` : `abandoned: [{ n, state: "failed" | "unknown_outcome", code }]`, `code` dans la liste
+   fermée `rate_limited`, `refs_inconsistent`, `action_not_accepted`, `autonomy_required`,
+   `key_unavailable`. Le worker n'abandonne **que** ce qu'il n'a pas lancé (`failed`) ou dont il ne
+   connaît pas l'issue (`unknown_outcome`) ; il ne clôt plus `propose_actions` par `plan_aborted`
+   (restent seuls les cas sans plan à régler : plan introuvable ou expiré), y compris sur
+   `tool_call_unverified` : toutes ses actions d'agent encore `pending` sont alors abandonnées avec le
+   code `action_not_accepted`, puis `propose_actions` est clos `tool_call_unverified`. Les
+   abandons figurent aussi dans le `plan_agent_result` chiffré (§9). Le bilan garde le `code` de chaque
+   action abandonnée.
 
 Le signal vers l'appareil n'est **pas** un élément de boîte (la boîte va de l'utilisateur vers le
 runtime) : `plan_agent_result:<k>` est rangé avec le plan et servi par `PlanView`.
@@ -455,20 +469,31 @@ chiffrés et dans le `tool_result` du transcript (chiffré). Le lien figure au c
   n'entre qu'une fois en `executing` (§7.2) ; sa sortie n'est enregistrée qu'une fois (§8.5). Le statut
   du plan est recalculé dans la transaction de chaque transition d'action (`updateMany` conditionné),
   si bien que deux fins simultanées ne perdent rien.
+- **Abandons (PC74)** : dans la transaction d'`agent-result`, **avant** le contrôle des actions d'agent
+  occupées, l'API fait passer à l'état donné (`failed` ou `unknown_outcome`) chaque `n` de `abandoned`
+  dont l'exécutant est `agent` et qui est **accepté et `pending`**, puis applique la cascade de PC54
+  (dépendantes transitives `pending` → `skipped`) et règle le statut du plan. Un `n` dans tout autre état
+  (`executing`, final, `skipped`, d'exécutant `device`) est **ignoré**, sans erreur : le rejeu après
+  coupure est donc idempotent. **Risque** : le worker ne peut que faire passer `pending` vers un échec,
+  jamais vers `done` ni vers une acceptation ; un worker compromis peut tout au plus faire échouer des
+  actions d'agent qu'il aurait pu ne pas lancer.
 - **Limites de débit (`429`)** : un `429` (`rate_limited`, `rt_rate_limited`, limite des routes
   utilisateur) signifie que rien n'a été exécuté. L'exécutant **réessaie le même appel** au plus
   **3 fois** (4 essais) : délai `Retry-After` s'il est fourni (plafonné à 30 s), sinon 1 s, 2 s puis 4 s,
   ± 20 % ; et il **réduit sa concurrence de moitié** (au moins 1) pour le reste de la phase. Au-delà :
-  action `failed` (code `rate_limited` dans le bilan), dépendantes `skipped` (§7.3). Un `429` sur
+  action `failed` (code `rate_limited` dans le bilan), dépendantes `skipped` (§7.3) : l'action, jamais
+  partie, est **abandonnée** par `agent-result` (§8.3, PC74). Un `429` sur
   `progress` se réessaie de même (l'appel est idempotent). Un transport coupé **après** envoi n'est
   jamais réessayé : `unknown_outcome`.
 
 ## 9. Résultats de phase et éléments de boîte de réception
 
 Ajoutés à 05 §6.2 (les éléments existants restent valides, C1 §7). Clair de chaque résultat de phase
-= `JCS({ v: 1, planId, phase: k, outcomes: [{ n, state, output? }] })`, `outcomes` = les actions
+= `JCS({ v: 1, planId, phase: k, outcomes: [{ n, state, output?, code? }] })`, `outcomes` = les actions
 traitées pendant cette phase (dans l'ordre de `n`), `output` = champs exportés (§4), identifiants
-seulement. `k` est compté **par exécutant** (§8.1).
+seulement, `code` = le code d'un **abandon** (§8.3, PC74), seulement avec `state` `failed` ou
+`unknown_outcome`, jamais avec `output`. Les actions d'agent devenues finales et absentes des résultats
+déjà déposés y figurent aussi (reprise après `Retry` ou après un arrêt du worker). `k` est compté **par exécutant** (§8.1).
 
 | `t` / valeur | Déposé par | `id` | Charge | Transition (08 §2) |
 |---|---|---|---|---|
@@ -680,7 +705,7 @@ transitives de l'action (PC54) ; le statut du plan est recalculé (§7.1). Débi
 |---|---|---|---|---|
 | `POST /conversations/:sessionId/plans` | S+A, bail | `{ leaseEpoch, baseRev, messages, title?, pendingToolCall, consumedInbox, events?, plan: { planId, toolCallId, actionCount, createdAt, expiresAt, actions: [{ n, executor, after }], serverDigests: [{ n, sha256Hex }] } }` | `201 { rev, planId }` : transcript écrit **et** ligne créée dans une transaction, statut `awaiting_confirmation` | `400 invalid_body` (forme ; `pendingToolCall.name ≠ propose_actions` ; `planId` ou `toolCallId` ≠ ceux de `pendingToolCall` ; `actionCount` hors 1..100 ; plus de 2 000 entrées d'`after` en tout ; `actions` qui ne couvre pas exactement `1..actionCount` ; `after` non conforme (entiers distincts `< n`) ; `n` de `serverDigests` hors plage, en double ou d'exécutant `device` ; `expiresAt` hors `]maintenant, maintenant + confirmationTimeoutSecs + 300]`), `409 plan_exists`, `409 rev_conflict`, `409 lease_conflict` |
 | `GET /conversations/:sessionId/plans/:planId` | S+A | — | `200 PlanView` | `404 not_found`, `403 out_of_scope` |
-| `POST /conversations/:sessionId/plans/:planId/agent-result` | S+A, bail | `{ leaseEpoch, baseRev, phase, value: "gcm1:…" }` | `200 { rev, status }` : valeur rangée, conversation `awaiting_confirmation`, push si des actions d'appareil sont prêtes (§8.3) | `400 invalid_body`, `404 not_found`, `409 plan_phase_mismatch` (`phase` ≠ phases d'agent closes + 1, action d'agent prête ou `executing`), `409 plan_not_executing` (plan terminé : le worker ferme `propose_actions`), `409 rev_conflict`, `409 lease_conflict` |
+| `POST /conversations/:sessionId/plans/:planId/agent-result` | S+A, bail | `{ leaseEpoch, baseRev, phase, value?: "gcm1:…", abandoned?: [{ n, state: "failed" \| "unknown_outcome", code }] }` ; `code` ∈ `rate_limited`, `refs_inconsistent`, `action_not_accepted`, `autonomy_required`, `key_unavailable` ; `value` obligatoire sauf si les abandons rendent le plan terminal | `200 { rev, status }` : abandons appliqués (§8.7), valeur rangée, conversation `awaiting_confirmation`, push si des actions d'appareil sont prêtes (§8.3) ; plan devenu terminal : `200 { status }` (rien n'est rangé si `value` manque, la conversation reste `running`, le worker ferme `propose_actions`) | `400 invalid_body` (`value` absente alors que le plan n'est pas terminal ; `abandoned` mal formé : `n` hors plan ou en double, `state` ou `code` hors liste), `404 not_found`, `409 plan_phase_mismatch` (`phase` ≠ phases d'agent closes + 1, action d'agent prête ou `executing` **après** application des abandons), `409 plan_not_executing` (plan terminé : le worker ferme `propose_actions`), `409 rev_conflict`, `409 lease_conflict` |
 | `POST /conversations/:sessionId/tools/:name/execute` | S+A | `{ leaseEpoch, args?, argsRefs?, refs?, plan?: { planId, n } }` | inchangé ; avec `plan`, l'état de l'action suit et sa sortie est enregistrée (§8.3, §8.5) | + `403 action_not_accepted`, `409 action_state_conflict`, `409 plan_phase_mismatch`, `409 plan_not_executing` |
 | `POST /e2ee/threads` | S+A | + `plan?: { planId, n }` | inchangé ; sortie enregistrée (§8.5) | + `403 autonomy_required`, `403 feature_not_allowed`, `403 action_not_accepted`, `409 action_state_conflict`, `409 plan_phase_mismatch` |
 | `GET /delegations` | S | — | ajoute `mandateVersion`, `mode`, `ownerRsaSpkiHex` | — |
@@ -737,8 +762,9 @@ phases, le claim et les résultats de phase d'agent (chiffrés). **Aucun contenu
 | `plan_phase_mismatch` | API 409 | Action non prête, mauvais exécutant, numéro de phase inattendu, ou phase close alors qu'il reste une action prête (§8, §9) |
 | `action_state_conflict` | API 409 | Transition d'action invalide (dont seconde exécution) |
 | `action_output_missing` | API 409 | `done` d'une action d'appareil sans sortie enregistrée par la route de création (§8.5) |
-| `action_not_accepted` | API 403 | Verrou du §8.4 (action non acceptée, condensat ou `refs` différents) |
-| `autonomy_required` | API 403, superviseur | Délégation ou mandat vérifié non `auto` |
+| `action_not_accepted` | API 403 ; `code` d'abandon | Verrou du §8.4 (action non acceptée, condensat ou `refs` différents) |
+| `autonomy_required` | API 403, superviseur ; `code` d'abandon | Délégation ou mandat vérifié non `auto` |
+| `rate_limited` / `refs_inconsistent` / `key_unavailable` | `code` d'abandon (`abandoned`, résultat de phase, bilan) | Action d'agent jamais partie : `429` épuisé, `refs` différentes de la sortie enregistrée, clé du salon indisponible (§8.3, PC74) |
 | `feature_not_allowed` | API 403 | Politique d'org (ou opt-in absent) |
 | `feature_reserved` | API 409 | Fonctionnalité réservée (§11.1) |
 | `autonomy_withdrawn` | `revokedReason`, `delegation.revoked.reason` | Retrait du mode autonome (§11.4) |
@@ -775,12 +801,13 @@ après la livraison ; le texte qui en dépendait (« provisoire ») est réécri
 | **PC61** | Plan de **100 actions** au plus (était 20), 2 000 dépendances, clair ≤ 256 Kio, corps de `POST …/plans` ≤ 1 Mio ; au-delà l'agent découpe (`plan_too_large`) ; groupes repliés au-delà de 30 actions | §3, §5, §12.2, §14, §17 |
 | **PC62** | Un plan accepté qui expire relance la conversation pour un bilan : validé | §7.1 |
 
-### Revue de sécurité de L03g (PC69, PC70)
+### Revue de sécurité de L03g et de L08d (PC69, PC70, PC74)
 
 | Décision | Contenu | Où |
 |---|---|---|
 | **PC69** | La décision porte, pour chaque action serveur acceptée, l'empreinte recalculée par l'app depuis le plan déchiffré ; l'API refuse toute empreinte différente de `serverDigests` (`409 plan_digest_mismatch`) ; `serverDigests` est exposé dans la vue du plan | §8.4, §12.1, §14 |
 | **PC70** | Un `cancel` de la conversation pendant un plan accepté vaut `stop` du plan : plus de nouvelle action, les `executing` vont à leur terme, bilan, messages plus retenus après l'arrêt | §7.1, §8.6 |
+| **PC74** | Le worker déclare les **abandons** d'actions d'agent jamais parties dans `agent-result` (`abandoned`, codes en liste fermée) au lieu de clore en `plan_aborted` ; l'API les applique avant le contrôle des actions occupées, seulement `pending` accepté vers `failed` / `unknown_outcome`, rejeu idempotent ; `value` facultatif si le plan devient terminal | §8.3, §8.7, §9, §12.2, §14 |
 
 **Risques acceptés** : (1) références du `thread.create` autonome non recontrôlées par l'API (PC57,
 §10.6) ; (2) pendant un plan, l'API sait quel objet créé correspond à quelle action (métadonnée sans

@@ -605,3 +605,22 @@ async fn resultat_de_phase_d_un_autre_plan_est_ignore() {
         assert!(st.inbox.iter().all(|i| i.2), "élément périmé consommé");
     });
 }
+
+#[tokio::test]
+async fn outil_ask_masque_appele_quand_meme_est_refuse() {
+    let api = FakeApi::new();
+    let llm = FakeLlm::start();
+    api.deposit_message(M1, "Crée une tâche");
+    // `create_task` (ask) est masqué en mode plan : le modèle l'appelle quand même.
+    llm.push(Script::ok(sse_tool("c1", "create_task", &json!({ "title": "x" }), (1, 1))));
+    llm.push(Script::ok(sse_text(&["Je passe par un plan."], (1, 1))));
+    let (peer, _t) = spawn_worker(&api, &llm, plan_init(PlanMode::Plan, 4), default_keys(true));
+    assert_eq!(peer.wait_done().await, DoneReason::Idle, "ni attente de confirmation, ni exécution");
+    let r = plan_result(&api);
+    assert_eq!(r["error"], "use_propose_actions");
+    assert!(r["message"].as_str().unwrap().contains("propose_actions"));
+    api.with(|st| {
+        assert!(st.tool_runs.is_empty());
+        assert!(!st.pushes.contains(&"AI_AWAITING_CONFIRMATION".to_owned()), "{:?}", st.pushes);
+    });
+}

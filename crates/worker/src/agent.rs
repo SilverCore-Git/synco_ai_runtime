@@ -1395,6 +1395,24 @@ impl Agent {
                 self.persist("running", None).await?;
                 Ok(Flow::Continue)
             }
+            // Outil que le modèle ne voit pas (masqué par le plan : `ask` mutant, appareil) mais qu'il
+            // appelle quand même : jamais l'ancienne confirmation outil par outil, retour à `propose_actions`.
+            Decision::AskConfirmation | Decision::Auto
+                if self.init.plan.is_some() && !self.llm_tools.iter().any(|t| t.name == tc.name) =>
+            {
+                self.close_call(
+                    &tc.id,
+                    &tc.name,
+                    ToolStatus::Error,
+                    json!({
+                        "error": "use_propose_actions",
+                        "message": "Cet outil ne s'appelle pas directement : propose-le dans un plan avec `propose_actions`.",
+                    }),
+                )
+                .await?;
+                self.persist("running", None).await?;
+                Ok(Flow::Continue)
+            }
             Decision::AwaitUser | Decision::AskConfirmation => {
                 let Some(spec) = spec else { return Ok(Flow::Continue) };
                 let (status, push) = if spec.interactive {

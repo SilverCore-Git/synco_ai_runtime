@@ -11,7 +11,8 @@
 //! | [`device`] | Enveloppe d'AK d'un appareil, certificat d'appareil |
 //! | [`keys`] | Commitments et signatures FC4 des clés distribuées ; enveloppes `rt1` |
 //! | [`session`] | Champs `gcm1:` des conversations (AAD `session:message:champ`) |
-//! | [`delegation`] | Enveloppe de tête `srd1`, mandat, entrées `sre1` |
+//! | [`delegation`] | Enveloppe de tête `srd1`, mandat v1 et v2, entrées `sre1` |
+//! | [`plan`] | Plan d'action : JCS, AAD, chiffrement sous `CK`, condensats, validation, graphe |
 //! | [`runtime_cert`] | Empreinte, code d'appairage, URL canonique, certificat, défi de possession |
 //!
 //! Principes : aucune entrée/sortie, aucun `async`, aucun état global ; l'aléa est injecté
@@ -32,6 +33,7 @@ pub mod encoding;
 pub mod error;
 pub mod identity;
 pub mod keys;
+pub mod plan;
 pub mod primitives;
 pub mod rng;
 pub mod runtime_cert;

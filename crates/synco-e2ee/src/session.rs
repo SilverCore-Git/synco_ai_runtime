@@ -75,6 +75,12 @@ pub enum FieldName {
     },
     /// `answer:<toolCallId>`.
     Answer(String),
+    /// `plan` (avec le `messageId` = `planId`, 12 §3.3).
+    Plan,
+    /// `plan_result:<k>` : résultat de la phase d'appareil `k ≥ 1` (12 §9).
+    PlanResult(u64),
+    /// `plan_agent_result:<k>` : résultat de la phase d'agent `k ≥ 1` (12 §9).
+    PlanAgentResult(u64),
 }
 
 impl FieldName {
@@ -102,6 +108,15 @@ impl FieldName {
             Self::Answer(id) => {
                 check_id(id)?;
                 Ok(format!("answer:{id}"))
+            }
+            Self::Plan => Ok("plan".to_owned()),
+            Self::PlanResult(k) | Self::PlanAgentResult(k) => {
+                check_uint(*k)?;
+                if *k == 0 {
+                    return Err(Error::InvalidInput);
+                }
+                let label = if matches!(self, Self::PlanResult(_)) { "plan_result" } else { "plan_agent_result" };
+                Ok(format!("{label}:{k}"))
             }
         }
     }

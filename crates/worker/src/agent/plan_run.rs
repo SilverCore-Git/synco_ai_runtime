@@ -348,7 +348,9 @@ impl Agent {
         let Some(p) = self.pending.clone() else { return false };
         let Some(plan_id) = p.plan_id.clone() else { return false };
         if self.plan.as_ref().is_none_or(|s| s.plan_id != plan_id) {
-            let Some(graph) = plan::graph_from(&p.args, view, self.init.plan.map_or(PlanMode::Plan, |c| c.mode)) else { return false };
+            let Some(graph) = plan::graph_from(&p.args, view, self.init.plan.map_or(PlanMode::Plan, |c| c.mode)) else {
+                return false;
+            };
             self.plan = Some(PlanSt {
                 plan_id: plan_id.clone(),
                 graph,

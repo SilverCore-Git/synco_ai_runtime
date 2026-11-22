@@ -13,7 +13,7 @@ pub mod threads;
 
 use std::collections::BTreeMap;
 
-use runtime_protocol::pipe::{HttpMethod, ToolPolicy};
+use runtime_protocol::pipe::{HttpMethod, PlanMode, ToolPolicy};
 use serde_json::{Value, json};
 
 use crate::api::Api;
@@ -75,15 +75,40 @@ pub fn parse_manifest(v: &Value) -> Vec<ToolSpec> {
         .unwrap_or_default()
 }
 
+/// Outils d'appareil (12 §2) : l'app les exécute avec ses clés, jamais le modèle directement.
+pub const DEVICE_TOOLS: [&str; 3] = ["create_thread", "create_folder", "create_file"];
+
+/// Politique effective d'un outil (12 §2) : celle de l'org si elle est donnée, sinon `ask` pour un
+/// outil mutant et `auto` pour les autres.
+#[must_use]
+pub fn effective_policy(spec: &ToolSpec, policy: &BTreeMap<String, ToolPolicy>) -> ToolPolicy {
+    policy.get(&spec.name).copied().unwrap_or(if spec.mutating { ToolPolicy::Ask } else { ToolPolicy::Auto })
+}
+
 /// Outils proposés au modèle : ceux que le worker sait exécuter, sauf ceux que la politique de l'org
 /// interdit (le modèle ne les voit pas ; s'il les appelle quand même, refus `tool_denied_by_policy`).
+///
+/// `plan` (12 §2) : sous un plan d'action, le modèle ne voit plus aucun outil mutant dont la politique
+/// effective est `ask`, ni aucun outil d'appareil (`create_thread`, `create_folder`, `create_file`) —
+/// sauf `create_thread` en mode autonome quand sa politique effective n'est pas `ask` — et reçoit à
+/// la place `propose_actions` ([`crate::plan::tool_def`]).
 #[must_use]
-pub fn llm_tools(specs: &[ToolSpec], policy: &BTreeMap<String, ToolPolicy>) -> Vec<ToolDef> {
-    specs
+pub fn llm_tools(specs: &[ToolSpec], policy: &BTreeMap<String, ToolPolicy>, plan: Option<PlanMode>) -> Vec<ToolDef> {
+    let hidden_by_plan = |s: &ToolSpec| {
+        let Some(mode) = plan else { return false };
+        let ask = effective_policy(s, policy) == ToolPolicy::Ask;
+        let device = DEVICE_TOOLS.contains(&s.name.as_str());
+        (device && (mode == PlanMode::Plan || ask)) || (!s.interactive && s.mutating && ask)
+    };
+    let mut out: Vec<ToolDef> = specs
         .iter()
-        .filter(|s| executable(s) && policy.get(&s.name) != Some(&ToolPolicy::Deny))
+        .filter(|s| executable(s) && policy.get(&s.name) != Some(&ToolPolicy::Deny) && !hidden_by_plan(s))
         .map(|s| ToolDef { name: s.name.clone(), description: s.description.clone(), parameters: s.parameters.clone() })
-        .collect()
+        .collect();
+    if plan.is_some() {
+        out.push(crate::plan::tool_def());
+    }
+    out
 }
 
 fn executable(s: &ToolSpec) -> bool {
@@ -174,6 +199,8 @@ pub struct ToolCtx<'a> {
     pub lease_epoch: u64,
     /// Propriétaire de la conversation.
     pub user_id: &'a str,
+    /// Action de plan exécutée par cet appel (`plan: { planId, n }` du verrou, 12 §8.4).
+    pub plan: Option<(&'a str, u64)>,
 }
 
 /// Exécute un outil accepté (politique déjà appliquée).
@@ -269,8 +296,14 @@ mod tests {
         ]));
         assert_eq!(specs.len(), 5);
         let policy = BTreeMap::from([("list_spaces".to_owned(), ToolPolicy::Deny)]);
-        let names: Vec<_> = llm_tools(&specs, &policy).into_iter().map(|t| t.name).collect();
+        let names: Vec<_> = llm_tools(&specs, &policy, None).into_iter().map(|t| t.name).collect();
         assert_eq!(names, ["create_task", "ask_question", "search_messages"]);
+        // Plan d'action : les outils mutants `ask` et ceux d'appareil disparaissent, `propose_actions`
+        // arrive ; `deny` n'est jamais proposé.
+        let plan =
+            |mode| -> Vec<String> { llm_tools(&specs, &policy, Some(mode)).into_iter().map(|t| t.name).collect() };
+        assert_eq!(plan(PlanMode::Plan), ["ask_question", "search_messages", "propose_actions"]);
+        assert_eq!(plan(PlanMode::Auto), ["ask_question", "search_messages", "propose_actions"]);
         let get = |n: &str| specs.iter().find(|s| s.name == n);
         assert_eq!(decide(get("create_task"), &BTreeMap::new()), Decision::AskConfirmation);
         assert_eq!(

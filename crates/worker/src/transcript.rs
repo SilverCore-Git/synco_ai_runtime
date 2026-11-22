@@ -204,6 +204,9 @@ pub struct PendingToolCall {
     pub mutating: bool,
     /// Interactif.
     pub interactive: bool,
+    /// `planId` d'un `propose_actions` (12 §3.4) : `args` est alors le plan, chiffré avec l'AAD du plan
+    /// (`sessionId:planId:plan`) au lieu de celle de `pendingToolCall.args`.
+    pub plan_id: Option<String>,
 }
 
 impl core::fmt::Debug for PendingToolCall {
@@ -368,14 +371,24 @@ pub fn decode_messages(ck: &SymmetricKey, sid: &str, v: &Value, mode: Read) -> V
 
 /// Chiffre `pendingToolCall`.
 pub fn encode_pending(ck: &SymmetricKey, sid: &str, p: &PendingToolCall) -> Result<Value, EncodeError> {
-    Ok(json!({
+    let args = match &p.plan_id {
+        Some(_) => {
+            synco_e2ee::plan::encrypt_plan(ck, &p.args, &mut OsRandom).map(Value::String).map_err(|_| EncodeError)?
+        }
+        None => enc_json(ck, sid, PENDING_MESSAGE_ID, &FieldName::PendingToolCallArgs, &p.args)?,
+    };
+    let mut out = json!({
         "id": p.id,
         "name": p.name,
-        "args": enc_json(ck, sid, PENDING_MESSAGE_ID, &FieldName::PendingToolCallArgs, &p.args)?,
+        "args": args,
         "category": p.category,
         "mutating": p.mutating,
         "interactive": p.interactive,
-    }))
+    });
+    if let Some(plan_id) = &p.plan_id {
+        crate::json_set(&mut out, "planId", json!(plan_id));
+    }
+    Ok(out)
 }
 
 /// Lit `pendingToolCall`. En lecture stricte, des arguments illisibles (ou en clair) font
@@ -383,9 +396,24 @@ pub fn encode_pending(ck: &SymmetricKey, sid: &str, p: &PendingToolCall) -> Resu
 #[must_use]
 pub fn decode_pending(ck: &SymmetricKey, sid: &str, v: &Value, mode: Read) -> Option<PendingToolCall> {
     let o = v.as_object()?;
-    let args =
-        dec_json(ck, sid, PENDING_MESSAGE_ID, "pending_tool_call_args", o.get("args").unwrap_or(&Value::Null), mode);
+    // `propose_actions` seulement : `planId` en clair, plan chiffré sous l'AAD du plan, déchiffré
+    // strictement (le clair doit porter ce `sessionId` et ce `planId`, 12 §3.4).
+    let plan_id = match o.get("planId") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(id)) if o.get("name").and_then(Value::as_str) == Some("propose_actions") => Some(id.clone()),
+        Some(_) => return None,
+    };
+    let args = match &plan_id {
+        Some(plan_id) => {
+            let value = o.get("args")?.as_str()?;
+            Some(synco_e2ee::plan::decrypt_plan(ck, sid, plan_id, value).ok()?)
+        }
+        None => {
+            dec_json(ck, sid, PENDING_MESSAGE_ID, "pending_tool_call_args", o.get("args").unwrap_or(&Value::Null), mode)
+        }
+    };
     Some(PendingToolCall {
+        plan_id,
         id: o.get("id")?.as_str()?.to_owned(),
         name: o.get("name")?.as_str()?.to_owned(),
         args: if mode == Read::Strict { args? } else { args.unwrap_or_else(|| json!({})) },
@@ -475,9 +503,45 @@ mod tests {
             category: "server".into(),
             mutating: true,
             interactive: false,
+            plan_id: None,
         };
         let e = encode_pending(&ck, SID, &p).unwrap();
         assert!(e["args"].as_str().unwrap().starts_with("gcm1:"));
         assert_eq!(decode_pending(&ck, SID, &e, Read::Strict), Some(p));
+    }
+
+    #[test]
+    fn appel_en_attente_d_un_plan() {
+        let ck = SymmetricKey::from_bytes([0xdd; 32]);
+        let plan_id = "3c2b1a09-8f7e-4d6c-9b5a-493827161504";
+        let plan = json!({ "v": 1, "planId": plan_id, "sessionId": SID, "toolCallId": "call_7", "createdAt": 1, "expiresAt": 2,
+            "summary": "secret", "actions": [] });
+        let p = PendingToolCall {
+            id: "call_7".into(),
+            name: "propose_actions".into(),
+            args: plan,
+            category: "client".into(),
+            mutating: true,
+            interactive: false,
+            plan_id: Some(plan_id.into()),
+        };
+        let e = encode_pending(&ck, SID, &p).unwrap();
+        assert_eq!(e["planId"], plan_id, "planId en clair");
+        assert!(!e.to_string().contains("secret"));
+        // AAD du plan (`sessionId:planId:plan`), pas celle de `pendingToolCall.args`.
+        let clear = synco_e2ee::plan::decrypt_plan(&ck, SID, plan_id, e["args"].as_str().unwrap()).unwrap();
+        assert_eq!(clear["summary"], "secret");
+        assert_eq!(decode_pending(&ck, SID, &e, Read::Strict), Some(p.clone()));
+        // Un plan rejoué sous un autre `planId` (même chiffré) ou sous un autre nom d'outil est refusé.
+        let mut swapped = e.clone();
+        swapped["planId"] = json!("4d3c2b1a-8f7e-4d6c-9b5a-493827161505");
+        assert_eq!(decode_pending(&ck, SID, &swapped, Read::Strict), None);
+        let mut renamed = e.clone();
+        renamed["name"] = json!("create_task");
+        assert_eq!(decode_pending(&ck, SID, &renamed, Read::Strict), None);
+        // Un plan en clair n'est jamais lu.
+        let mut clear_args = e;
+        clear_args["args"] = p.args.clone();
+        assert_eq!(decode_pending(&ck, SID, &clear_args, Read::Strict), None);
     }
 }

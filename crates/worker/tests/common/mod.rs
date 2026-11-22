@@ -123,6 +123,102 @@ pub struct ApiState {
     pub relay_fail: Option<(String, String)>,
     /// Réponse d'erreur imposée à `tools/:name/execute` (statut, corps), après enregistrement.
     pub tool_error: Option<(u16, Value)>,
+    /// Plans d'action (12) : l'API simulée tient le graphe, les états, les sorties et les verrous.
+    pub plans: BTreeMap<String, FakePlan>,
+    /// Corps de `POST …/plans` reçus.
+    pub plan_posts: Vec<Value>,
+    /// `POST …/agent-result` reçus.
+    pub agent_posts: Vec<Value>,
+    /// Appels d'exécution avec `plan` reçus (corps complet).
+    pub plan_execs: Vec<Value>,
+    /// Les N prochains appels d'exécution d'un plan répondent `429`.
+    pub throttle_429: u32,
+    /// Appels refusés en `429` jusqu'ici.
+    pub throttled: u32,
+    /// Durée d'une exécution d'action de plan (ms), pour observer le parallélisme.
+    pub exec_delay_ms: u64,
+    /// Exécutions de plan en cours et maximum observé.
+    pub active: usize,
+    pub max_active: usize,
+    /// Outils dont l'exécution d'un plan échoue (`ok: false`).
+    pub failing_tools: Vec<String>,
+    next_obj: u64,
+}
+
+/// Action d'un plan simulé.
+#[derive(Debug, Clone)]
+pub struct FakeAction {
+    pub n: u64,
+    pub executor: String,
+    pub after: Vec<u64>,
+    pub state: String,
+    pub output: Option<Value>,
+}
+
+/// Plan simulé (ligne `AiActionPlan` et ses actions).
+#[derive(Debug, Clone, Default)]
+pub struct FakePlan {
+    pub status: String,
+    pub actions: Vec<FakeAction>,
+    pub agent_phases: u64,
+    pub agent_results: Vec<(u64, String)>,
+    pub digests: BTreeMap<u64, String>,
+}
+
+impl FakePlan {
+    pub fn state(&self, n: u64) -> &str {
+        &self.actions[usize::try_from(n - 1).unwrap()].state
+    }
+
+    pub fn ready(&self, a: &FakeAction) -> bool {
+        a.state == "pending"
+            && matches!(self.status.as_str(), "accepted" | "executing")
+            && a.after.iter().all(|m| self.state(*m) == "done")
+    }
+
+    /// Dépendantes transitives d'une action qui n'a pas abouti : `skipped` (PC54).
+    pub fn cascade(&mut self) {
+        for i in 0..self.actions.len() {
+            let bad = self.actions[i]
+                .after
+                .iter()
+                .any(|m| matches!(self.state(*m), "failed" | "unknown_outcome" | "skipped"));
+            if bad && self.actions[i].state == "pending" {
+                self.actions[i].state = "skipped".into();
+            }
+        }
+    }
+
+    pub fn settle(&mut self) {
+        if matches!(self.status.as_str(), "accepted" | "executing")
+            && self.actions.iter().all(|a| !matches!(a.state.as_str(), "pending" | "executing"))
+        {
+            let any = |s: &str| self.actions.iter().any(|a| a.state == s);
+            self.status = if any("failed") {
+                "failed"
+            } else if any("unknown_outcome") {
+                "interrupted"
+            } else {
+                "done"
+            }
+            .into();
+        }
+    }
+
+    pub fn view(&self, id: &str) -> Value {
+        let mut levels: Vec<u64> = Vec::new();
+        for a in &self.actions {
+            levels.push(a.after.iter().map(|m| levels[usize::try_from(*m - 1).unwrap()]).max().unwrap_or(0) + 1);
+        }
+        json!({
+            "planId": id, "sessionId": SID, "status": self.status, "actionCount": self.actions.len(),
+            "devicePhases": 0, "agentPhases": self.agent_phases, "claim": null,
+            "actions": self.actions.iter().zip(levels).map(|(a, l)| json!({
+                "n": a.n, "executor": a.executor, "after": a.after, "level": l, "ready": self.ready(a),
+                "state": a.state, "output": a.output })).collect::<Vec<_>>(),
+            "agentResults": self.agent_results.iter().map(|(p, v)| json!({ "phase": p, "value": v })).collect::<Vec<_>>(),
+        })
+    }
 }
 
 impl ApiState {
@@ -246,6 +342,26 @@ impl FakeApi {
                     if st.no_default_category && json.get("categoryId").is_none() {
                         return err(409, "no_default_category");
                     }
+                    if let Some(plan) = json.get("plan") {
+                        let (pid, n) = (plan["planId"].as_str().unwrap_or_default(), plan["n"].as_u64().unwrap_or(0));
+                        let Some(p) = st.plans.get_mut(pid) else { return err(403, "action_not_accepted") };
+                        let ok = n >= 1 && usize::try_from(n).is_ok_and(|n| n <= p.actions.len());
+                        if !ok || !matches!(p.status.as_str(), "accepted" | "executing") {
+                            return err(409, "plan_not_executing");
+                        }
+                        let a = p.actions[usize::try_from(n - 1).unwrap()].clone();
+                        if !p.ready(&a) || a.executor != "agent" {
+                            return err(409, "plan_phase_mismatch");
+                        }
+                        let id = format!("cm3threadnew{n:013}");
+                        let action = &mut p.actions[usize::try_from(n - 1).unwrap()];
+                        action.state = "done".into();
+                        action.output = Some(json!({ "id": id, "spaceId": json.get("spaceId") }));
+                        p.status = "executing".into();
+                        p.settle();
+                        st.threads_created.push(json.clone());
+                        return (201, json!({ "id": id, "name": json["name"], "type": json["type"], "workspaceId": json.get("spaceId") }));
+                    }
                     let id = format!("cm3threadnew{n:013}");
                     st.threads_created.push(json.clone());
                     (201, json!({ "id": id, "name": json["name"], "type": json["type"], "workspaceId": json.get("spaceId") }))
@@ -356,6 +472,68 @@ impl FakeApi {
                 (200, json!({ "items": items }))
             }),
             ("GET", ["tools"]) => self.with(|st| (200, st.tools.clone())),
+            ("POST", ["plans"]) => self.with(|st| {
+                if !lease_ok(st) {
+                    return err(409, "lease_conflict");
+                }
+                if b["baseRev"].as_u64() != Some(st.rev) {
+                    return err(409, "rev_conflict");
+                }
+                let (meta, pending) = (&b["plan"], &b["pendingToolCall"]);
+                let id = meta["planId"].as_str().unwrap_or_default().to_owned();
+                let args_ok = pending["args"].as_str().is_some_and(|a| a.starts_with("gcm1:"));
+                if pending["name"] != "propose_actions" || pending["planId"] != meta["planId"] || !args_ok || b.get("status").is_some() {
+                    return err(400, "invalid_body");
+                }
+                if st.plans.contains_key(&id) {
+                    return err(409, "plan_exists");
+                }
+                let actions: Vec<FakeAction> = meta["actions"].as_array().unwrap().iter().map(|a| FakeAction {
+                    n: a["n"].as_u64().unwrap(),
+                    executor: a["executor"].as_str().unwrap().to_owned(),
+                    after: a["after"].as_array().unwrap().iter().map(|x| x.as_u64().unwrap()).collect(),
+                    state: "pending".into(),
+                    output: None,
+                }).collect();
+                let digests = meta["serverDigests"].as_array().unwrap().iter()
+                    .map(|d| (d["n"].as_u64().unwrap(), d["sha256Hex"].as_str().unwrap().to_owned())).collect();
+                st.plans.insert(id.clone(), FakePlan { status: "proposed".into(), actions, agent_phases: 0, agent_results: vec![], digests });
+                st.messages = b["messages"].as_array().cloned().unwrap_or_default();
+                st.pending = pending.clone();
+                st.status = "awaiting_confirmation".into();
+                st.statuses.push((st.status.clone(), None));
+                st.rev += 1;
+                st.plan_posts.push(b.clone());
+                (201, json!({ "rev": st.rev, "planId": id }))
+            }),
+            ("GET", ["plans", pid]) => self.with(|st| match st.plans.get(*pid) {
+                Some(p) => (200, p.view(pid)),
+                None => err(404, "not_found"),
+            }),
+            ("POST", ["plans", pid, "agent-result"]) => self.with(|st| {
+                if !lease_ok(st) {
+                    return err(409, "lease_conflict");
+                }
+                if b["baseRev"].as_u64() != Some(st.rev) {
+                    return err(409, "rev_conflict");
+                }
+                let Some(p) = st.plans.get_mut(*pid) else { return err(404, "not_found") };
+                if !matches!(p.status.as_str(), "accepted" | "executing") {
+                    return err(409, "plan_not_executing");
+                }
+                let agent_ready = p.actions.iter().any(|a| a.executor == "agent" && (p.ready(a) || a.state == "executing"));
+                if b["phase"].as_u64() != Some(p.agent_phases + 1) || agent_ready {
+                    return err(409, "plan_phase_mismatch");
+                }
+                p.agent_phases += 1;
+                p.agent_results.push((p.agent_phases, b["value"].as_str().unwrap_or_default().to_owned()));
+                st.agent_posts.push(b.clone());
+                st.status = "awaiting_confirmation".into();
+                st.statuses.push((st.status.clone(), None));
+                st.rev += 1;
+                (200, json!({ "rev": st.rev, "status": st.status }))
+            }),
+            ("POST", ["tools", name, "execute"]) if b.get("plan").is_some() => self.plan_execute(name, b).await,
             ("POST", ["tools", name, "execute"]) => {
                 let blocked = self.with(|st| {
                     if !lease_ok(st) {
@@ -389,6 +567,165 @@ impl FakeApi {
             }),
             _ => err(404, "not_found"),
         }
+    }
+
+    /// `POST …/tools/:name/execute` avec `plan` (12 §8.4) : verrou d'état, condensat et `refs` contrôlés
+    /// avec les vraies fonctions de `synco-e2ee`, sortie enregistrée par l'API.
+    async fn plan_execute(&self, name: &str, b: &Value) -> (u16, Value) {
+        use synco_e2ee::plan::{ServerCall, check_server_call};
+        let pid = b["plan"]["planId"].as_str().unwrap_or_default().to_owned();
+        let n = b["plan"]["n"].as_u64().unwrap_or(0);
+        let (delay, ok) = {
+            let mut guard = self.st.lock().unwrap();
+            let st = &mut *guard;
+            if b.get("leaseEpoch").and_then(Value::as_u64) != Some(st.lease_epoch) || st.lease_conflict {
+                return err(409, "lease_conflict");
+            }
+            if st.throttle_429 > 0 {
+                st.throttle_429 -= 1;
+                st.throttled += 1;
+                return err(429, "rate_limited");
+            }
+            st.plan_execs.push(b.clone());
+            let Some(p) = st.plans.get_mut(&pid) else { return err(403, "action_not_accepted") };
+            if !matches!(p.status.as_str(), "accepted" | "executing") {
+                return err(409, "plan_not_executing");
+            }
+            let Some(idx) = usize::try_from(n).ok().and_then(|n| n.checked_sub(1)).filter(|i| *i < p.actions.len())
+            else {
+                return err(400, "invalid_body");
+            };
+            let a = p.actions[idx].clone();
+            if a.state != "pending" {
+                return err(409, "action_state_conflict");
+            }
+            if a.executor != "agent" || !p.ready(&a) {
+                return err(409, "plan_phase_mismatch");
+            }
+            let recorded: BTreeMap<u64, serde_json::Map<String, Value>> = p
+                .actions
+                .iter()
+                .filter(|x| x.state == "done")
+                .filter_map(|x| Some((x.n, x.output.as_ref()?.as_object()?.clone())))
+                .collect();
+            let empty = serde_json::Map::new();
+            let call = ServerCall {
+                tool: name,
+                args: b["args"].as_object().unwrap_or(&empty),
+                args_refs: b.get("argsRefs").and_then(Value::as_object),
+                refs: b.get("refs").and_then(Value::as_object),
+            };
+            let Some(expected) = p.digests.get(&n) else { return err(403, "action_not_accepted") };
+            let Ok(effective) = check_server_call(expected, &call, &recorded) else {
+                return err(403, "action_not_accepted");
+            };
+            p.actions[idx].state = "executing".into();
+            p.status = "executing".into();
+            st.tool_runs.push((name.to_owned(), Value::Object(effective)));
+            st.active += 1;
+            st.max_active = st.max_active.max(st.active);
+            (st.exec_delay_ms, !st.failing_tools.iter().any(|t| t == name))
+        };
+        if delay > 0 {
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+        }
+        let mut guard = self.st.lock().unwrap();
+        let st = &mut *guard;
+        st.active -= 1;
+        st.next_obj += 1;
+        let id = format!("cm3obj{:020}", st.next_obj);
+        let Some(p) = st.plans.get_mut(&pid) else { return err(404, "not_found") };
+        let idx = usize::try_from(n - 1).unwrap();
+        if ok {
+            p.actions[idx].state = "done".into();
+            p.actions[idx].output = Some(json!({ "id": id }));
+        } else {
+            p.actions[idx].state = "failed".into();
+            p.cascade();
+        }
+        p.settle();
+        if ok {
+            (200, json!({ "ok": true, "data": { "id": id } }))
+        } else {
+            (200, json!({ "ok": false, "message": "échec simulé" }))
+        }
+    }
+
+    /// Décision de l'utilisateur (`accept` d'un sous-ensemble) : états, cascade, dépôt de
+    /// `plan_decision`, conversation `queued`.
+    pub fn decide(&self, plan_id: &str, accepted: &[u64]) {
+        self.with(|st| {
+            let p = st.plans.get_mut(plan_id).unwrap();
+            p.status = "accepted".into();
+            for a in &mut p.actions {
+                if !accepted.contains(&a.n) {
+                    a.state = "skipped".into();
+                }
+            }
+            p.cascade();
+            st.status = "queued".into();
+            let frame = json!({ "t": "plan_decision", "planId": plan_id, "decision": "accept", "accepted": accepted });
+            st.inbox.push((format!("decision:{plan_id}"), frame, false));
+        });
+    }
+
+    /// « Arrêter le plan » (12 §8.6) : `stopped`, `pending` → `skipped`, `plan_decision` `stop`.
+    pub fn stop_plan(&self, plan_id: &str) {
+        self.with(|st| {
+            let p = st.plans.get_mut(plan_id).unwrap();
+            p.status = "stopped".into();
+            for a in &mut p.actions {
+                if a.state == "pending" {
+                    a.state = "skipped".into();
+                }
+            }
+            let frame = json!({ "t": "plan_decision", "planId": plan_id, "decision": "stop" });
+            st.inbox.push((format!("stop:{plan_id}"), frame, false));
+        });
+    }
+
+    /// L'appareil rapporte une phase : états, sorties enregistrées par l'API, `plan_result` chiffré
+    /// sous `CK` déposé dans la boîte. `forged` : sortie authentifiée différente de celle de l'API.
+    pub fn device_phase(&self, plan_id: &str, phase: u64, results: &[(u64, &str, Option<&str>)], forged: Option<&str>) {
+        use synco_e2ee::plan::{Executor, GraphAction, PlanGraph, encrypt_phase_result};
+        let graph = self.with(|st| {
+            let p = st.plans.get_mut(plan_id).unwrap();
+            for (n, state, out) in results {
+                let a = &mut p.actions[usize::try_from(*n - 1).unwrap()];
+                a.state = (*state).to_owned();
+                a.output = out.map(|o| json!({ "id": o }));
+            }
+            p.cascade();
+            p.settle();
+            PlanGraph::new(
+                p.actions
+                    .iter()
+                    .map(|a| GraphAction {
+                        n: a.n,
+                        executor: Executor::parse(&a.executor).unwrap(),
+                        after: a.after.clone(),
+                    })
+                    .collect(),
+            )
+            .unwrap()
+        });
+        let outcomes: Vec<Value> = results
+            .iter()
+            .map(|(n, state, out)| {
+                let mut o = json!({ "n": n, "state": state });
+                if let Some(out) = forged.filter(|_| out.is_some()).or(*out) {
+                    o["output"] = json!({ "id": out });
+                }
+                o
+            })
+            .collect();
+        let clear = json!({ "v": 1, "planId": plan_id, "phase": phase, "outcomes": outcomes });
+        let value = encrypt_phase_result(&ck(), SID, Executor::Device, &graph, &clear, &mut OsRandom).unwrap();
+        self.with(|st| {
+            st.status = "queued".into();
+            let frame = json!({ "t": "plan_result", "planId": plan_id, "phase": phase, "value": value });
+            st.inbox.push((format!("plan:{plan_id}:{phase}"), frame, false));
+        });
     }
 
     /// Historique déchiffré (comme le lit l'app).
@@ -732,6 +1069,7 @@ pub fn spawn_worker(
         lease_renew: Duration::from_millis(200),
         metrics_every: Duration::from_millis(500),
         need_key_wait: Duration::from_millis(100),
+        rate_limit_delays: vec![Duration::from_millis(10), Duration::from_millis(20), Duration::from_millis(40)],
     };
     let task = tokio::spawn(async move {
         let _ = synco_ai_runtime_worker::agent::run(a, Some(socket), opts).await;

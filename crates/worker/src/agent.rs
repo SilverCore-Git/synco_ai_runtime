@@ -29,6 +29,8 @@ use synco_e2ee::{OsRandom, RandomSource, SymmetricKey};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
 
+mod plan_run;
+
 use crate::api::{Api, ApiResponse, PREFIX};
 use crate::events::Emitter;
 use crate::link::{self, Control, Link};
@@ -57,6 +59,9 @@ pub struct AgentOptions {
     pub metrics_every: Duration,
     /// Attente d'une clé demandée au superviseur (`need_key`) avant `awaiting_key`.
     pub need_key_wait: Duration,
+    /// Délais avant chacun des 3 nouveaux essais d'une action d'agent sur `429` (12 §8.7 : 1, 2, 4 s,
+    /// ± 20 %).
+    pub rate_limit_delays: Vec<Duration>,
 }
 
 impl Default for AgentOptions {
@@ -66,6 +71,7 @@ impl Default for AgentOptions {
             lease_renew: Duration::from_secs(20),
             metrics_every: Duration::from_secs(10),
             need_key_wait: Duration::from_secs(2),
+            rate_limit_delays: vec![Duration::from_secs(1), Duration::from_secs(2), Duration::from_secs(4)],
         }
     }
 }
@@ -202,6 +208,12 @@ struct Agent {
     /// Le dernier ticket a été refusé : fournisseur non configuré (Q30).
     not_configured: bool,
     live: Option<Live>,
+    /// Plan en cours (reconstruit à chaque reprise depuis `PlanView`, [`plan_run`]).
+    plan: Option<plan_run::PlanSt>,
+    /// Messages arrivés pendant un plan accepté : traités après la fermeture de `propose_actions`.
+    deferred: VecDeque<(String, Value)>,
+    /// Motif du dernier refus de plan (`plan_decision` `reject`).
+    plan_reject_reason: Option<String>,
     shutdown: Option<ShutdownMsg>,
     lease_lost: Arc<AtomicBool>,
     last_metrics: Instant,
@@ -246,6 +258,9 @@ impl Agent {
             ticket: None,
             not_configured: false,
             live: None,
+            plan: None,
+            deferred: VecDeque::new(),
+            plan_reject_reason: None,
             shutdown: None,
             lease_lost: Arc::new(AtomicBool::new(false)),
             last_metrics: Instant::now(),
@@ -351,8 +366,11 @@ impl Agent {
 
         // Un résultat inconnu (ou un appel clos) est donné au modèle, qui décide de la suite (08 §5).
         let mut need_model = unknown > 0;
-        let has_work = !self.queue.is_empty() || !rerun.is_empty() || !self.events.is_empty();
-        if has_work {
+        // Plan en attente d'une reprise (décision, résultat de phase, fin, expiration) : l'état se
+        // relit dans `PlanView` (12 §8.3), pas dans la boîte.
+        let plan_work = self.pending_plan_id().is_some() && matches!(start_status.as_str(), "queued" | "running");
+        let has_work = !self.queue.is_empty() || !rerun.is_empty() || !self.events.is_empty() || plan_work;
+        if has_work && !plan_work {
             self.set_running().await?;
         }
         for id in rerun {
@@ -375,6 +393,16 @@ impl Agent {
                 return Ok(DoneReason::Shutdown);
             }
             need_model |= a.run_model;
+            if !need_model && self.pending_plan_id().is_some() {
+                match self.drive_plan().await? {
+                    plan_run::PlanFlow::Awaiting => return Ok(DoneReason::Awaiting),
+                    plan_run::PlanFlow::Closed => {
+                        need_model = true;
+                        continue;
+                    }
+                    plan_run::PlanFlow::Again => continue,
+                }
+            }
             if need_model {
                 need_model = false;
                 match self.turn().await? {
@@ -421,7 +449,7 @@ impl Agent {
         } else {
             self.link.send(log("warn", "tools_unavailable", &[("status", json!(r.status))])).await?;
         }
-        self.llm_tools = tools::llm_tools(&self.specs, &self.init.tool_policy);
+        self.llm_tools = tools::llm_tools(&self.specs, &self.init.tool_policy, self.init.plan.map(|p| p.mode));
         Ok(())
     }
 
@@ -551,6 +579,18 @@ impl Agent {
     /// `PUT …/transcript` : historique chiffré, statut, appel en attente, éléments consommés,
     /// évènements de journal. Rejoue une fois sur `rev_conflict` (titre modifié entre-temps).
     async fn persist(&mut self, status: &str, error: Option<&'static str>) -> Result<(), Stop> {
+        self.persist_inner(status, error, None).await?.map_err(|_| Stop::Fatal("internal"))
+    }
+
+    /// [`Self::persist`], ou `POST …/plans` quand `plan` est donné (12 §12.2 : transcript chiffré et
+    /// ligne du plan dans la même requête, statut `awaiting_confirmation` posé par l'API). Rend
+    /// `Err(code)` si l'API refuse définitivement l'écriture d'un plan (`plan_exists`, forme).
+    async fn persist_inner(
+        &mut self,
+        status: &str,
+        error: Option<&'static str>,
+        plan: Option<&Value>,
+    ) -> Result<Result<(), String>, Stop> {
         if self.lease_lost.load(Ordering::Relaxed) {
             return Err(Stop::LeaseLost);
         }
@@ -569,10 +609,13 @@ impl Agent {
                 "leaseEpoch": self.init.lease_epoch,
                 "baseRev": self.rev,
                 "messages": messages,
-                "status": status,
                 "pendingToolCall": pending,
                 "consumedInbox": consumed,
             });
+            match plan {
+                Some(p) => crate::json_set(&mut body, "plan", p.clone()),
+                None => crate::json_set(&mut body, "status", json!(status)),
+            }
             if let Some(e) = error {
                 crate::json_set(&mut body, "error", json!(e));
             }
@@ -584,13 +627,25 @@ impl Agent {
             if !events.is_empty() {
                 crate::json_set(&mut body, "events", Value::Array(events.clone()));
             }
-            let r = self.api.conv(HttpMethod::Put, "/transcript", Some(&body)).await?;
+            let r = match plan {
+                Some(_) => self.api.conv(HttpMethod::Post, "/plans", Some(&body)).await?,
+                None => self.api.conv(HttpMethod::Put, "/transcript", Some(&body)).await?,
+            };
             if r.ok() {
                 self.rev = r.body.get("rev").and_then(Value::as_u64).unwrap_or(self.rev.saturating_add(1));
                 break;
             }
             attempt = attempt.saturating_add(1);
             match r.code() {
+                // Réponse perdue puis nouvel essai : le plan existe déjà, c'est notre écriture.
+                Some("plan_exists") if plan.is_some() && attempt > 1 => {
+                    let head = self.api.conv(HttpMethod::Get, "", None).await?;
+                    if let Some(rev) = head.body.get("rev").and_then(Value::as_u64) {
+                        self.rev = rev;
+                    }
+                    break;
+                }
+                Some(c @ ("plan_exists" | "invalid_body")) if plan.is_some() => return Ok(Err(c.to_owned())),
                 Some("rev_conflict") if attempt <= 2 => {
                     let head = self.api.conv(HttpMethod::Get, "", None).await?;
                     if let Some(rev) = head.body.get("rev").and_then(Value::as_u64) {
@@ -610,7 +665,8 @@ impl Agent {
             self.link.send(WorkerMsg::InboxAck(InboxAckMsg { ids: acked })).await?;
         }
         self.error = error;
-        self.set_local_status(status, error).await
+        self.set_local_status(status, error).await?;
+        Ok(Ok(()))
     }
 
     /// `POST …/status` (changement d'état sans réécrire l'historique).
@@ -721,8 +777,29 @@ impl Agent {
                 out.cancelled = true;
                 return Ok(out);
             }
+            if t == "plan_result" {
+                // Résultat de phase d'appareil : gardé dans la boîte jusqu'à la fermeture du plan.
+                if self.on_plan_result(id, &frame).await? {
+                    out.run_model = true;
+                }
+                continue;
+            }
+            if t == "message" && self.plan_defers_message().await? {
+                // Plan accepté en cours : traité après la fermeture de `propose_actions` (12 §8.6).
+                self.deferred.push_back((id, frame));
+                continue;
+            }
             self.consumed.push(id);
             match t.as_str() {
+                "plan_decision" => {
+                    if frame.get("decision").and_then(Value::as_str) == Some("reject") {
+                        self.plan_reject_reason = frame
+                            .get("reason")
+                            .and_then(Value::as_str)
+                            .filter(|r| *r == "plan_invalid")
+                            .map(str::to_owned);
+                    }
+                }
                 "message" => {
                     if self.accept_user_message(&frame).await? {
                         out.run_model = true;
@@ -780,6 +857,10 @@ impl Agent {
     async fn decision(&mut self, t: &str, frame: &Value) -> Result<Option<Flow>, Stop> {
         let Some(tcid) = frame.get("toolCallId").and_then(Value::as_str) else { return Ok(None) };
         let Some(p) = self.pending.clone().filter(|p| p.id == tcid) else { return Ok(None) };
+        if p.plan_id.is_some() {
+            // Un `confirm` visant `propose_actions` est consommé et ignoré (12 §9, `stale_decision`).
+            return Ok(None);
+        }
         match t {
             "confirm" if self.status == "awaiting_confirmation" || (!p.interactive && self.awaiting_key.is_none()) => {
                 self.pending = None;
@@ -1287,6 +1368,9 @@ impl Agent {
             self.persist("running", None).await?;
             return Ok(Flow::Continue);
         }
+        if tc.name == crate::plan::PROPOSE_ACTIONS && self.init.plan.is_some() {
+            return self.propose_actions(idx, tc).await;
+        }
         let spec = self.spec(&tc.name).cloned();
         match tools::decide(spec.as_ref(), &self.init.tool_policy) {
             Decision::Unknown => {
@@ -1320,6 +1404,7 @@ impl Agent {
                     category: spec.category.clone(),
                     mutating: spec.mutating,
                     interactive: spec.interactive,
+                    plan_id: None,
                 });
                 let mid = self.messages.get(idx).map(|m| m.id.clone()).unwrap_or_default();
                 self.em.tool_call(&mid, &tc, spec.interactive).await?;
@@ -1385,6 +1470,7 @@ impl Agent {
                     category: spec.category.clone(),
                     mutating: spec.mutating,
                     interactive: spec.interactive,
+                    plan_id: None,
                 });
                 self.awaiting_key = Some(format!("{kind}:{reference}"));
                 let accepted = ToolCall { status: ToolStatus::Accepted, ..tc };
@@ -1411,7 +1497,8 @@ impl Agent {
     }
 
     async fn run_tool(&self, spec: &ToolSpec, args: &Value) -> Outcome {
-        let ctx = ToolCtx { api: &self.api, lease_epoch: self.init.lease_epoch, user_id: &self.init.user_id };
+        let ctx =
+            ToolCtx { api: &self.api, lease_epoch: self.init.lease_epoch, user_id: &self.init.user_id, plan: None };
         tools::execute(&ctx, spec, args).await
     }
 
@@ -1551,8 +1638,13 @@ fn usage_json(u: Usage) -> Value {
 fn valid_inbox_id(id: &str) -> bool {
     match id.split_once(':') {
         None => runtime_protocol::ids::is_identifier(id),
+        // `plan:<planId>:<k>` (résultat de phase d'appareil, 12 §9).
+        Some(("plan", rest)) => rest.split_once(':').is_some_and(|(plan_id, k)| {
+            runtime_protocol::ids::is_identifier(plan_id) && !k.is_empty() && k.bytes().all(|b| b.is_ascii_digit())
+        }),
         Some((kind, rest)) => {
-            matches!(kind, "confirm" | "answer" | "upload" | "cancel") && runtime_protocol::ids::is_identifier(rest)
+            matches!(kind, "confirm" | "answer" | "upload" | "cancel" | "decision" | "stop")
+                && runtime_protocol::ids::is_identifier(rest)
         }
     }
 }
@@ -1564,6 +1656,7 @@ fn inbox_id(frame: &Value) -> Option<String> {
         "message" => frame.get("id")?.as_str()?.to_owned(),
         "cancel" => format!("cancel:{}", frame.get("id")?.as_str()?),
         "confirm" | "answer" | "upload" => format!("{t}:{}", frame.get("toolCallId")?.as_str()?),
+        "plan_result" => format!("plan:{}:{}", frame.get("planId")?.as_str()?, frame.get("phase")?.as_u64()?),
         _ => return None,
     };
     Some(id)
@@ -1596,7 +1689,11 @@ fn clear_message(m: &Message) -> Value {
 }
 
 fn clear_pending(p: &PendingToolCall) -> Value {
-    json!({ "id": p.id, "name": p.name, "args": p.args, "category": p.category, "mutating": p.mutating, "interactive": p.interactive })
+    let mut v = json!({ "id": p.id, "name": p.name, "args": p.args, "category": p.category, "mutating": p.mutating, "interactive": p.interactive });
+    if let Some(plan_id) = &p.plan_id {
+        crate::json_set(&mut v, "planId", json!(plan_id));
+    }
+    v
 }
 
 /// Pour les tests : identifiants des éléments de boîte.
@@ -1616,10 +1713,34 @@ mod tests {
 
     #[test]
     fn identifiants_de_boite() {
-        for ok in ["3c2b1a09-8f7e-4d6c-9b5a-493827161504", "confirm:call_1", "cancel:abc", "upload:x"] {
+        for ok in [
+            "3c2b1a09-8f7e-4d6c-9b5a-493827161504",
+            "confirm:call_1",
+            "cancel:abc",
+            "upload:x",
+            "decision:3c2b1a09-8f7e-4d6c-9b5a-493827161504",
+            "stop:3c2b1a09-8f7e-4d6c-9b5a-493827161504",
+            "plan:3c2b1a09-8f7e-4d6c-9b5a-493827161504:12",
+        ] {
             assert!(valid_inbox_id(ok), "{ok}");
         }
-        for bad in ["a&b:x", "confirm:a&b", "x?y", "autre:x", "confirm:", "a b", "confirm:x:y", ""] {
+        for bad in [
+            "plan:x",
+            "plan:x:",
+            "plan:x:1a",
+            "plan:a&b:1",
+            "plan:x:1:2",
+            "decision:",
+            "decision:a:b",
+            "a&b:x",
+            "confirm:a&b",
+            "x?y",
+            "autre:x",
+            "confirm:",
+            "a b",
+            "confirm:x:y",
+            "",
+        ] {
             assert!(!valid_inbox_id(bad), "{bad}");
         }
     }

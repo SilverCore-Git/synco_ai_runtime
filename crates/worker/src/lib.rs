@@ -21,6 +21,7 @@ pub mod keys;
 pub mod link;
 pub mod llm;
 pub mod metrics;
+pub mod plan;
 pub mod prompt;
 pub mod provider;
 pub mod stub;

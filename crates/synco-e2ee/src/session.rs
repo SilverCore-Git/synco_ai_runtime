@@ -81,6 +81,10 @@ pub enum FieldName {
     PlanResult(u64),
     /// `plan_agent_result:<k>` : résultat de la phase d'agent `k ≥ 1` (12 §9).
     PlanAgentResult(u64),
+    /// `artifact_meta` : métadonnées d'un artefact (13 §3) ; le `messageId` de l'AAD est l'`artifactId`.
+    ArtifactMeta,
+    /// `artifact` : contenu d'un artefact (13 §3) ; le `messageId` de l'AAD est l'`artifactId`.
+    Artifact,
 }
 
 impl FieldName {
@@ -110,6 +114,8 @@ impl FieldName {
                 Ok(format!("answer:{id}"))
             }
             Self::Plan => Ok("plan".to_owned()),
+            Self::ArtifactMeta => Ok("artifact_meta".to_owned()),
+            Self::Artifact => Ok("artifact".to_owned()),
             Self::PlanResult(k) | Self::PlanAgentResult(k) => {
                 check_uint(*k)?;
                 if *k == 0 {

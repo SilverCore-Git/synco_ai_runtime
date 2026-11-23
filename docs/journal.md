@@ -1471,3 +1471,23 @@ Un commit par point, chacun avec un test qui échoue sans lui.
   `retour_vers_une_ancienne_cle_detecte_apres_archivage`, `identite_active_et_archivee_refuse_l_ouverture`,
   `ecriture_atomique_force_0600_sur_un_tmp_existant`.
 - **Ouvert** : pas de test d'intégration du chemin `workers.rs` (le `touch` est testé au niveau du magasin).
+
+## L00g : spec des artefacts de conversation (PC71, PC72, PC77), 2026-11-23
+
+- **Fait** : `docs/plan/13-artefacts.md` (outil `send_file` propre au worker, hors plan ; validation du nom et du
+  format ; forme réduite des arguments dans le transcript ; `meta` et contenu chiffrés sous `CK`, AAD
+  `sessionId:artifactId:artifact_meta` et `:artifact` ; modèle `AiChatArtifact` sans aucune métadonnée en clair,
+  compteur `artifactCount` par `updateMany` conditionné, `onDelete: Cascade` ; route de dépôt du canal, liste et
+  lecture U-prop ; trame `artifact` à identifiants seuls ; contrôles de l'app après déchiffrement ; affichage par
+  `MessageAttachments.vue`, Markdown sans HTML ; « Enregistrer dans un espace » hors plan). Renvois dans 00, 04, 05,
+  06, 07 (relation, cascade, catalogue RGPD), 09, 12 §2 et `vectors/README.md` §5. Vecteurs figés
+  `docs/plan/vectors/artifacts.json`.
+- **Vérifié** : vecteurs rejoués à la génération par `decryptAiField`, `artifactMatches`, `sanitizeArtifactName`
+  (`synco_app`, sous `bun`) et par `synco-e2ee` (`session::decrypt_field`, `plan::jcs`, `primitives::sha256`) dans
+  un projet jetable hors du dépôt ; `cargo fmt --all --check`.
+- **À valider par l'utilisateur** (13 §13) : 128 Kio par fichier, 5 par tour, 20 par conversation, pas de relecture
+  par le modèle en v1, formats `html` / `js` / `sh` / `php` permis (affichés comme source), politique `auto`.
+- **Écarts avec l'annexe A de C3** : trame sans `ext` ni `size`, `409 artifact_quota` au lieu de `429`, référence
+  dans les arguments chiffrés de l'appel plutôt que dans un nouveau champ du message.
+- **Ouvert** : lots d'implémentation à ouvrir (proposés L08e runtime, L03i API ; L12b app) ; `artifactMatches` de
+  l'app accepte une empreinte en majuscules, la spec l'exige en minuscules (contrôle de forme du §7.1 avant).

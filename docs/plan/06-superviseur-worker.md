@@ -342,6 +342,7 @@ Résultats d'outil `{"error": code}` donnés au modèle (le code n'est pas un `l
 | `no_recipient_key` | `create_thread` : aucune clé de membre exploitable |
 | `member_key_changed` | `create_thread` : le superviseur a refusé l'annuaire des membres, une clé RSA a changé sans preuve (§4.3, Q25) ; aucun salon créé, rien de scellé (champ `note`) |
 | `unknown_outcome` | Issue inconnue d'un outil mutant (08 §5) |
+| `artifact_format`, `artifact_name`, `artifact_not_text`, `artifact_too_large`, `artifact_turn_limit`, `artifact_quota`, `artifact_not_sent` | Outil `send_file` propre au worker (13 §2, §10, ajouté par L00g) : refus de forme ou de borne, ou dépôt impossible ; rien n'est déposé |
 
 `answer` et `upload` sont acceptés même si l'état lu est `queued` (l'API passe l'état à `queued` au dépôt,
 08 §2.1) : le contrôle du worker porte sur l'appel en attente (`pendingToolCall`), pas sur l'état lu

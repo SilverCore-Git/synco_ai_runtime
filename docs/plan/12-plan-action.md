@@ -726,7 +726,7 @@ Flux (04 §6) : `delegation.revoked.reason` peut valoir `autonomy_withdrawn` ; `
 | Méthode et chemin | Auth | Corps / requête | Succès | Refus |
 |---|---|---|---|---|
 | `GET /feature-policies` | U-admin | — | `200 { policies: [{ feature, mode, memberCount, enabledCount, updatedAt, updatedBy }] }` (fonctionnalités actives) | `403 forbidden` |
-| `PUT /feature-policies/:feature` | U-admin | `{ mode }` | `200 { feature, mode, revoked: <n> }` ; applique §11.4 | `400 invalid_body`, `403 forbidden`, `404 not_found`, `409 feature_reserved` |
+| `PUT /feature-policies/:feature` | U-admin | `{ mode }`, ou `{ mode: "list", userIds: [1..100] }` (membres de l'org ; `userIds` seulement avec `list`), en une transaction : depuis `all`, le §11.4 ne touche que les personnes hors de la liste ; déjà en `list`, les `userIds` sont ajoutés | `200 { feature, mode, revoked: <n> }` ; applique §11.4 | `400 invalid_body`, `403 forbidden`, `404 not_found`, `409 feature_reserved` |
 | `GET /feature-policies/:feature/members` | U-admin | `?after=<userId>&limit=1..100&q=<recherche>` | `200 { members: [{ userId, addedAt, enabled }], next }` | idem |
 | `POST /feature-policies/:feature/members` | U-admin | `{ userIds: [1..100] }` (membres de l'org) | `200 { added }` | `400 invalid_body` (non-membre, plafond de 1 000), `409 policy_not_list`, idem |
 | `POST /feature-policies/:feature/members/remove` | U-admin | `{ userIds: [1..100] }` | `200 { removed, revoked }` ; §11.4 | idem |

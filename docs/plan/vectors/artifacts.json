@@ -352,31 +352,31 @@
       "expectSha256": "7e2fea7cf9f39223770dc3a7a428fe203d3efbb53aae7cce51a9d723691a7fac"
     },
     {
-      "name": "exactement 131 072 octets ASCII",
+      "name": "exactement 262 144 octets ASCII",
       "fill": "a",
-      "fillLength": 131072,
+      "fillLength": 262144,
       "expect": "ok",
-      "expectSize": 131072,
-      "expectSha256": "b44ffb72fcc259676bd80495fef1b44b808ca8f1ffe1b1706a4d7911b0e31f11"
+      "expectSize": 262144,
+      "expectSha256": "dd3dde87623d9a6b354c68c943d189c89c63652d945e7bbdf0986cae91a49521"
     },
     {
-      "name": "131 073 octets ASCII",
+      "name": "262 145 octets ASCII",
       "fill": "a",
-      "fillLength": 131073,
+      "fillLength": 262145,
       "expect": "artifact_too_large"
     },
     {
-      "name": "65 536 « é » = 131 072 octets UTF-8 : accepté (la borne compte des octets)",
+      "name": "131 072 « é » = 262 144 octets UTF-8 : accepté (la borne compte des octets)",
       "fill": "é",
-      "fillLength": 65536,
+      "fillLength": 131072,
       "expect": "ok",
-      "expectSize": 131072,
-      "expectSha256": "d98095f273e7fc6421a31c287c93720d7e53ff40b6825d1311d730cf8826a593"
+      "expectSize": 262144,
+      "expectSha256": "94914398e4fe14ac182b9e6080caa078bbde122682c352744929d55f7d038d10"
     },
     {
-      "name": "65 537 « é » = 131 074 octets UTF-8 : refusé (65 537 caractères seulement)",
+      "name": "131 073 « é » = 262 146 octets UTF-8 : refusé (131 073 caractères seulement)",
       "fill": "é",
-      "fillLength": 65537,
+      "fillLength": 131073,
       "expect": "artifact_too_large"
     },
     {
@@ -616,19 +616,19 @@
   ],
   "boundCases": [
     {
-      "name": "value gcm1: de 174 805 caractères (5 + 4·⌈(12 + 131 072 + 16) / 3⌉) : forme acceptée par l'API",
+      "name": "value gcm1: de 349 569 caractères (5 + 4·⌈(12 + 262 144 + 16) / 3⌉) : forme acceptée par l'API",
       "field": "value",
       "valuePrefix": "gcm1:",
       "fill": "A",
-      "fillLength": 174800,
+      "fillLength": 349564,
       "expect": "ok"
     },
     {
-      "name": "value gcm1: de 174 809 caractères : refusée par l'API",
+      "name": "value gcm1: de 349 573 caractères : refusée par l'API",
       "field": "value",
       "valuePrefix": "gcm1:",
       "fill": "A",
-      "fillLength": 174804,
+      "fillLength": 349568,
       "expect": "artifact_too_large"
     },
     {

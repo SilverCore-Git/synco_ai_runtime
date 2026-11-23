@@ -124,7 +124,7 @@ passe local seul en v1, pas de connexion par ticket Synco ; (b) **PC14** : pas d
 est présenté comme des analytics de ressources par session et par utilisateur ; **PC15** : mot de passe créé par
 la commande `dashboard-password`, comme prévu (l'idée d'un `.env` est abandonnée). Le point (c) reste non
 tranché. Les puces ci-dessous gardent leur texte d'origine pour mémoire. **PC28** : le dashboard affiche une
-alerte à 80 % du plafond d'épingles RSA (`member_pins_near_limit`, lot L05c, réalisé) et lors d'une éviction d'archive (`member_pins_archive_evicted`).
+alerte à 80 % du plafond d'épingles RSA (`member_pins_near_limit`, lot L05c, réalisé) et lors d'une éviction d'archive (`member_pins_archive_evicted`) ou d'une occupation supérieure au plafond (`member_pins_over_limit`). Une archive réactivée par une **autre clé** a une empreinte d'affichage (RFC 7638) vide : le tableau de bord affiche « empreinte inconnue (archivée) » jusqu'à la décision de l'admin.
 
 - **(a) Connexion par ticket Synco** des admins de l'org, **en complément** du mot de passe local
   (jamais à sa place, §1) : demande une nouvelle route de `synco_api` et un rôle.

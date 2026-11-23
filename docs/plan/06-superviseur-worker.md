@@ -224,15 +224,19 @@ relayée, avant que le worker la voie. Source : `crates/supervisor/src/member_pi
   archive n'est **jamais** une première vue : `check` la réactive d'abord (même empreinte, le total de l'org ne
   change pas), puis compare : même clé → acceptée ; autre clé → `member_key_changed`, refus et mise en attente
   comme pour une épingle active. Le plafond compte épingles actives et archives. Première vue au plafond :
-  la plus ancienne archive (par `lastSeen`) est évincée, jamais une épingle active ; sans archive, refus fermé
-  `member_pins_limit`. **Seul cas qui rouvre un TOFU pour une identité déjà vue** : l'éviction, car son empreinte
+  la plus ancienne archive (par `lastSeen`) est évincée, jamais une épingle active, et **seulement si l'éviction
+  suffit à faire de la place** (épingles actives au plafond : refus fermé `member_pins_limit`, l'archive n'est pas
+  touchée) ; sans archive, refus fermé `member_pins_limit`. Au démarrage, une occupation supérieure au plafond est
+  signalée (journal `member_pins_over_limit`, alerte du même nom) sans rien évincer. **Seul cas qui rouvre un TOFU pour une identité déjà vue** : l'éviction, car son empreinte
   n'est plus conservée ; il est tracé (journal `member_pin_archive_evicted`, alerte `member_pins_archive_evicted`,
   compteur `evicted` persistant par org). Alerte `member_pins_near_limit` à 80 % du plafond (une fois par
   franchissement, réarmée sous le seuil). Le fichier reste public et non scellé (empreintes seulement), écrit
-  par `write_atomic` comme avant. Choix provisoires (L05c) : `previous` n'est pas gardé dans l'archive (la protection
-  contre le retour arrière d'une clé précédente est perdue après archivage ; la rotation exige de toute façon une
-  chaîne d'identité valide) ; un plafond abaissé sous l'occupation n'évince rien tant qu'aucune première vue ne se
-  présente.
+  par `write_atomic` comme avant. `previous` est gardé dans l'archive (omis si vide) et restauré à la
+  réactivation : un retour vers une ancienne clé reste détecté après archivage. Mandat v2 vérifié : la clé servie
+  égale à l'épingle du mandat rafraîchit `lastSeen` de l'épingle TOFU de la même identité (`touch`, sans
+  épingler) pour qu'elle ne vieillisse pas jusqu'à l'éviction. Un fichier où une même identité est à la fois
+  active et archivée est refusé à l'ouverture (refus fermé). Le plafond abaissé sous l'occupation n'évince rien tant
+  qu'aucune première vue ne se présente. `write_atomic` force 0600 sur le `.tmp` et fsync le répertoire.
 - **Règle**, pour chaque membre de la réponse dont la clé est lisible et dans les bornes (sinon le
   worker l'écarte, `skippedRecipients`) : première vue du couple (org, utilisateur) → épinglée ;
   même empreinte → acceptée ; empreinte différente → **rotation** acceptée seulement selon une

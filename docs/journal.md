@@ -1455,3 +1455,19 @@ Un commit par point, chacun avec un test qui échoue sans lui.
   réussis, 10 ignorés (hôte). Tests ajoutés : 5 (`archive_detecte_toujours_un_changement`,
   `archive_persiste_et_reste_detectee_apres_redemarrage`, `eviction_seulement_de_la_plus_ancienne_archive`,
   `alerte_a_80_pour_cent`, `ancien_format_relu_et_reecrit_en_nouveau`) ; `cles_rsa_charge_et_plafond` abaisse le plafond à 2 000.
+
+## L05c : corrections de revue de sécurité, 2026-11-23
+
+- **Fait** (`member_pins.rs`, `workers.rs`, `seal.rs`) : (1) première vue au plafond : `Full` d'emblée si les
+  épingles actives occupent tout le plafond, l'archive n'est plus touchée ; l'éviction n'a lieu que si elle suffit ;
+  occupation > plafond au démarrage : journal et alerte `member_pins_over_limit`, rien d'évincé ; (2) mandat v2 :
+  `touch` rafraîchit `lastSeen` de l'épingle TOFU de la même identité (archive réactivée), sans réépingler ;
+  (3) `previous` conservé dans `ArchivedPin` (`skip_serializing_if`), restauré à la réactivation : le choix
+  provisoire (1) de l'entrée précédente est levé ; (4) identité à la fois active et archivée : `open` refuse ;
+  (5) doc d'`is_archived`, org dans la trace d'éviction, `write_atomic` : 0600 forcé sur le `.tmp` existant et
+  fsync du répertoire ; (6) spec 06 §4.3 et 11 §7 (« empreinte inconnue (archivée) » pour une archive réactivée par
+  une autre clé).
+- **Tests ajoutés** : `actives_au_plafond_ne_touchent_pas_l_archive`, `mandat_v2_rafraichit_l_epingle_tofu`,
+  `retour_vers_une_ancienne_cle_detecte_apres_archivage`, `identite_active_et_archivee_refuse_l_ouverture`,
+  `ecriture_atomique_force_0600_sur_un_tmp_existant`.
+- **Ouvert** : pas de test d'intégration du chemin `workers.rs` (le `touch` est testé au niveau du magasin).

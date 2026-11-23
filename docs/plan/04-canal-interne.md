@@ -9,7 +9,7 @@ enregistrée à l'appairage (01). Conventions : [00 §3](00-vue-ensemble.md).
 
 - Routeur dédié monté sur `/api/runtime/v1`, **hors** `authMiddleware` (pas de jeton Keycloak), avec
   son propre limiteur de débit par `runtimeId` (09 §4) et un corps brut lu tel quel (les octets
-  signés), plafonné à 8 Mio (`PUT …/transcript`), 1 Mio (`POST …/plans`, PC61) et 256 Kio ailleurs.
+  signés), plafonné à 8 Mio (`PUT …/transcript`), 1 Mio (`POST …/plans`, PC61 ; `POST …/artifacts`, PC85) et 256 Kio ailleurs.
 - Le module IA (`features` contient `ai`, `activeModules.ai === true`) et l'absence de bannissement de
   l'org (`orgBanMiddleware`) sont vérifiés à chaque requête, comme pour les routes `/ai`.
 
@@ -226,7 +226,7 @@ reconstruit le mandat selon 03 §4.1 et se fie au mode **vérifié**.
 | `POST /conversations/:sessionId/plans` | S+A | **Ajoutée par L00f (12 §12.2).** Écrit le transcript (statut `awaiting_confirmation`, `pendingToolCall` `propose_actions`, 12 §3.4) **et** crée la ligne `AiActionPlan` dans une transaction : `{ leaseEpoch, baseRev, messages, title?, pendingToolCall, consumedInbox, events?, plan: { planId, toolCallId, actionCount, createdAt, expiresAt, actions: [{ n, executor, after }], serverDigests: [{ n, sha256Hex }] } }` → `201 { rev, planId }` (une ligne `AiActionPlanAction` par action, 07 §10) ; `400 invalid_body` (dont `after` mal formé, 12 §8.1 ; plus de 100 actions ou de 2 000 entrées d'`after`, PC61), `409 plan_exists`, `rev_conflict`, `lease_conflict` (amendé par PC44 et PC58 : graphe `executor` / `after`, sans contenu) | L03g |
 | `GET /conversations/:sessionId/plans/:planId` | S+A | **Ajoutée par L00f.** `PlanView` (12 §12.1), sans contenu en clair | L03g |
 | `POST /conversations/:sessionId/plans/:planId/agent-result` | S+A, bail | **Ajoutée par l'amendement PC44 (12 §8.3, §12.2).** Fin d'une phase d'agent (plus aucune action d'agent prête ni en cours) quand le plan n'est pas fini : `{ leaseEpoch, baseRev, phase, value }` (`plan_agent_result:<k>` chiffré sous `CK`, `k` compté par exécutant, PC58) → `200 { rev, status }` ; l'API range la valeur, repasse la conversation `awaiting_confirmation` et envoie le push si des actions d'appareil attendent ; `400 invalid_body`, `404 not_found`, `409 plan_phase_mismatch` (action d'agent encore prête : le worker continue), `409 plan_not_executing` (plan fini : le worker ferme `propose_actions`), `rev_conflict`, `lease_conflict` | L03g |
-| `POST /conversations/:sessionId/artifacts` | S+A, bail | **Ajoutée par L00g (13 §5.1, PC72).** Dépôt d'un artefact : `{ leaseEpoch, id, meta, value }` (`gcm1:` sous `CK`, aucune métadonnée en clair) → `201 { id }`, rejeu identique `200` ; `400 invalid_body`, `413 artifact_too_large`, `409 artifact_exists`, `409 artifact_quota` (20 par conversation), `lease_conflict`, `not_runtime` ; 10 / min par conversation | L03i (proposé) |
+| `POST /conversations/:sessionId/artifacts` | S+A, bail | **Ajoutée par L00g (13 §5.1, PC72).** Dépôt d'un artefact : `{ leaseEpoch, id, meta, value }` (`gcm1:` sous `CK`, aucune métadonnée en clair) → `201 { id }`, rejeu identique `200` ; `400 invalid_body`, `413 artifact_too_large`, `409 artifact_exists`, `409 artifact_quota` (20 par conversation), `lease_conflict`, `not_runtime` ; corps ≤ 1 Mio (PC85) ; 10 / min par conversation | L03i (proposé) |
 
 Contraintes des écritures du worker (révisé après la vague B, 2026-11-19 ;
 `synco_api/src/services/aiRuntime/conversationLease.ts:172-207`, `conversationValidation.ts:44-68`) :

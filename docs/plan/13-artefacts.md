@@ -1,6 +1,6 @@
 # 13 — Fichiers envoyés par l'agent dans la conversation (artefacts, figé par L00g, 2026-11-23)
 
-Source : décisions PC71, PC72, PC77 et PC81 (00 §5), conception C3 (§1.5 et annexe A,
+Source : décisions PC71, PC72, PC77, PC81 et PC82 à PC85 (00 §5), conception C3 (§1.5 et annexe A,
 `.claude/prompts/syncoai_refonte/conception/C3_front.md`), interface `ArtifactSource` déjà posée par L12
 (`synco_app/src/services/aiRuntime/artifacts/artifactModel.ts`). Ce document fige ce dont le runtime
 (outil), l'API (stockage, routes) et l'app (source, affichage, enregistrement) ont besoin pour travailler
@@ -8,8 +8,7 @@ en parallèle. Il ne change aucun format existant : il **ajoute** un outil, un m
 trame.
 
 Conventions : 00 §3. Colonne « Auth » : **S+A**, **U-prop** comme en 12 (en-tête). Erreurs :
-`{ "error": "<code>" }`, codes au §10. Les valeurs marquées « **à valider par l'utilisateur** » sont des
-propositions (§13) ; le reste est figé.
+`{ "error": "<code>" }`, codes au §10. Les choix du §13 sont tranchés (PC82 à PC85, 2026-11-23).
 
 ## 1. Principe
 
@@ -52,7 +51,7 @@ l'app ; aucune nouvelle catégorie).
 > Envoie un fichier texte dans la conversation, comme une pièce jointe : l'utilisateur pourra l'ouvrir,
 > le télécharger ou l'enregistrer dans un de ses espaces. Utilise-le quand le résultat est un document à
 > garder (code, tableau CSV, note Markdown, configuration…), plutôt que de le recopier dans ta réponse.
-> `ext` est l'une des extensions permises ; `content` est le texte complet, **128 Kio au plus**. Au plus
+> `ext` est l'une des extensions permises ; `content` est le texte complet, **256 Kio au plus**. Au plus
 > 5 fichiers par réponse et 20 par conversation. Tu ne pourras pas relire le fichier après l'envoi :
 > résume dans ta réponse ce qu'il contient. Pour créer un fichier directement dans un espace, propose
 > plutôt un plan d'action (`file.create_text`).
@@ -69,8 +68,8 @@ continue.
 3. **Nom final** (règle de `buildFileName`) : si la dernière extension de `name` (comparée sans casse)
    vaut `ext`, `name` tel quel ; sinon `name + "." + ext` (`notes.txt` + `md` → `notes.txt.md`). Plus
    de **120 points de code** → `artifact_name`.
-4. **`content`** : vide ou contenant U+0000 → `artifact_not_text` ; plus de **131 072 octets UTF-8**
-   (128 Kio) → `artifact_too_large` (la borne compte des octets, pas des caractères).
+4. **`content`** : vide ou contenant U+0000 → `artifact_not_text` ; plus de **262 144 octets UTF-8**
+   (256 Kio) → `artifact_too_large` (la borne compte des octets, pas des caractères).
 5. **Bornes de nombre** : 5 artefacts **déposés** dans le tour en cours (du message de l'utilisateur à
    l'état suivant hors `running`) → `artifact_turn_limit` ; 20 dans la conversation → `artifact_quota`
    (le worker le sait par la réponse de l'API, §5.1).
@@ -89,7 +88,7 @@ continue.
 
 ### 2.4 Ce que le transcript garde de l'appel
 
-Le contenu **n'est pas** recopié dans l'historique (il est déjà dans l'artefact ; 20 × 128 Kio
+Le contenu **n'est pas** recopié dans l'historique (il est déjà dans l'artefact ; 20 × 256 Kio
 alourdiraient chaque `PUT …/transcript` et chaque appel au modèle). Les arguments enregistrés
 (`toolCalls[i].arguments`, AAD `tool_call_arguments:<toolCallId>`, inchangée) et rejoués au modèle aux
 tours suivants sont la **forme réduite** :
@@ -118,7 +117,7 @@ Deux valeurs `gcm1:` (03 §6.3) sous la `CK` de la conversation, **même `artifa
 | Valeur | Clair | AAD |
 |---|---|---|
 | `meta` | `JCS(meta)` (12 §3.3 : RFC 8785, entiers seulement), **≤ 1 024 octets** | `utf8(sessionId ":" artifactId ":artifact_meta")` |
-| `value` | les octets UTF-8 de `content`, tels quels, **≤ 131 072 octets** | `utf8(sessionId ":" artifactId ":artifact")` |
+| `value` | les octets UTF-8 de `content`, tels quels, **≤ 262 144 octets** | `utf8(sessionId ":" artifactId ":artifact")` |
 
 ```json
 { "v": 1, "id": "<artifactId>", "sessionId": "<conversation>", "messageId": "<message assistant porteur>",
@@ -153,7 +152,7 @@ model AiChatArtifact {
   session    AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   artifactId String        // UUID v4 tiré par le worker
   meta       String        /// @encrypted   (gcm1: sous CK, ≤ 1 409 caractères)
-  value      String        /// @encrypted   (gcm1: sous CK, ≤ 174 805 caractères)
+  value      String        /// @encrypted   (gcm1: sous CK, ≤ 349 569 caractères)
   size       Int           // longueur de `value` en caractères (pas la taille claire)
   createdAt  DateTime      @default(now())
 
@@ -173,8 +172,8 @@ Et sur `AiChatSession` : `artifactCount Int @default(0)` et la relation `artifac
 ### 4.2 Bornes appliquées par l'API (§5.1)
 
 - `meta` et `value` commencent par `gcm1:` ; `meta` ≤ **1 409** caractères (5 + 4·⌈(12 + 1 024 + 16)/3⌉),
-  sinon `400 invalid_body` ; `value` ≤ **174 805** caractères (5 + 4·⌈(12 + 131 072 + 16)/3⌉), sinon
-  `413 artifact_too_large`. Le corps complet tient sous le plafond de 256 Kio du canal (04 §1).
+  sinon `400 invalid_body` ; `value` ≤ **349 569** caractères (5 + 4·⌈(12 + 262 144 + 16)/3⌉), sinon
+  `413 artifact_too_large`. Le corps complet (≈ 350 Ko) **dépasse** le plafond de 256 Kio du canal : la route de dépôt a son propre plafond de **1 Mio** (04 §1, comme `POST …/plans`).
 - Au plus **20 artefacts par conversation** : `updateMany` conditionné sur `AiChatSession`
   (`where: { id, artifactCount: { lt: 20 } }`, `data: { artifactCount: { increment: 1 } }`) dans la
   transaction qui crée la ligne ; `count = 0` → `409 artifact_quota`. Aucun SQL brut ; le compteur ne
@@ -265,7 +264,7 @@ Implémentation (`…/artifacts/:artifactId` puis déchiffrement), dans cet ordr
 l'artefact **illisible** (`ArtifactUnreadableError`, carte grise « Fichier illisible sur cet appareil ») :
 
 1. `meta` ouvert sous `CK` (AAD du §3), JSON strict ; `v = 1` ; `id`, `sessionId`, `messageId`,
-   `toolCallId` = la référence (§6.2) ; `ext` dans la liste ; `size` entier de 1 à 131 072 ; `sha256`
+   `toolCallId` = la référence (§6.2) ; `ext` dans la liste ; `size` entier de 1 à 262 144 ; `sha256`
    conforme à `^[0-9a-f]{64}$` (pas de majuscules : plus strict que `artifactMatches`, qui met en
    minuscules) ; `name` chaîne non vide.
 2. `value` ouvert sous `CK` ; longueur des octets = `size` ; SHA-256 = `sha256` (`readVerified`).
@@ -286,7 +285,7 @@ stockage local) ; la suppression de la conversation ferme la visionneuse et vide
   aucun `iframe`, aucune URL `blob:` ouverte dans un onglet**, aucun lien suivi automatiquement.
 - **Télécharger** : `Blob` de type `application/octet-stream` et nom assaini ; jamais d'ouverture dans
   le navigateur. **Copier** : `navigator.clipboard.writeText`.
-- **Fichier long** : déchiffré en entier (≤ 128 Kio), affiché progressivement par la visionneuse.
+- **Fichier long** : déchiffré en entier (≤ 256 Kio), affiché progressivement par la visionneuse.
 
 ## 8. « Enregistrer dans un espace » (action d'appareil)
 
@@ -305,14 +304,14 @@ stockage local) ; la suppression de la conversation ferme la visionneuse et vide
 
 | Élément | Borne |
 |---|---|
-| Contenu d'un artefact | 1 à **131 072 octets** UTF-8 (128 Kio), sans U+0000 — **à valider par l'utilisateur** |
+| Contenu d'un artefact | 1 à **262 144 octets** UTF-8 (256 Kio), sans U+0000 (PC85) |
 | Nom final | 1 à **120** points de code, extension comprise |
 | Formats | les 25 extensions de `textFileFormats.ts` (PC71) |
-| Par tour | **5** artefacts déposés (worker) — **à valider par l'utilisateur** |
-| Par conversation | **20** artefacts, orphelins compris (API) — **à valider par l'utilisateur** |
+| Par tour | **5** artefacts déposés (worker, PC82) |
+| Par conversation | **20** artefacts, orphelins compris (API, PC82) |
 | Clair de `meta` | ≤ 1 024 octets ; `gcm1:` ≤ 1 409 caractères |
-| `value` | `gcm1:` ≤ 174 805 caractères |
-| Dépôt | corps ≤ 256 Kio (plafond du canal) ; 10 / min par conversation |
+| `value` | `gcm1:` ≤ 349 569 caractères |
+| Dépôt | corps ≤ **1 Mio** (plafond propre à la route, ≈ 350 Ko au plus en pratique) ; 10 / min par conversation |
 | Liste | 20 éléments, sans pagination |
 
 ## 10. Codes d'erreur
@@ -322,7 +321,7 @@ stockage local) ; la suppression de la conversation ferme la visionneuse et vide
 | `artifact_format` | résultat d'outil | `ext` hors liste |
 | `artifact_name` | résultat d'outil | nom vide, interdit ou trop long (§2.2) |
 | `artifact_not_text` | résultat d'outil | contenu vide ou contenant U+0000 |
-| `artifact_too_large` | résultat d'outil (champ `max`), API `413` | contenu > 128 Kio / `value` trop longue |
+| `artifact_too_large` | résultat d'outil (champ `max`), API `413` | contenu > 256 Kio / `value` trop longue |
 | `artifact_turn_limit` | résultat d'outil | 6e artefact du tour |
 | `artifact_quota` | résultat d'outil, API `409` | 21e artefact de la conversation |
 | `artifact_exists` | API `409` | même `id`, autre valeur |
@@ -338,7 +337,7 @@ stockage local) ; la suppression de la conversation ferme la visionneuse et vide
 | L'API échange `meta` et `value`, ou le contenu de deux artefacts | nom de champ dans l'AAD ; `sha256`, `size` | `encryptionCases`, `verifyCases` |
 | Un modèle manipulé envoie du HTML ou du script | jamais interprété (§7.2) ; téléchargement en `octet-stream` | test de rendu de l'app (`<script>`, `onerror`) |
 | Nom piégé (chemin, bidi, contrôle) | refus du worker (§2.2), assainissement de l'app (§7.1) | `nameCases` |
-| Saturation du stockage par un worker | 128 Kio × 20 par conversation, débit du dépôt | `quotaCases`, `boundCases` |
+| Saturation du stockage par un worker | 256 Kio × 20 par conversation, débit du dépôt | `quotaCases`, `boundCases` |
 | Sonde d'identifiants entre conversations | unicité par conversation, `404` uniforme | test API |
 | Fichier qui survit à la conversation | `onDelete: Cascade`, aucun cache persistant de l'app | test API de suppression |
 
@@ -349,16 +348,16 @@ stockage local) ; la suppression de la conversation ferme la visionneuse et vide
 forme réduite des arguments et résultat d'outil, corps de dépôt, élément de liste, trame, puis
 `nameCases`, `contentCases`, `encryptionCases`, `verifyCases`, `boundCases`, `quotaCases`.
 
-## 13. Choix à valider par l'utilisateur
+## 13. Choix tranchés (2026-11-23)
 
-| # | Choix | Proposition (recommandée) | Autre option |
-|---|---|---|---|
-| A1 | Taille d'un fichier | **128 Kio** (un long document ou un module de code ; tient dans le corps de 256 Kio du canal sans découpage) | 256 Kio : exige un plafond de corps propre à la route |
-| A2 | Nombre par conversation | **20**, orphelins compris | 50 : plus de stockage par conversation (6,4 Mio) |
-| A3 | Nombre par tour | **5** | sans borne par tour (seulement 20 par conversation) |
-| A4 | Relecture par le modèle | **non** en v1 : l'historique garde la forme réduite (§2.4), moins de tokens | l'agent relit ses fichiers (outil et route de lecture côté runtime en plus) |
-| A5 | Formats à risque (`html`, `js`, `sh`, `php`) | **permis**, affichés comme source, téléchargés en `octet-stream` | les exclure des artefacts |
-| A6 | Politique d'outil | **`auto`** par défaut, `deny` possible par l'admin | `ask` (confirmation à chaque fichier) |
+| # | Choix | Décision |
+|---|---|---|
+| A1 | Taille d'un fichier | **PC85** : **256 Kio** (262 144 octets). Les fichiers plus gros relèvent de l'atelier d'exécution (PC73). Le corps de dépôt (≈ 350 Ko) dépasse le plafond de 256 Kio du canal : plafond propre à la route, 1 Mio |
+| A2 | Nombre par conversation | **PC82** : **20**, orphelins compris (5,0 Mio de stockage au plus, en clair) |
+| A3 | Nombre par tour | **PC82** : **5** |
+| A4 | Relecture par le modèle | **PC83** : **non** en v1 ; l'historique garde la forme réduite (§2.4) |
+| A5 | Formats à risque (`html`, `js`, `sh`, `php`) | permis, affichés comme source, téléchargés en `octet-stream` (PC71) |
+| A6 | Politique d'outil | **PC84** : **`auto`** par défaut ; l'org peut mettre `deny` |
 
 Écart avec l'annexe A de C3 : la trame `artifact` ne porte plus `ext` ni `size` (métadonnées
 minimales) ; le quota rend `409 artifact_quota` (limite durable, pas un débit) au lieu de `429` ; la

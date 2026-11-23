@@ -281,8 +281,12 @@ d'enveloppe du créateur, `autonomy.allowed`) est repris tel quel dans 12.
 | # | Décision retenue | Où |
 |---|---|---|
 | PC71 | Fichiers de l'agent v1 : **texte seulement**, extensions de `textFileFormats.ts` ; création dans un espace par `file.create_text` (plan d'action) ; aucun binaire | 12 §4, 13 §2.1 |
-| PC72 | **Artefacts de conversation** : l'agent envoie un fichier texte dans la conversation (outil `send_file`, hors plan), chiffré sous `CK`, rattaché au message, purgé avec la conversation ; ouvert, téléchargé ou enregistré dans un espace par une action d'appareil. Bornes proposées (128 Kio, 5 par tour, 20 par conversation) **à valider par l'utilisateur** (13 §13) | 13 ; 04, 05, 06, 07, 09, 12 §2 |
+| PC72 | **Artefacts de conversation** : l'agent envoie un fichier texte dans la conversation (outil `send_file`, hors plan), chiffré sous `CK`, rattaché au message, purgé avec la conversation ; ouvert, téléchargé ou enregistré dans un espace par une action d'appareil. Bornes tranchées : PC82 à PC85 | 13 ; 04, 05, 06, 07, 09, 12 §2 |
 | PC77 | Affichage par **le même composant** que les pièces jointes des messages (`MessageAttachments.vue`) | 13 §7.2 |
+| PC82 | Artefacts : **20 par conversation** (orphelins compris), **5 par tour** (2026-11-23) | 13 §9, §13 ; 09 |
+| PC83 | Artefacts : **pas de relecture par l'agent** en v1 ; l'historique garde la forme réduite (2026-11-23) | 13 §2.4, §13 |
+| PC84 | Artefacts : politique d'outil **`auto`** par défaut, l'org peut mettre `deny` (2026-11-23) | 13 §2, §13 |
+| PC85 | Artefacts : **256 Kio (262 144 octets) par fichier** au plus ; les gros fichiers relèvent de l'atelier d'exécution (PC73) ; la route de dépôt a un plafond de corps de 1 Mio (2026-11-23) | 13 §9, §13 ; 04, 09 |
 
 ## 5 bis. Analyse des décisions (pour mémoire)
 

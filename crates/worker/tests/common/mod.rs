@@ -127,6 +127,16 @@ pub struct ApiState {
     pub plans: BTreeMap<String, FakePlan>,
     /// Corps de `POST …/plans` reçus.
     pub plan_posts: Vec<Value>,
+    /// Corps de `POST …/artifacts` acceptés (13 §5.1), par ordre de dépôt.
+    pub artifacts: Vec<Value>,
+    /// Artefacts déjà présents avant le test (le quota de la conversation est 20, 13 §4.2).
+    pub artifact_preexisting: usize,
+    /// Prochains dépôts refusés en `503` (panne passagère).
+    pub artifact_503: u32,
+    /// Prochains dépôts **enregistrés** dont la réponse se perd (`503` rendu après l'écriture).
+    pub artifact_lost: u32,
+    /// Nombre de requêtes de dépôt reçues (essais compris).
+    pub artifact_requests: u32,
     /// `POST …/agent-result` reçus.
     pub agent_posts: Vec<Value>,
     /// `POST …/agent-result` reçus avec des abandons (PC74) ou menant à un plan terminal.
@@ -474,6 +484,37 @@ impl FakeApi {
                     })
                     .collect();
                 (200, json!({ "items": items }))
+            }),
+            ("POST", ["artifacts"]) => self.with(|st| {
+                st.artifact_requests += 1;
+                if !lease_ok(st) {
+                    return err(409, "lease_conflict");
+                }
+                if st.artifact_503 > 0 {
+                    st.artifact_503 -= 1;
+                    return err(503, "unavailable");
+                }
+                let id = b["id"].as_str().unwrap_or_default().to_owned();
+                let ok = |k: &str| b[k].as_str().is_some_and(|v| v.starts_with("gcm1:"));
+                if id.is_empty() || !ok("meta") || !ok("value") || b.as_object().is_none_or(|o| o.len() != 4) {
+                    return err(400, "invalid_body");
+                }
+                if let Some(prev) = st.artifacts.iter().find(|a| a["id"] == b["id"]) {
+                    return if prev["meta"] == b["meta"] && prev["value"] == b["value"] {
+                        (200, json!({ "id": id }))
+                    } else {
+                        err(409, "artifact_exists")
+                    };
+                }
+                if st.artifacts.len() + st.artifact_preexisting >= 20 {
+                    return err(409, "artifact_quota");
+                }
+                st.artifacts.push(b.clone());
+                if st.artifact_lost > 0 {
+                    st.artifact_lost -= 1;
+                    return err(503, "unavailable");
+                }
+                (201, json!({ "id": id }))
             }),
             ("GET", ["tools"]) => self.with(|st| (200, st.tools.clone())),
             ("POST", ["plans"]) => self.with(|st| {

@@ -30,6 +30,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
 
 mod plan_run;
+mod send_file;
 
 use crate::api::{Api, ApiResponse, PREFIX};
 use crate::events::Emitter;
@@ -1345,13 +1346,19 @@ impl Agent {
             // n'est jamais exécuté, le modèle reçoit une erreur.
             let parsed = serde_json::from_str::<Value>(&c.arguments).ok().filter(Value::is_object);
             let spec = self.spec(&c.name).cloned();
+            let is_send_file = c.name == crate::artifact::SEND_FILE;
             m.tool_calls.push(ToolCall {
                 id,
                 name: c.name,
                 status: if parsed.is_some() { ToolStatus::Pending } else { ToolStatus::Error },
                 arguments: parsed.unwrap_or_else(|| json!({})),
-                category: spec.as_ref().map_or_else(|| "server".to_owned(), |s| s.category.clone()),
-                mutating: spec.as_ref().is_none_or(|s| s.mutating),
+                // `send_file` : propre au worker, `client` non mutant (13 §2.1).
+                category: if is_send_file {
+                    "client".to_owned()
+                } else {
+                    spec.as_ref().map_or_else(|| "server".to_owned(), |s| s.category.clone())
+                },
+                mutating: !is_send_file && spec.as_ref().is_none_or(|s| s.mutating),
             });
         }
         self.messages.push(m);
@@ -1375,6 +1382,9 @@ impl Agent {
         }
         if tc.name == crate::plan::PROPOSE_ACTIONS && self.init.plan.is_some() {
             return self.propose_actions(idx, tc).await;
+        }
+        if tc.name == crate::artifact::SEND_FILE {
+            return self.send_file(idx, tc).await;
         }
         let spec = self.spec(&tc.name).cloned();
         match tools::decide(spec.as_ref(), &self.init.tool_policy) {

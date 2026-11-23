@@ -403,7 +403,12 @@ pub async fn member_keys_gate(rt: &Arc<Runtime>, body: &[u8]) -> Result<(), &'st
             // propriétaire et prime sur l'épingle TOFU ; une clé servie différente refuse la réponse
             // entière (aucune rotation par chaîne : seule une nouvelle délégation signée la change).
             if let Some(pin) = st.vault.owner_pin(&user, now) {
-                owner_mismatch |= pin != key.fingerprint;
+                if pin == key.fingerprint {
+                    // L'épingle TOFU de la même identité ne doit pas vieillir (archive, éviction).
+                    st.member_pins.touch(&org, &user, now);
+                } else {
+                    owner_mismatch = true;
+                }
                 continue;
             }
             match st.member_pins.check(&org, &user, &key, now) {

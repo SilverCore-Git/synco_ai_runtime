@@ -528,6 +528,22 @@ impl MemberPinStore {
         Verdict::Pinned
     }
 
+    /// Mandat v2 vérifié : la clé servie vaut l'épingle du mandat, qui prime sur le TOFU. Rafraîchit
+    /// `lastSeen` de l'épingle TOFU de la même identité (une archive redevient active), sans épingler
+    /// ni comparer : sans cela elle vieillirait, serait archivée puis évincée, et un retour au mandat v1
+    /// rouvrirait le TOFU. Rien n'est créé si l'identité n'a pas d'épingle.
+    pub fn touch(&mut self, org_id: &str, user_id: &str, now: u64) {
+        if self.is_archived(org_id, user_id) {
+            self.reactivate_pin(org_id, user_id, None, now);
+        }
+        if let Some(pin) = self.file.orgs.get_mut(org_id).and_then(|m| m.get_mut(user_id))
+            && pin.last_seen.is_none_or(|t| now.saturating_sub(t) >= LAST_SEEN_GRANULARITY_SECS)
+        {
+            pin.last_seen = Some(now);
+            self.persist();
+        }
+    }
+
     fn total(&self, org_id: &str) -> usize {
         self.file
             .orgs
@@ -539,15 +555,22 @@ impl MemberPinStore {
     /// Remet une archive en épingle active (le total de l'org ne change pas). L'empreinte d'affichage
     /// n'est connue que si la clé présentée est l'épinglée ; sinon elle reste vide jusqu'à une décision.
     fn reactivate(&mut self, org_id: &str, user_id: &str, key: &MemberKey, now: u64) {
+        self.reactivate_pin(org_id, user_id, Some(key), now);
+    }
+
+    fn reactivate_pin(&mut self, org_id: &str, user_id: &str, key: Option<&MemberKey>, now: u64) {
         let Some(archived) = self.file.archive.get_mut(org_id).and_then(|m| m.remove(user_id)) else { return };
         if self.file.archive.get(org_id).is_some_and(BTreeMap::is_empty) {
             self.file.archive.remove(org_id);
         }
-        let same = archived.fingerprint == key.fingerprint;
+        let same = key.is_some_and(|k| archived.fingerprint == k.fingerprint);
         self.file.orgs.entry(org_id.to_owned()).or_default().insert(
             user_id.to_owned(),
             MemberPin {
-                thumbprint: if same { key.thumbprint.clone() } else { String::new() },
+                thumbprint: match key {
+                    Some(k) if same => k.thumbprint.clone(),
+                    _ => String::new(),
+                },
                 fingerprint: archived.fingerprint,
                 first_seen: archived.first_seen,
                 previous: Vec::new(),
@@ -1008,6 +1031,25 @@ mod tests {
         assert!(s.is_archived("o", "u1"), "archive intacte");
         assert_eq!(s.usage("o"), PinUsage { active: 2, archived: 1, max: 2, evicted: 0 });
         assert!(!s.take_alerts("o").contains(&"member_pins_archive_evicted"));
+    }
+
+    #[test]
+    fn mandat_v2_rafraichit_l_epingle_tofu() {
+        let mut s = MemberPinStore::in_memory();
+        s.check("o", "u", &key(1), 10);
+        s.touch("o", "u", 10 + 100 * 86_400);
+        s.sweep(10 + 250 * 86_400);
+        assert!(!s.is_archived("o", "u"), "vue récemment via le mandat v2 : pas archivée");
+        assert_eq!(s.get("o", "u").unwrap().last_seen, Some(10 + 100 * 86_400));
+        // Une archive redevient active, avec son empreinte ; une identité inconnue n'est pas épinglée.
+        let mut s = MemberPinStore::in_memory();
+        s.check("o", "u", &key(1), 10);
+        s.sweep(10 + YEAR);
+        s.touch("o", "u", 20 + YEAR);
+        assert_eq!(s.get("o", "u").unwrap().fingerprint, key(1).fingerprint);
+        s.touch("o", "x", 20 + YEAR);
+        assert!(s.get("o", "x").is_none() && !s.is_archived("o", "x"));
+        assert_eq!(s.check("o", "u", &key(2), 21 + YEAR), Verdict::Changed, "retour au v1 : toujours détecté");
     }
 
     #[test]

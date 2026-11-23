@@ -52,6 +52,7 @@ Source : `SYNCOAI_REFONTE_FEATURE.md` §13.5, §13.7.
 | Bail (`LEASE_MS`) | **60 s**, renouvelé toutes les 20 s | — | API / worker | Relance après plantage en ≤ 60 s. |
 | Tampon de reprise (05 §3) | **2 000** évènements ou **4 Mio** par conversation | runtime | superviseur | |
 | `signed_request` du worker | 20 / s, rafale 50 | runtime | superviseur | |
+| Épingles RSA des membres (PC28, L05c) | **50 000** par org, archives comprises (`limits.max_member_pins_per_org`) ; archivage après **180 jours** d'inactivité ; alerte à **80 %** | runtime | superviseur | 06 §4.3 |
 | Mandataire LLM (L06) | corps ≤ 8 Mio ; 4 connexions par worker ; 2 appels / s (rafale 5) par worker, 20 / s (rafale 40) pour le runtime ; quotas d'appels et de tokens par tour et par conversation | runtime | superviseur | Application de D6 par le mandataire, détail et codes `proxy_*` en 10 §4 |
 | Réponse du fournisseur (L07) | texte + raisonnement ≤ **4 Mio**, arguments d'outils ≤ **1 Mio** (`LlmError::TooLarge`, sans nouvel essai, `failed` `provider_error`) | runtime | worker | 06 §9 |
 | `create_thread` (L07) | 10 salons par appel, **300** destinataires de clé RSA par salon (`too_many_recipients`), clé RSA ≥ 2048 bits ; 32 clés signées par worker (`created_key_limit`) | runtime | worker, superviseur | 04 §4.3 (corps ≤ 256 Kio), 06 §3.3 |

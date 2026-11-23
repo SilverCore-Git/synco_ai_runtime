@@ -261,6 +261,8 @@ pub struct Limits {
     pub worker_signed_requests_burst: u32,
     /// Délai laissé aux workers pour finir l'étape en cours à l'arrêt (`SIGTERM`), en secondes.
     pub shutdown_grace_secs: u64,
+    /// Plafond de sécurité des épingles RSA par org, archives comprises (PC28, 06 §4.3).
+    pub max_member_pins_per_org: usize,
 }
 
 impl Default for Limits {
@@ -284,6 +286,7 @@ impl Default for Limits {
             worker_signed_requests_per_sec: 20,
             worker_signed_requests_burst: 50,
             shutdown_grace_secs: 30,
+            max_member_pins_per_org: crate::member_pins::DEFAULT_MAX_PINS_PER_ORG,
         }
     }
 }
@@ -573,6 +576,9 @@ impl Limits {
             || self.replay_buffer_bytes < runtime_protocol::client::MAX_RUNTIME_FRAME_BYTES
         {
             return Err(invalid("limits.replay_buffer_* : au moins 1 évènement et 1 Mio"));
+        }
+        if self.max_member_pins_per_org == 0 {
+            return Err(invalid("limits.max_member_pins_per_org : ≥ 1"));
         }
         if self.worker_signed_requests_per_sec == 0 || self.worker_signed_requests_burst == 0 {
             return Err(invalid("limits.worker_signed_requests_* : ≥ 1"));

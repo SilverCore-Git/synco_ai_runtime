@@ -2402,11 +2402,13 @@ async fn cles_rsa_des_membres_epinglees_par_le_superviseur() {
 /// d'épingles par org, refus fermé.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cles_rsa_charge_et_plafond() {
-    use synco_ai_runtime::member_pins::MAX_PINS_PER_ORG;
     use synco_ai_runtime::workers::member_keys_gate;
+    /// Plafond abaissé pour le test (le défaut est 50 000, PC28) : réglable par la configuration.
+    const MAX_PINS_PER_ORG: usize = 2000;
     let env = setup().await;
     wait_until("appairé", || env.api.with(|st| st.delegation_status.len() == 2)).await;
     let rt = Arc::clone(&env.running.runtime);
+    rt.state.lock().await.member_pins.set_max_per_org(MAX_PINS_PER_ORG);
     // Revue M3 : corps illisible → échec fermé.
     for bad in [&b"pas du json"[..], br#"{"members":{}}"#, br#"{"autre":[]}"#] {
         assert_eq!(member_keys_gate(&rt, bad).await, Err("member_keys_unreadable"));

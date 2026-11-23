@@ -1432,3 +1432,42 @@ Un commit par point, chacun avec un test qui échoue sans lui.
   il reste jusqu'à `expiresAt` ; le `429` de `thread.create` ne relaie pas `Retry-After`.
 - **Vérifié** : `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace` : 305 réussis, 10 ignorés (hôte) ; test croisé TS `read-from-worker.ts` : OK.
+
+## L05c : épingles RSA hybrides (PC28), 2026-11-22
+
+- **Fait** (`member_pins.rs`, `config.rs`, `workers.rs`, `app.rs`) : fichier `member-rsa-pins.json` en format 2
+  (`archive`, `evicted`, `lastSeen` ; le format 1 est relu, toujours réécrit en 2) ; plafond 50 000 par org, archives
+  comprises (`limits.max_member_pins_per_org`) ; archivage après 180 jours d'inactivité (`sweep`, au plus une fois par
+  heure) ; archive toujours détectée (réactivée avant comparaison : une autre clé donne `member_key_changed`) ;
+  éviction de la plus ancienne archive au débordement, tracée (journal, alerte `member_pins_archive_evicted`, compteur
+  persistant) ; alerte `member_pins_near_limit` à 80 %. Le mandat v2 reste prioritaire (le contrôle PC46 précède
+  `check`, inchangé). Spec : 06 §4.3, 03 §10.1, 00 (Q25), 09 §2, 11 §7.
+- **Règle de sécurité** : seule l'éviction d'une archive peut rouvrir un TOFU pour une identité déjà vue (empreinte
+  perdue) ; elle est tracée. Sans archive à évincer : refus fermé, jamais d'éviction d'une épingle active.
+- **Choix provisoires** : (1) `previous` n'est pas conservé dans l'archive (retour arrière vers une clé précédente non
+  détecté après archivage) ; (2) une archive réactivée par une clé différente a une empreinte d'affichage (RFC 7638)
+  vide jusqu'à décision de l'admin ; (3) un plafond abaissé sous l'occupation n'évince rien avant une première vue ;
+  (4) l'alerte d'éviction est levée par org à chaque contrôle suivant une éviction, sans détail d'identité.
+- **Ouvert** : le dashboard (L11) devrait afficher l'occupation (`MemberPinStore::usage` : actives, archives, plafond,
+  évincées), non exposée par une route ; le fichier n'est pas scellé (public, comme avant), la demande « fichier scellé »
+  du lot ne vaut que pour le registre de L08b.
+- **Vérifié** : `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace` : 310
+  réussis, 10 ignorés (hôte). Tests ajoutés : 5 (`archive_detecte_toujours_un_changement`,
+  `archive_persiste_et_reste_detectee_apres_redemarrage`, `eviction_seulement_de_la_plus_ancienne_archive`,
+  `alerte_a_80_pour_cent`, `ancien_format_relu_et_reecrit_en_nouveau`) ; `cles_rsa_charge_et_plafond` abaisse le plafond à 2 000.
+
+## L05c : corrections de revue de sécurité, 2026-11-23
+
+- **Fait** (`member_pins.rs`, `workers.rs`, `seal.rs`) : (1) première vue au plafond : `Full` d'emblée si les
+  épingles actives occupent tout le plafond, l'archive n'est plus touchée ; l'éviction n'a lieu que si elle suffit ;
+  occupation > plafond au démarrage : journal et alerte `member_pins_over_limit`, rien d'évincé ; (2) mandat v2 :
+  `touch` rafraîchit `lastSeen` de l'épingle TOFU de la même identité (archive réactivée), sans réépingler ;
+  (3) `previous` conservé dans `ArchivedPin` (`skip_serializing_if`), restauré à la réactivation : le choix
+  provisoire (1) de l'entrée précédente est levé ; (4) identité à la fois active et archivée : `open` refuse ;
+  (5) doc d'`is_archived`, org dans la trace d'éviction, `write_atomic` : 0600 forcé sur le `.tmp` existant et
+  fsync du répertoire ; (6) spec 06 §4.3 et 11 §7 (« empreinte inconnue (archivée) » pour une archive réactivée par
+  une autre clé).
+- **Tests ajoutés** : `actives_au_plafond_ne_touchent_pas_l_archive`, `mandat_v2_rafraichit_l_epingle_tofu`,
+  `retour_vers_une_ancienne_cle_detecte_apres_archivage`, `identite_active_et_archivee_refuse_l_ouverture`,
+  `ecriture_atomique_force_0600_sur_un_tmp_existant`.
+- **Ouvert** : pas de test d'intégration du chemin `workers.rs` (le `touch` est testé au niveau du magasin).

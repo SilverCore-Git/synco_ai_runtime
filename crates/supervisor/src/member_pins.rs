@@ -614,6 +614,7 @@ impl MemberPinStore {
         self.persist();
         tracing::warn!(
             code = "member_pin_archive_evicted",
+            org = %org_id,
             evicted_total,
             "plafond d'épingles atteint : plus ancienne archive évincée (cette identité sera de nouveau épinglée sans comparaison)"
         );
@@ -699,7 +700,7 @@ impl MemberPinStore {
         }
     }
 
-    /// Empreinte épinglée d'un membre, **archive comprise** (sans la réactiver).
+    /// Vrai si l'identité est archivée (sans la réactiver).
     #[must_use]
     pub fn is_archived(&self, org_id: &str, user_id: &str) -> bool {
         self.file.archive.get(org_id).is_some_and(|m| m.contains_key(user_id))

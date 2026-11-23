@@ -16,7 +16,8 @@ Organization 1──* AiRuntime 1──* AiRuntimeDelegation 1──* AiRuntimeD
                        │                └──* AiSessionAuthorization *──1 AiChatSession 1──1 AiConversationKey
                        │                                                     │
                        └─────────────────────────────────────────────────────┤──* AiChatInboxItem
-                                                                             └──* AiChatSessionEvent
+                                                                             ├──* AiChatSessionEvent
+                                                                             └──* AiChatArtifact (13 §4)
 ```
 
 ## 2. `AiRuntime`
@@ -435,7 +436,7 @@ mode autonome »), envoyé par l'API au retrait, `data` = `{ orgId }`. Le plan r
 - `User` : `aiRuntimeDelegations AiRuntimeDelegation[]`.
 - Suppression en cascade : org supprimée → runtimes, délégations, autorisations ; utilisateur
   supprimé → ses délégations (et leurs entrées) ; conversation supprimée → clé, autorisations, boîte,
-  journal.
+  journal, artefacts (`AiChatArtifact`, 13 §4, L00g).
 
 ## 9. Nettoyage
 
@@ -612,5 +613,6 @@ l'utilisateur. Aucun contenu en clair n'est stocké par l'API.
 | **Lien objet créé ← plan / action** (`output`, en-tête `X-Synco-Plan`) | `AiActionPlanAction.output` | propriétaire (objets qu'il crée) | contrôler les `refs` (PC47) | **le temps du plan** : effacé à la clôture, rattrapage borné (passe 10) (PC56) |
 | Journal des actions exécutées par le runtime (`plan_action`, `plan_duplicate_create`, sans identifiant d'objet) | `AiChatSessionEvent` | propriétaire | traçabilité | 90 jours (§5) |
 | Politiques, membres autorisés, opt-in | `AiFeaturePolicy*`, `AiFeatureOptIn` | membres de l'org | appliquer la politique d'org | tant que la politique ou l'appartenance existe |
+| Fichier remis par l'agent (artefact, PC72) : métadonnées et contenu chiffrés sous `CK` ; en clair, identifiant, longueur du chiffré, date (13 §4) | `AiChatArtifact` | propriétaire de la conversation | remettre à l'utilisateur le fichier produit à sa demande | **vie de la conversation** (`onDelete: Cascade`) ; visible dans « Mes données » avec les conversations |
 | Journal des politiques | `AiFeaturePolicyEvent` | administrateurs, membres concernés | exception visible et journalisée (PC39) | **1 an**, purge bornée (passe 9) (PC48) |
 

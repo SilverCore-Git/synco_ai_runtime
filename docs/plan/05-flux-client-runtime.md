@@ -141,6 +141,7 @@ antérieur à `baseRev`, il le relit d'abord.
 | `status` | `status`, `reason?` (code) | Changement d'état de la conversation (08) |
 | `usage` | `messageId`, `promptTokens?`, `completionTokens?`, `totalTokens?`, `reasoningTokens?` | Usage d'un appel au fournisseur (comme `UsageInfo`, `types.ts:12-17`) |
 | `error` | `code`, `detail?` (chiffré) | Erreur de la conversation (le statut suit dans un `status`) |
+| `artifact` | `messageId`, `toolCallId`, `artifactId` (identifiants seulement) | **Ajoutée par L00g (13 §6.1).** Artefact déposé, lisible par `GET …/artifacts/:artifactId` ; nom, extension et taille restent dans `meta` chiffré |
 
 Correspondance avec l'affichage existant (`WireEvent`, `synco_api/src/services/ai/types.ts:44-53`) :
 `tool_call` `pending` + `category` `server` ≈ `tool_call_pending` ; `tool_call` `pending` + `client` ou

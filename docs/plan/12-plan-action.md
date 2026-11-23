@@ -55,7 +55,9 @@ d'appareil.
 - **Mode autonome** (délégation `auto`, §10) : `create_thread` dont la politique effective est `auto`
   est exécuté directement par le runtime (L07 inchangé, signature `rt1`) ; tout le reste de la liste
   ci-dessus passe encore par le plan (C1 §6 : « les actions `ask` passent toujours par le plan »).
-- Hors plan : lectures, outils `auto`, outils interactifs (`ask_question`, `request_image_upload`).
+- Hors plan : lectures, outils `auto`, outils interactifs (`ask_question`, `request_image_upload`), et
+  `send_file` (fichier envoyé dans la conversation, sans effet sur l'org : 13, PC72). « Enregistrer dans
+  un espace » un artefact est une création de fichier par l'appareil **hors plan** (13 §8).
 
 ## 3. Format du plan
 

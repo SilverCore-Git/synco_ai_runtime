@@ -22,7 +22,8 @@ Les tensions relevées et non tranchées sont les questions Q11 à Q17 (§6).
 | [08-etats-conversation.md](08-etats-conversation.md) | Machine à états d'une conversation, transitions, plantages |
 | [09-limites-et-valeurs-par-defaut.md](09-limites-et-valeurs-par-defaut.md) | Propositions chiffrées pour D4 et D6, autres plafonds |
 | [12-plan-action.md](12-plan-action.md) | Plan d'action (format, chiffrement, types d'action, validation, états, exécution, verrou `ask`), mode autonome, politiques d'org des fonctionnalités IA ; figé par L00f (C1, PC34 à PC43), amendé par PC44 à PC48 puis PC54 à PC58 |
-| [vectors/README.md](vectors/README.md) | Vecteurs de test à produire par L01 et L02 ; vecteurs figés par L00f (`mandate-v2.json`, `action-plan.json`) |
+| [13-artefacts.md](13-artefacts.md) | Fichiers texte envoyés par l'agent dans la conversation (artefacts) : outil `send_file`, chiffrement sous `CK`, stockage `AiChatArtifact`, routes, trame `artifact`, affichage sans HTML, enregistrement dans un espace ; figé par L00g (PC71, PC72, PC77) |
+| [vectors/README.md](vectors/README.md) | Vecteurs de test à produire par L01 et L02 ; vecteurs figés par L00f (`mandate-v2.json`, `action-plan.json`) et par L00g (`artifacts.json`) |
 | [exemples/](exemples/) | Exemples calculés (non normatifs) qui illustrent chaque format |
 
 ## 1. Rappel de l'architecture
@@ -274,6 +275,14 @@ d'enveloppe du créateur, `autonomy.allowed`) est repris tel quel dans 12.
 | PC69 | **Empreintes à la décision** : pour chaque action serveur acceptée, la décision porte l'empreinte recalculée par l'app depuis le plan déchiffré ; l'API refuse toute empreinte différente de `serverDigests` (`409 plan_digest_mismatch`) ; `serverDigests` exposé dans la vue du plan | 12 §8.4, §12.1, §14 |
 | PC70 | **`cancel` pendant un plan accepté** vaut `stop` du plan (plus de nouvelle action, `executing` jusqu'au terme, bilan, messages plus retenus après l'arrêt) | 12 §7.1, §8.6 |
 | PC74 | **Abandons d'actions d'agent** : `agent-result` accepte `abandoned: [{ n, state: failed \| unknown_outcome, code }]` (codes en liste fermée) ; l'API les applique avant le contrôle des actions occupées (`pending` accepté seulement, cascade PC54, rejeu idempotent), `value` facultatif si le plan devient terminal ; le runtime n'abandonne plus un plan par `plan_aborted` | 12 §8.3, §8.7, §9, §12.2, §14 |
+
+### Fichiers de l'agent (PC71, PC72, PC77, tranchés le 2026-11-22 ; figés par L00g dans 13)
+
+| # | Décision retenue | Où |
+|---|---|---|
+| PC71 | Fichiers de l'agent v1 : **texte seulement**, extensions de `textFileFormats.ts` ; création dans un espace par `file.create_text` (plan d'action) ; aucun binaire | 12 §4, 13 §2.1 |
+| PC72 | **Artefacts de conversation** : l'agent envoie un fichier texte dans la conversation (outil `send_file`, hors plan), chiffré sous `CK`, rattaché au message, purgé avec la conversation ; ouvert, téléchargé ou enregistré dans un espace par une action d'appareil. Bornes proposées (128 Kio, 5 par tour, 20 par conversation) **à valider par l'utilisateur** (13 §13) | 13 ; 04, 05, 06, 07, 09, 12 §2 |
+| PC77 | Affichage par **le même composant** que les pièces jointes des messages (`MessageAttachments.vue`) | 13 §7.2 |
 
 ## 5 bis. Analyse des décisions (pour mémoire)
 

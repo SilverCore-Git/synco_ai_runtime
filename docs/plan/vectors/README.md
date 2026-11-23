@@ -1,4 +1,4 @@
-# Vecteurs de test à produire (L01, L02) et vecteurs figés par L00f
+# Vecteurs de test à produire (L01, L02) et vecteurs figés par L00f et L00g
 
 Ce dossier liste les vecteurs que L01 et L02 doivent produire (§1 à §3), sur le
 modèle de `synco_cdn/tests/vectors/` (`generate.mjs` + `tickets.json` : un générateur TypeScript ou
@@ -265,3 +265,35 @@ condensats, validateur de référence pour validation, niveaux, cascade, échec 
 Revérification après PC61 (code jetable sous `~/.cache`, supprimé) : **Rust** 71 vérifications (dont la
 taille JCS et les bornes des cas PC61), **TS** 107 vérifications (validateur de référence à 100 actions,
 2 000 dépendances, 256 Kio).
+
+## 5. L00g — vecteurs figés (artefacts de conversation, 13)
+
+`artifacts.json` est figé par la spécification, comme ceux du §4, et rejoué sans modification par le
+runtime (outil `send_file`), l'API (forme et bornes du dépôt) et l'app (`ArtifactSource`). Produit par
+un script jetable hors du dépôt : WebCrypto (AES-256-GCM avec IV fixes, SHA-256) sous `bun`, clair
+canonique en JCS (12 §3.3). Contrôle croisé fait à la génération :
+
+- **TS** : chaque cas de `encryptionCases` rejoué par `decryptAiField` (`synco_app/src/assets/utils/crypto.ts`) ;
+  empreinte du contenu vérifiée par `artifactMatches`, nom assaini par `sanitizeArtifactName`
+  (`artifactModel.ts`).
+- **Rust** : `session::decrypt_field` de `synco-e2ee` sur chaque cas de `encryptionCases` et sur les deux
+  valeurs de chaque cas de `verifyCases` ; `plan::jcs` et `serde_json::to_string` identiques à
+  `metaCanonical`, `storedArgsCanonical` et `toolResultCanonical` ; SHA-256 et tailles de `contentCases`
+  recalculés par `primitives::sha256`.
+
+Clés de test : `CK` = `0x5c` × 32 (celle d'`action-plan.json`), autre clé `0x5d` × 32 ; IV `0x8a` × 12
+(`meta`) et `0x9b` × 12 (`value`).
+
+- `meta`, `metaCanonical`, `aadMeta`, `metaValue` ; `content`, `size`, `sha256`, `aadContent`,
+  `contentValue` : artefact de référence (13 §3).
+- `toolCall` : arguments du modèle, **forme réduite** enregistrée (13 §2.4) et résultat d'outil.
+- `deposit`, `listItem`, `frame` : corps du dépôt (13 §5.1), élément de liste (§5.2), trame (§6.1).
+- `nameCases` (`expect` = `ok` avec `finalName`, `artifact_name` ou `artifact_format`) et
+  `contentCases` (`ok` avec `expectSize` et `expectSha256`, `artifact_too_large`, `artifact_not_text`) :
+  validation du worker (13 §2.2). Un cas `fill` / `fillLength` se construit en répétant `fill`.
+- `encryptionCases` : mêmes champs et codes que `conversation-fields.json` ; échange `meta` / `value`,
+  autre `artifactId`, autre conversation, autre `CK`.
+- `verifyCases` : `ref`, `meta`, `value` → `ok` (avec `expectMeta`, la forme `ArtifactMeta` de l'app) ou
+  `artifact_unreadable` (13 §7.1) : empreinte, taille, message, appel, `id`, version, champ inconnu,
+  extension, empreinte en majuscules.
+- `boundCases` (API, 13 §4.2) et `quotaCases` (`existing` : API ; `sentThisTurn` : worker ; `replay`).

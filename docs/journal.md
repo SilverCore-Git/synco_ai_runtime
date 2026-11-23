@@ -1491,3 +1491,16 @@ Un commit par point, chacun avec un test qui échoue sans lui.
   dans les arguments chiffrés de l'appel plutôt que dans un nouveau champ du message.
 - **Ouvert** : lots d'implémentation à ouvrir (proposés L08e runtime, L03i API ; L12b app) ; `artifactMatches` de
   l'app accepte une empreinte en majuscules, la spec l'exige en minuscules (contrôle de forme du §7.1 avant).
+
+## L00g : artefacts, bornes tranchées (PC82 à PC85), 2026-11-23
+
+- **Décidé par l'utilisateur** : PC85 256 Kio (262 144 octets) par fichier, les gros fichiers relèvent de l'atelier
+  d'exécution (PC73) ; PC82 20 par conversation, 5 par tour ; PC83 pas de relecture par l'agent en v1 ; PC84
+  politique `auto`, `deny` possible par l'org.
+- **Fait** : `13-artefacts.md` (bornes 262 144 octets, `value` ≤ 349 569 = 5 + 4·⌈(12 + 262 144 + 16)/3⌉ = 5 + 4·87 391 ;
+  §13 devenu « choix tranchés ») ; 00 §5 (PC82 à PC85) ; 04 et 09 ; `vectors/artifacts.json` (bornes, tailles, empreintes
+  recalculées).
+- **Conséquence** : le corps de dépôt (≈ 350 Ko en base64) dépasse le plafond de 256 Kio du canal ; la route
+  `POST …/artifacts` reçoit un plafond propre de 1 Mio, comme `POST …/plans` (04 §1).
+- **Vérifié** : cohérence des vecteurs (octets, longueurs, empreintes) par script ; aucun rejeu côté `synco_app` ne lit
+  ce fichier à ce jour (grep négatif), donc rien à lancer.

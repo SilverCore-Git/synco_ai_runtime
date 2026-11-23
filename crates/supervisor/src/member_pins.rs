@@ -293,6 +293,9 @@ pub struct ArchivedPin {
     pub first_seen: u64,
     /// Dernière présentation (s).
     pub last_seen: u64,
+    /// Empreintes précédentes, conservées pour détecter un retour arrière après archivage.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub previous: Vec<String>,
 }
 
 /// Occupation des épingles d'une org (tableau de bord).
@@ -573,7 +576,7 @@ impl MemberPinStore {
                 },
                 fingerprint: archived.fingerprint,
                 first_seen: archived.first_seen,
-                previous: Vec::new(),
+                previous: archived.previous,
                 pending: None,
                 last_seen: Some(if same { now } else { archived.last_seen }),
             },
@@ -628,7 +631,12 @@ impl MemberPinStore {
                     Some(t) if pin.pending.is_none() && now.saturating_sub(t) > ARCHIVE_AFTER_SECS => moved.push((
                         org.clone(),
                         user.clone(),
-                        ArchivedPin { fingerprint: pin.fingerprint.clone(), first_seen: pin.first_seen, last_seen: t },
+                        ArchivedPin {
+                            fingerprint: pin.fingerprint.clone(),
+                            first_seen: pin.first_seen,
+                            last_seen: t,
+                            previous: pin.previous.clone(),
+                        },
                     )),
                     Some(_) => {}
                 }
@@ -1050,6 +1058,22 @@ mod tests {
         s.touch("o", "x", 20 + YEAR);
         assert!(s.get("o", "x").is_none() && !s.is_archived("o", "x"));
         assert_eq!(s.check("o", "u", &key(2), 21 + YEAR), Verdict::Changed, "retour au v1 : toujours détecté");
+    }
+
+    #[test]
+    fn retour_vers_une_ancienne_cle_detecte_apres_archivage() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = MemberPinStore::open(dir.path()).unwrap();
+        s.check("o", "u", &key(1), 10);
+        assert!(s.rotate("o", "u", &key(1).fingerprint, &key(2)));
+        s.sweep(10 + YEAR);
+        s.flush().unwrap();
+        let mut s = MemberPinStore::open(dir.path()).unwrap();
+        assert!(s.is_archived("o", "u"));
+        // Retour vers la clé 1 (précédente) : refusé comme changement, jamais une rotation.
+        assert_eq!(s.check("o", "u", &key(1), 20 + YEAR), Verdict::Changed);
+        assert!(!s.rotate("o", "u", &key(2).fingerprint, &key(1)), "retour arrière refusé");
+        assert_eq!(s.get("o", "u").unwrap().previous, vec![key(1).fingerprint]);
     }
 
     #[test]

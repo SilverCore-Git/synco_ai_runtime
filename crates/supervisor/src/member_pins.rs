@@ -449,6 +449,15 @@ impl MemberPinStore {
         if !(1..=FILE_VERSION).contains(&file.v) {
             return Err(Error::Io(format!("{MEMBER_PINS_FILE} : version {} inconnue", file.v)));
         }
+        // Une identité à la fois active et archivée : fichier corrompu ou trafiqué, refus fermé
+        // (l'une des deux empreintes serait choisie arbitrairement).
+        let both = file
+            .archive
+            .iter()
+            .any(|(org, users)| file.orgs.get(org).is_some_and(|a| users.keys().any(|u| a.contains_key(u))));
+        if both {
+            return Err(Error::Io(format!("{MEMBER_PINS_FILE} : identité à la fois active et archivée")));
+        }
         Ok(Self::with(Some(path), file))
     }
 
@@ -1074,6 +1083,20 @@ mod tests {
         assert_eq!(s.check("o", "u", &key(1), 20 + YEAR), Verdict::Changed);
         assert!(!s.rotate("o", "u", &key(2).fingerprint, &key(1)), "retour arrière refusé");
         assert_eq!(s.get("o", "u").unwrap().previous, vec![key(1).fingerprint]);
+    }
+
+    #[test]
+    fn identite_active_et_archivee_refuse_l_ouverture() {
+        let dir = tempfile::tempdir().unwrap();
+        let pin = r#"{"fingerprint":"aa","thumbprint":"t","firstSeen":1,"lastSeen":2}"#;
+        let arc = r#"{"fingerprint":"bb","firstSeen":1,"lastSeen":2}"#;
+        let json = format!(r#"{{"v":2,"orgs":{{"o":{{"u":{pin}}}}},"archive":{{"o":{{"u":{arc}}}}}}}"#);
+        std::fs::write(dir.path().join(MEMBER_PINS_FILE), json).unwrap();
+        assert!(MemberPinStore::open(dir.path()).is_err());
+        // Identités distinctes : lisible.
+        let json = format!(r#"{{"v":2,"orgs":{{"o":{{"u":{pin}}}}},"archive":{{"o":{{"w":{arc}}}}}}}"#);
+        std::fs::write(dir.path().join(MEMBER_PINS_FILE), json).unwrap();
+        assert!(MemberPinStore::open(dir.path()).is_ok());
     }
 
     #[test]

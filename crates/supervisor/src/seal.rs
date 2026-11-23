@@ -173,16 +173,21 @@ pub fn ensure_state_dir(dir: &Path) -> Result<()> {
 /// Écriture atomique (fichier temporaire 0600 puis renommage). Pour des données **non secrètes**
 /// ou déjà scellées uniquement.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
-    use std::os::unix::fs::OpenOptionsExt as _;
+    use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
     let tmp = path.with_extension("tmp");
     let io = |e: std::io::Error| Error::Io(format!("écriture de {} : {}", path.display(), e.kind()));
     {
         let mut f =
             std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp).map_err(io)?;
+        // `mode` ne vaut qu'à la création : un `.tmp` déjà présent garde ses droits, on les force.
+        f.set_permissions(std::fs::Permissions::from_mode(0o600)).map_err(io)?;
         f.write_all(bytes).map_err(io)?;
         f.sync_all().map_err(io)?;
     }
-    std::fs::rename(&tmp, path).map_err(io)
+    std::fs::rename(&tmp, path).map_err(io)?;
+    // Le renommage n'est durable qu'après un fsync du répertoire.
+    let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    std::fs::File::open(dir).and_then(|d| d.sync_all()).map_err(io)
 }
 
 /// Fichiers de clés présents dans le répertoire d'état.
@@ -496,6 +501,21 @@ mod tests {
 
     fn provided(p: &str) -> Backend {
         Backend::Passphrase { source: PassphraseSource::Provided(Zeroizing::new(p.into())), kdf: FAST }
+    }
+
+    #[test]
+    fn ecriture_atomique_force_0600_sur_un_tmp_existant() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("f.json");
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, b"vieux").unwrap();
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_atomic(&path, b"neuf").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"neuf");
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        // Chemin relatif sans répertoire : le fsync vise « . ».
+        assert!(!tmp.exists());
     }
 
     #[test]

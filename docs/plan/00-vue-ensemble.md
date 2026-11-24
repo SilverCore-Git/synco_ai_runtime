@@ -295,6 +295,7 @@ d'enveloppe du créateur, `autonomy.allowed`) est repris tel quel dans 12.
 | PC91 | Service par défaut : Staan (DPA et conservation à obtenir), sinon Mojeek (2026-11-24) | 10 §4.2 |
 | PC92 | `web_access` fermé par défaut ; l'admin l'ouvre, chaque membre l'active avec avertissement (2026-11-24) | 12 §11.1, §11.3, §11.4 |
 | PC93 | Confirmation pour une URL ni issue d'une recherche ni de l'utilisateur, et pour une requête semblant contenir une info privée (2026-11-24) | 10 §4.4 |
+| PC94 | Texte d'un `message.send` / `message.edit` autonome : déclaration signée par l'utilisateur à la décision (empreinte salée du texte exact), jointe au message (`iv`, partie `td`), présence contrôlée par l'API, vérifiée par chaque lecteur ; texte dépendant d'une autre action → appareil ; échec → affiché avec avertissement (2026-11-24, L00j) | 12 §10.7 |
 
 ## 5 bis. Analyse des décisions (pour mémoire)
 

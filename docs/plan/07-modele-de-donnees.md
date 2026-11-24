@@ -430,6 +430,9 @@ l'évènement socket `notification:push` est émis, `data` portant aussi `type`.
 mode autonome »), envoyé par l'API au retrait, `data` = `{ orgId }`. Le plan réutilise
 `AI_AWAITING_CONFIRMATION` ; le corps peut citer le nombre d'actions (`actionCount`, pas de contenu).
 
+**Ajout de L00i (2026-11-24 ; 12 §11.4)** : `AI_WEB_ACCESS_WITHDRAWN` (« Votre organisation a désactivé
+l'accès web de Synco AI »), `data` = `{ orgId }`. `AiFeaturePolicy.feature` accepte `web_access` (12 §11.1).
+
 ## 8. Relations à ajouter sur les modèles existants
 
 - `Organization` : `aiRuntimes AiRuntime[]`.
@@ -556,7 +559,7 @@ model AiFeaturePolicyMember {            // membres autorisés quand mode = 'lis
   @@map("ai_feature_policy_members")
 }
 
-model AiFeatureOptIn {                   // activation par l'utilisateur lui-même (v1 : autonomous_mode)
+model AiFeatureOptIn {                   // activation par l'utilisateur lui-même (v1 : autonomous_mode, web_access depuis L00i)
   orgId          String
   userId         String
   feature        String

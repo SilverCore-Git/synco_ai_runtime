@@ -297,3 +297,62 @@ Clés de test : `CK` = `0x5c` × 32 (celle d'`action-plan.json`), autre clé `0x
   `artifact_unreadable` (13 §7.1) : empreinte, taille, message, appel, `id`, version, champ inconnu,
   extension, empreinte en majuscules.
 - `boundCases` (API, 13 §4.2) et `quotaCases` (`existing` : API ; `sentThisTurn` : worker ; `replay`).
+
+## 6. L00i — vecteurs figés (types d'action, messages de l'agent, web)
+
+Figés par la spécification comme ceux des §4 et §5, mais **sans cryptographie** : ils fixent des règles
+(validation, exécutants, politiques, garde de fuite, contrôles d'URL) et des octets exacts à signer. Produits
+par un script Python jetable hors du dépôt (supprimé après usage), sur une implémentation de référence des
+règles de 12 §4.1 à §4.3, §8.4 et 10 §4.2 à §4.4 ; le JSON canonique est celui de `json.dumps(sort_keys,
+separators=(",", ":"))`, identique à JCS pour ces valeurs (clés et chaînes ASCII là où l'ordre compte).
+
+### 6.1 `plan-kinds.json` (12 §4.1, §4.2, §8.4 point 6, §9)
+
+- `validationCases` : plan aux neuf nouveaux `kind` → `ok` ou `plan_invalid` (champ inconnu, bornes de
+  texte, 8 000 / 8 001, transfert à 2 000, mentions et fichiers, doublons, 100 / 101 membres, `kind`
+  inconnu `space.create`, `threadId` par `argsRefs`).
+- `kindRisk` : risque fixe de chaque `kind`, sensibilité, précochage et « toujours accepter ».
+- `toolManifest`, `effectivePolicyCases` : politique effective (§2 amendé) selon `toolPolicy`,
+  `defaultPolicy` et `risk` ; `auto` lu `ask` pour un outil sensible, sauf la liste fermée
+  `sensitiveAutoAllowed` ; manifeste sans `risk` : l'appareil traite l'action comme sensible.
+- `policyWriteCases` : écriture de `toolPolicy` → `ok` ou `tool_policy_sensitive_auto`.
+- `executorCases` : exécutants conditionnels du mode autonome (`fileIds`, `forwardOf`, auteur du message
+  visé, entrée `thread:<id>` déléguée, `argsRefs` vers une action d'agent) ; mêmes résultats attendus du
+  worker et de l'appareil (§5, règle 8).
+- `targetDigests`, `targetLockCases` : `SHA-256(JCS({ kind, target, argsRefs }))` et verrou de l'API
+  (cible de la route, `refs` contre les sorties enregistrées) → `ok` ou `action_not_accepted`.
+- `failureCases` : codes d'échec d'une action du §4.2 et cascade PC54 ; formes interdites d'`outcome`.
+
+Rejoués par L15-0 (registre et politiques), L15f (validateur de l'app, exécutants), L15-rt (worker et API).
+
+### 6.2 `message-v3.json` (12 §4.3)
+
+- `parseCases`, `dmParseCases` : analyse du champ `iv` (`m3`, `m2`, ancien) et `nonce` (`d3`) →
+  `ok` (avec `parsed`), `ok_m2`, `ok_legacy`, `invalid_format`, `invalid`.
+- `bytesCases` : chaînes **exactes** de l'AAD (`synco-msg-v3`, `synco-dm-v3`) et des octets signés
+  (`synco-sig-v2`).
+- `verifyPolicy` : état attendu (`verified`, `unsigned`, `invalid`) et mention affichée selon l'auteur et
+  le mandat.
+- `apiCases` : contrôle du préfixe et de l'auteur par l'API (canal du runtime, sockets de l'utilisateur).
+
+**À compléter par L15f** : un générateur TypeScript (`synco_app`, `messageAuth.ts`) produit les chiffrés et
+signatures réels (ECDSA de l'utilisateur pour `ai`, `csk` du certificat de test de `mandate-v2.json` pour
+`rt1:`), « vérification seulement » pour ECDSA comme au §1, rejoués par la crate (L15-rt). Les valeurs
+`iv`, chiffré et signature de ce fichier ne sont que des formes.
+
+### 6.3 `web-guard.json` (10 §4.2, §4.4 ; PC93)
+
+- `normalization` : `N(t)` et découpage en mots.
+- `guardContext`, `guardCases` : textes E2EE lus et noms des membres, puis requêtes → `ok` ou `confirm`
+  avec la liste **ordonnée** des motifs (`e2ee_passage`, `e2ee_token`, `member_name`, `guard_saturated`).
+- `fetchGuardCases` : même garde sur le chemin et la requête décodés d'une URL.
+- `provenance` : forme canonique `C(u)` et décision (`ok` ou `confirm`, `url_provenance`).
+- `ssrfCases` (adresses résolues données en entrée, redirections), `responseCases` (types, compression,
+  taille), `searchBodyCases` (corps de `POST /search`) → `ok` ou le code `web_*` attendu.
+
+Les cas de `ssrfCases` qui portent volontairement une adresse privée ou un nom interne sont écrits sur une
+seule ligne avec une `note` contenant le marqueur du hook `pre-commit` (cas de refus attendus, pas des
+hôtes réels).
+
+Rejoués par L15-web : la garde et la provenance dans le worker, le reste dans le superviseur (résolveur
+simulé : les cas donnent les adresses résolues).

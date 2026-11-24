@@ -149,3 +149,14 @@ Valeurs appliquées par le superviseur (L05, `crates/supervisor/src/`, `crates/r
 | Dashboard (L08, 11) | `dashboard.retention_days` 1 à 3 650, défaut **90** ; `MAX_RUNS` **50 000** exécutions en mémoire (élagage jusqu'à 90 %) ; chronologie ≤ 500 entrées ; 16 sessions, 30 min d'inactivité, 12 h ; 5 échecs / 15 min par adresse, ralentissement global à 20 échecs / 15 min (1 vérification / 5 s) ; `dashboard.trust_proxy_hops` défaut **0**, au plus 4, **distinct** de `listen.trust_proxy_hops` (défaut 1) | `dashboard/history.rs`, `dashboard/auth.rs`, `config.rs` | ajout (11 §2, §3, §6) |
 
 Sauf mention, les chemins sont relatifs à `synco_api/src/services/aiRuntime/` ou `synco_api/src/routes/`.
+
+### 4.2 Outils web et relais CDN (L00i, 2026-11-24 ; 10 §4.2 à §4.4)
+
+| Élément | Limite |
+|---|---|
+| `web_search` | requête 2 à 200 caractères ; 10 résultats, 8 Kio normalisés ; worker : **10 par tour, 50 par conversation** (comptés dans le transcript) ; superviseur : 10 par fenêtre et 50 par worker, **200 / h** pour le runtime ; délai 10 s |
+| `web_fetch` | URL ≤ 2 000 ; 2 Mio téléchargés, sans décompression ; connexion 10 s, total 20 s ; 5 redirections ; texte rendu 20 000 caractères par défaut, 100 000 au plus ; worker : **20 par tour, 100 par conversation** ; superviseur : 20 par fenêtre, 100 par worker, 500 / h |
+| Socket `web` | corps de requête ≤ 4 Kio ; 2 connexions par worker, 8 pour le runtime |
+| Garde de fuite | 500 000 empreintes de 5 mots par worker (au-delà : confirmation systématique) ; 10 000 noms de membres |
+| Relais `cdn` (étape 2) | objet ≤ 256 Kio + 4 Kio ; ticket 60 s ; 20 par fenêtre, 100 par worker ; connexion 10 s, total 20 s |
+| Messages du runtime (`POST /e2ee/threads/:threadId/messages`) | `content` ≤ 64 Kio ; texte ≤ 8 000 caractères ; ajout de membres : 1 à 100 par action |

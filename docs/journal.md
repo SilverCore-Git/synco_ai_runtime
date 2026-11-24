@@ -1512,3 +1512,28 @@ Un commit par point, chacun avec un test qui échoue sans lui.
 - **Choix provisoires (spec muette)** : appel refusé ou non envoyé : arguments gardés réduits à `name` (256 caractères au plus) et `ext`, jamais `content` ; `429`, `5xx` et délai du relais comptent comme panne passagère (un nouvel essai, `Retry-After` honoré à 10 s au plus) ; `artifact_exists`, `invalid_body` et `not_runtime` rendent `artifact_not_sent` ; `lease_conflict` et erreurs d'autorisation arrêtent le worker comme toute écriture ; `ext` ou `name` non chaîne rendent `artifact_format` / `artifact_name`, `content` non chaîne `artifact_not_text`. Le tour = appels `send_file` `done` depuis le dernier message utilisateur de l'historique (stable après une reprise).
 - **Ouvert** : route API (L03i) ; `artifact_exists` (même `id`, autre valeur) n'est testé que côté API ; recette manuelle de bout en bout avec l'app (L12b).
 - **Correctif test instable** : `relecture_api_paginee_et_verifiee_localement` attend désormais la requête de la relecture de la première connexion avant de vider `resets_requests` (elle pouvait s'y glisser et décaler `requests[1]` ; aucun changement de code du superviseur).
+
+## L00i : spec des nouveaux types d'action, du risque et de l'accès web (porte E, PC86 à PC93), 2026-11-24
+
+- **Source** : catalogue L14 (`synco_api/vibe/features/SYNCOAI_TOOLS_CATALOGUE.md` §1.2 à §1.4, §5, §8, §9.2) ;
+  décisions de la porte E PC86 à PC93 (toutes conformes à la recommandation), reportées en 00 §5.
+- **Fait** : 12 §4.1 (champ `risk`, `sensitive`, `defaultPolicy` ; gestes lourds sensibles, gestes `R2p` sans
+  confirmation ; `auto` refusé sur un outil sensible, ancienne valeur lue `ask` ; règle provisoire PC48 retirée) ;
+  12 §4.2 (neuf `kind` : charge, risque, exécutants, sorties, codes d'échec, cascade) ; 12 §4.3 (formats `m3` / `d3`,
+  auteur signé `ai` ou `rt1:<délégation>`, signature `csk` en mode autonome, affichage « avec Synco AI », lecture des
+  anciens formats) ; 12 §8.4 point 6 (condensat de cible des actions client du runtime) ; 12 §11 (`web_access`) ;
+  04 (lectures E2EE, envoi et modification de message, ajout de membres, ticket CDN, `webAllowed` au bail, noms pour la
+  garde, `PUT /web-provider`, trame `feature.revoked`) ; 06 (`init.web`, codes) ; 07 (`AI_WEB_ACCESS_WITHDRAWN`) ;
+  09 §4.2 (bornes) ; 10 §4.2 à §4.4 (proxy `web`, relais `cdn` étape 2, garde de fuite et provenance) ; vecteurs
+  `plan-kinds.json`, `message-v3.json`, `web-guard.json`.
+- **Vérifié** : cohérence des vecteurs par l'implémentation de référence jetable (Python, hors dépôt) qui les a
+  produits ; JSON relus ; `cargo fmt --all --check` ; aucun code modifié.
+- **Écarts avec le catalogue** : `read_support_ticket` appareil seulement (les clés `support:<id>` ne sont jamais
+  déléguées, 03 §2) ; `web_fetch` sans décompression (`Accept-Encoding: identity`, corps compressé refusé) au lieu
+  d'une borne de 8 Mio décompressés ; relais CDN rattaché à L15-web (recommandation du catalogue §5.2) et non à
+  L15-rt ; `message.send` du runtime sans pièce jointe ni transfert (appareil).
+- **À ratifier** : risque accepté du texte d'un message autonome non couvert par le condensat (12 §10.6) ; risque
+  résiduel d'un worker compromis qui utiliserait le proxy `web` comme sortie (10 §4.2).
+- **Ouvert** : signatures réelles des vecteurs `m3` à produire par L15f ; DPA et conservation de Staan (PC91) ;
+  chemin exact de téléchargement du CDN pour le relais (L15-web) ; route exacte de `thread.add_members` (L15c) ;
+  version minimale de l'app avant l'écriture de `m3` (L15f).

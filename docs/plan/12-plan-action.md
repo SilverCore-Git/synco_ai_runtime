@@ -46,8 +46,10 @@ d'appareil.
 ## 2. Ce qui passe par le plan
 
 - **Politique effective d'un outil** (D5, règle du worker `crates/worker/src/tools/mod.rs:110-120`, que
-  l'API applique désormais aussi) : `toolPolicy[name]` de l'org si présent, sinon `ask` pour un outil
-  `mutating`, `auto` sinon ; un outil `interactive` reste hors plan (`awaiting_user`).
+  l'API applique désormais aussi ; **amendée par L00i**, §4.1) : `toolPolicy[name]` de l'org si présent,
+  sinon `defaultPolicy` du manifeste s'il est présent, sinon `ask` pour un outil `mutating`, `auto`
+  sinon ; puis, pour un outil **sensible** (§4.1), `auto` est lu `ask` (jamais d'exécution directe) ;
+  un outil `interactive` reste hors plan (`awaiting_user`).
 - **Mode plan** (délégation du propriétaire en `plan`, défaut) : le modèle ne voit plus aucun outil
   mutant dont la politique effective est `ask` ni aucun outil d'appareil (`create_thread`,
   `create_folder`, `create_file`) ; il les demande par l'outil interne **`propose_actions`**. Les outils
@@ -55,6 +57,9 @@ d'appareil.
 - **Mode autonome** (délégation `auto`, §10) : `create_thread` dont la politique effective est `auto`
   est exécuté directement par le runtime (L07 inchangé, signature `rt1`) ; tout le reste de la liste
   ci-dessus passe encore par le plan (C1 §6 : « les actions `ask` passent toujours par le plan »).
+  Les outils `client` des `kind` du §4.2 (`send_message`, `add_thread_members`…) passent **toujours** par
+  le plan, dans les deux modes et quelle que soit leur politique effective (L00i) : seul `create_thread`
+  garde l'exécution directe en `auto`.
 - Hors plan : lectures, outils `auto`, outils interactifs (`ask_question`, `request_image_upload`), et
   `send_file` (fichier envoyé dans la conversation, sans effet sur l'org : 13, PC72). « Enregistrer dans
   un espace » un artefact est une création de fichier par l'appareil **hors plan** (13 §8).
@@ -101,7 +106,7 @@ plan. Un appel invalide n'écrit rien : le worker rend au modèle le résultat
 | `createdAt`, `expiresAt` | secondes Unix ; `createdAt < expiresAt ≤ createdAt + confirmationTimeoutSecs` de l'org (09 §3, borné [1 h, 7 j]) |
 | `summary` | chaîne ; affichée **à part**, en citation, jamais comme intitulé d'action (C1 §3) |
 | `actions` | 1 à **100** objets (PC61) ; `n` = position (1, 2, 3… sans trou) |
-| `kind` | liste fermée du §4 |
+| `kind` | liste fermée du §4 et du §4.2 (L00i) |
 | `tool` | présent **si et seulement si** `kind = server.call` |
 | `args` | objet strict selon le `kind` (§4) ; aucun champ inconnu |
 | `groups` | facultatif (PC58) ; 1 à 50 objets `{ id, label }`, `id` = `[a-z0-9_-]{1,32}` distincts, `label` chaîne de 1 à 100 ; présentation seulement |
@@ -156,11 +161,177 @@ Pour `name = "propose_actions"`, et seulement pour lui, `args` est le plan chiff
   `createTextFile` (envoi CDN chiffré, PC6, PC41). Le bac à sable du worker ne change pas.
 - **Exécutant** : fixé à la création par le worker, selon ce tableau et le mode de son mandat vérifié ;
   l'API le stocke avec `after` (§12.2) et l'appareil les recontrôle (§5, règle 8).
-- **Actions sensibles** (C1 §3, règle 3 : non précochées, cochées une par une) : niveau de risque fourni
-  par L14. En attendant L14 : toute action `server.call` dont l'outil supprime (`delete_*`) ou envoie
-  hors de Synco (`create_email_report`) (ratifié, PC48).
+- **Risque** des cinq `kind` ci-dessus : `R1` (création) ; `server.call` : `risk` de l'outil (§4.1).
+  Les neuf `kind` ajoutés par L00i sont au §4.2.
+- **Actions sensibles** (C1 §3, règle 3 : non précochées, cochées une par une) : §4.1 (L00i). La règle
+  provisoire de PC48 (`delete_*`, `create_email_report`) est **retirée** : le nom de l'outil ne fait plus
+  foi.
 - Un nouveau `kind` demande un lot dédié et la mise à jour du §5 ; les catalogues L14 et L15 ajoutent
   des `server.call` sans changer ce document.
+
+### 4.1 Risque et sensibilité (L00i, 2026-11-24 ; catalogue L14 §1.2 à §1.4 ; PC86, PC89)
+
+Chaque outil du registre porte un champ **`risk`** (obligatoire, liste fermée), exporté par le manifeste
+(`GET /api/orgs/:orgId/ai/tools` et `GET /api/runtime/v1/conversations/:sessionId/tools`, 04 §4.2) avec
+`sensitive` et `defaultPolicy` :
+
+| `risk` | Niveau | `sensitive` | Politique par défaut | Plan |
+|---|---|---|---|---|
+| `R0` | lecture | non | `auto` | hors plan |
+| `R1` | création | non | `ask` | précochée ; « toujours accepter » (`tool_auto_accept`) permis |
+| `R2` | modification | non | `ask` | idem |
+| `R2p` | modification **personnelle** réversible (marquer lu, sourdine, statut, rappel perso, ordre de ses tâches) | non | **`auto`** (`defaultPolicy`, PC89) | **hors plan, sans confirmation**, dans les deux modes |
+| `R3` | suppression, retrait, perte d'accès | **oui** | `ask` | **non précochée, cochée une par une** |
+| `R4` | sortie hors du cercle courant (e-mail, invitation, lien, webhook, support, URL lue) | **oui** | `ask` | idem |
+| `RP` | droits et accès (rôles, permissions, accès à un élément, ajout de membres) | **oui** | `ask` | idem |
+
+`sensitive = risk ∈ {R3, R4, RP}`, calculé, jamais stocké à part. Règles :
+
+1. **Gestes lourds permis (PC86)** : exclure un membre, changer des rôles ou des permissions, inviter,
+   envoyer un e-mail, supprimer sont des outils comme les autres, mais **sensibles** : jamais précochés,
+   le bouton principal reste grisé tant que chacun n'est pas coché ou retiré, aucun « Tout accepter » ne
+   les couvre (§6), « toujours accepter » ne s'y applique **jamais** (PC42), et ils passent **toujours**
+   par le plan, en mode autonome compris (§10).
+2. **`auto` refusé sur un outil sensible**, à trois endroits : l'écriture de `toolPolicy` par l'org
+   (`PUT` de la config IA) refuse `auto` pour un outil sensible (`400 tool_policy_sensitive_auto`) ;
+   une valeur `auto` déjà en base (écrite avant L00i, ou outil devenu sensible) est **lue** `ask`
+   (format ancien lu, jamais réécrit en silence) ; le worker et l'API appliquent la même lecture
+   (§2). L'org peut toujours **durcir** (`ask`, `deny`) n'importe quel outil.
+3. **Gestes personnels (PC89)** : `R2p` est `mutating: true` mais `defaultPolicy: "auto"` ; il n'entre pas
+   dans le plan et n'affiche qu'une carte d'outil repliée. L'org peut le passer en `ask` ou `deny`.
+4. **Exception `web_search` / `web_fetch`** (`R4`, outils `agent`) : `defaultPolicy: "auto"` malgré `R4`,
+   car leur garde est ailleurs (politique `web_access` §11.1, garde de fuite et provenance de 10 §4.4 qui
+   les font passer en confirmation au cas par cas). Ce sont les **seuls** outils sensibles admis en
+   `auto` ; la liste est fermée dans le registre (`sensitiveAutoAllowed`), pas déduite du nom.
+5. **Risque d'un `kind`** : fixé par ce document (colonne « Risque » du §4 et §4.2), pas par le modèle ;
+   pour `server.call`, c'est le `risk` de l'outil dans le manifeste. L'appareil le relit au rendu (§5,
+   règle 9) : une action sensible n'est jamais précochée même si le plan prétend le contraire (le plan ne
+   porte d'ailleurs aucun champ de risque).
+6. **Verrou serveur** : un appel d'outil sensible sans `plan: { planId, n }` est refusé
+   `403 action_not_accepted`, quelle que soit la valeur de `toolPolicy` (§8.4) ; seuls les outils de la
+   règle 4 font exception, et ils ne passent pas par l'API.
+7. **Rétrocompatibilité** : un manifeste sans `risk` (API antérieure à L15-0) est lu comme aujourd'hui
+   (politique effective du §2 sans `defaultPolicy`) et **toute** action `server.call` y est traitée comme
+   sensible par l'appareil (repli prudent), jusqu'à la mise à jour de l'API.
+
+### 4.2 Types d'action ajoutés par L00i (2026-11-24 ; catalogue L14 §5 ; PC35, PC54, PC86, PC88)
+
+Ces neuf `kind` portent les outils `client` mutants du catalogue (§3.7, §3.8, §3.9, §3.6, §3.12). Ils
+s'ajoutent à la liste fermée du §4 ; les lots L15 n'ajoutent ensuite que des `server.call`.
+
+| `kind` | Outil | `args` (strict) | Risque | Exécutant, mode plan | Exécutant, mode autonome | Champs exportés | Clé ajoutée |
+|---|---|---|---|---|---|---|---|
+| `message.send` | `send_message`, `forward_message` | `threadId` (id) ; `text` (1 à 8 000, ou 0 à 2 000 avec `forwardOf`) ; `replyTo?` (id) ; `mentionUserIds?` (0 à 50 id distincts) ; `fileIds?` (0 à 10 id distincts) ; `forwardOf?` (id du message transféré) | `R1` | appareil | **runtime** si ni `fileIds` (non vide) ni `forwardOf` ; sinon appareil | `id`, `threadId` | aucune |
+| `message.edit` | `edit_message` | `messageId` (id), `text` (1 à 8 000) | `R2` | appareil | **runtime** si le message visé est écrit par l'agent en mode autonome (auteur `rt1:` d'une délégation de ce même utilisateur vers ce runtime, §4.3) ou si `messageId` vient par `argsRefs` d'un `message.send` d'exécutant agent ; sinon appareil | `id`, `threadId` | aucune |
+| `dm.send` | `send_dm` | `peerId` (id), `text` (1 à 8 000), `fileIds?` (0 à 10) | `R1` | appareil | appareil (EX-13 : aucune clé de MP n'est déléguée, 03 §2) | `id`, `peerId` | aucune |
+| `dm.edit` | `edit_dm` | `dmMessageId` (id), `text` (1 à 8 000) | `R2` | appareil | appareil | `id` | aucune |
+| `file.update_text` | `update_text_file` | `fileId` (id), `content` (chaîne, ≤ 262 144 caractères ; le plan entier reste ≤ 256 Kio, §5 règle 3), `baseVersion` (1 à 100 caractères, valeur rendue par `read_file`) | `R2` | appareil | appareil (CDN, PC6) | `id`, `spaceId` | aucune |
+| `space.add_members` | `add_space_members` | `spaceId` (id), `userIds` (1 à 100 id distincts) | **`RP`** | appareil | appareil | `spaceId` | aucune (la clé d'espace est **scellée** pour chaque nouveau membre, FC1) |
+| `thread.add_members` | `add_thread_members` | `threadId` (id), `userIds` (1 à 100 id distincts) | **`RP`** | appareil | **runtime** si l'entrée `thread:<threadId>` figure dans la délégation courante (`threadId` dans `args`) ou si `threadId` vient par `argsRefs` d'un `thread.create` d'exécutant agent ; sinon appareil | `threadId` | aucune (clé du salon scellée pour chaque nouveau membre) |
+| `support.create` | `create_support_ticket` | `subject` (1 à 200), `text` (1 à 8 000) | **`R4`** | appareil | appareil | `id` (ticket) | aucune (la clé `support:<id>` est créée par l'appareil et **jamais** déléguée, 03 §2) |
+| `support.reply` | `reply_support_ticket` | `ticketId` (id), `text` (1 à 8 000) | **`R4`** | appareil | appareil | `id` (message) | aucune |
+
+**Exécutant conditionnel.** Pour `message.send`, `message.edit` et `thread.add_members` en mode autonome,
+l'exécutant dépend de données que le worker **et** l'appareil connaissent tous deux : arguments et
+`argsRefs` du plan, exécutant des actions visées, entrées de la délégation courante (métadonnées
+`kind`/`ref` servies à l'appareil, 03 §7.2) et en-tête `iv` signé du message visé (§4.3). Le worker le fixe
+à la création ; l'appareil le recalcule par la **même** fonction (§5, règle 8) et refuse le plan en cas
+d'écart. Si l'entrée disparaît entre la création et l'exécution (renouvellement de délégation sans elle),
+le worker **abandonne** l'action avec `key_unavailable` (§8.3, PC74) ; la cascade PC54 s'applique.
+
+**Exécution par l'appareil** (routes et sockets normaux de l'utilisateur, aucun droit nouveau) :
+
+| `kind` | Appel | Points durs |
+|---|---|---|
+| `message.send` | socket `send-message` (`websocket/routes/thread.ts`) avec `iv` au format `m3` d'auteur `ai` (§4.3) ; `mentionUserIds` convertis en jetons de référence comme le compositeur (`extractReferenceTokens`) ; `forwardOf` : `transferOrigin` de `messageTransferService` ; `fileIds` : pièces jointes déjà présentes dans l'espace | le socket n'a pas d'en-tête : la charge porte un champ facultatif **`plan: "<planId>/<n>"`**, de même sens que `X-Synco-Plan` (§8.5) |
+| `message.edit` | socket `edit-message`, même `clientMsgId`, `rev` + 1, `iv` `m3` d'auteur `ai` | seul un message de l'utilisateur (`senderId`) ; sinon `failed` `not_own_message` |
+| `dm.send`, `dm.edit` | sockets `dm:send-message`, `dm:edit-message`, format `d3` d'auteur `ai` (§4.3) | aucun en mode autonome |
+| `file.update_text` | `replaceFileContent` (`FileViewer.vue`, envoi CDN chiffré) après relecture de la version courante | version ≠ `baseVersion` → `failed` `file_changed` (`FileChangedError`), rien n'est écrit |
+| `space.add_members` | annuaire `GET /api/spaces/:spaceId/members-keys` **d'abord**, puis `PATCH /api/spaces/:spaceId/members`, puis `POST /api/spaces/:spaceId/key/share` (toutes les versions de `WorkspaceKey` détenues, scellées RSA-OAEP avec épinglage FC1) | un membre sans clé publique exploitable → `failed` `member_without_key` **avant** toute écriture ; échec du partage après le `PATCH` → `failed` `key_share_failed` (les membres ajoutés reçoivent la clé par le mécanisme existant des clés manquantes) |
+| `thread.add_members` | route ou socket de l'écran du salon (`thread:update`, membres) puis `distribute-thread-keys` par membre, avec l'enveloppe FC4 (`commitment`, `signature`) de la `ThreadKey` existante | idem (`member_without_key`, `key_share_failed`) ; route exacte fixée par L15c |
+| `support.create`, `support.reply` | services `src/services/support/` (`supportCrypto.ts`) : clé de ticket créée et scellée par l'appareil | hors de l'org : sensible (`R4`) |
+
+**Exécution par le runtime** (mode autonome seulement ; routes du canal de 04 §4.3, verrou du §8.4) :
+
+| `kind` | Route | Signature |
+|---|---|---|
+| `message.send` | `POST /api/runtime/v1/e2ee/threads/:threadId/messages` | `iv` `m3` d'auteur `rt1:<delegationId>`, signé par la `csk` du runtime (PC35 : **jamais** la clé de l'utilisateur) |
+| `message.edit` | `PATCH /api/runtime/v1/e2ee/messages/:messageId` | idem, `rev` + 1 |
+| `thread.add_members` | `POST /api/runtime/v1/e2ee/threads/:threadId/members` | clé du salon scellée par le worker pour chaque membre (annuaire `GET /e2ee/members/keys`, épinglage du superviseur 06 §4.3) ; enveloppe FC4 de la `ThreadKey` reprise telle quelle |
+
+**Codes d'échec d'une action** (`code` d'un `outcome` `failed`, §9, en plus des codes d'abandon) :
+`file_changed`, `member_without_key`, `key_share_failed`, `not_own_message`, `not_agent_message`,
+`message_too_long`. Un échec suit la cascade PC54 (§7.3) : seules les dépendantes sont `skipped`.
+
+**`space.create`** : non ajouté. L'outil `create_space` reste un `server.call` ; si L15c constate que la
+clé d'espace n'est créée qu'à la première ouverture dans l'app (catalogue §5), un `kind` `space.create`
+d'appareil sera ajouté par un amendement de ce paragraphe, comme `thread.create`.
+
+### 4.3 Messages écrits par l'agent : mention « avec Synco AI » (PC88, PC35)
+
+Tout message de salon ou de MP **écrit par l'agent** porte une mention visible « avec Synco AI », portée
+par un champ **authentifié** du message : le serveur ne peut ni l'ôter ni l'ajouter sans casser la
+signature. Comme le format `m2` (`messageAuth.ts`, audit FC7), tout voyage dans le champ `iv` (salon) ou
+`nonce` (MP), opaque pour l'API : aucune colonne nouvelle.
+
+**Format `m3` (salon)** — cinq parties, `rev` toujours écrit :
+
+```
+iv      = "m3." ivB64 "." clientMsgId "." author "." signatureB64 "." rev
+author  = "ai"                     écrit par l'agent, envoyé par l'appareil, signé par la clé d'identité
+                                   ECDSA P-256 de l'utilisateur (comme m2)
+        | "rt1:" delegationId      écrit et envoyé par le runtime en mode autonome, signé par sa csk
+rev     = entier décimal ≥ 0, sans zéro de tête (0 = jamais modifié)
+aad     = utf8("synco-msg-v3|" threadId "|" senderId "|" clientMsgId "|" author "|rev:" rev)
+signé   = utf8("synco-sig-v2|thread|" threadId "|" senderId "|" clientMsgId "|" author "|" ivB64 "|" ciphertextB64 "|rev:" rev)
+```
+
+**Format `d3` (MP)**, auteur `ai` seulement (aucune MP en mode autonome) :
+
+```
+nonce   = "d3." ivB64 "." clientMsgId ".ai." signatureB64 "." rev
+aad     = utf8("synco-dm-v3|" senderId "|" recipientId "|" clientMsgId "|ai|rev:" rev)
+signé   = utf8("synco-sig-v2|dm|" senderId "|" recipientId "|" clientMsgId "|ai|" ivB64 "|" ciphertext "|" encryptedAesKey "|" selfEncryptedAesKey "|rev:" rev)
+```
+
+Le préfixe de signature `synco-sig-v2` sépare ces octets de ceux de `m2`/`d2` (`synco-sig-v1`) et de
+l'enveloppe de clé `rt1` (`synco-key-envelope-rt-v1`, 03 §10) : une signature ne se rejoue pas d'un
+format à l'autre. `senderId` reste **l'utilisateur** (le message est envoyé en son nom) ; `author` dit qui
+l'a écrit.
+
+**Vérification par l'app** (après déchiffrement, comme `decryptThreadMessageV2`) :
+
+| `author` | Contrôle | État |
+|---|---|---|
+| `ai` | signature non vide, vérifiée avec la clé d'identité de `senderId` (`verifyWithSignKeys`) | comme `m2` : `verified`, `unsigned` (clé ancienne sans preuve), `invalid` ; signature vide → `invalid` |
+| `rt1:<d>` | mandat de `d` servi par `GET …/ai/runtime/delegations/:d/mandate` et vérifié comme en 03 §10, étapes 1 à 3 ; `mandate.userId = senderId` ; `mandate.orgId` = org du salon ; signature vérifiée avec la `csk` du certificat | mandat v2 `auto` : `verified` ; v2 `plan` : `invalid` ; v1 : `unsigned` avec avertissement (même règle que `rt1Policy`, §10.2) ; tout autre écart : `invalid` |
+
+Un mandat expiré ou révoqué depuis reste valable pour un message écrit pendant sa validité (même règle
+que 03 §10). Un message `invalid` est masqué comme aujourd'hui ; le rejeu est détecté par
+`noteMessageRevision` avec la même clé que `m2`.
+
+**Affichage** : sous le message, « avec Synco AI » (auteur `ai`) ou « avec Synco AI · mode autonome »
+(auteur `rt1:`, infobulle « écrit et envoyé par l'agent de <nom> pendant son absence ») ; même ligne
+discrète que « modifié ». Un message `unsigned` garde la mention avec l'avertissement habituel. La mention
+s'affiche aussi dans les aperçus (notifications riches exclues : aucun contenu en push).
+
+**Modification** : une révision d'un message `m3` reste `m3` ; son `author` est celui qui écrit la
+révision (`ai` si l'appareil, y compris une retouche à la main d'un message écrit par l'agent : la mention
+ne disparaît pas ; `rt1:` si le runtime). Un message `m2` modifié par l'agent devient `m3` `ai`. Le runtime
+ne modifie qu'un message `m3` d'auteur `rt1:` d'une délégation du **même** utilisateur vers **ce**
+runtime dans **cette** org (`409 not_agent_message` sinon, 04 §4.3).
+
+**Contrôles de l'API** (elle lit seulement le préfixe et `author`, jamais le contenu) : sur le canal du
+runtime, `iv` doit être `m3` d'auteur `rt1:<délégation de l'autorisation>` (`400 invalid_body` sinon : le
+runtime ne peut pas écrire un message qui se présenterait comme humain) ; sur les sockets de
+l'utilisateur, un `author` `rt1:` est refusé (`400`). `ai` est libre côté utilisateur : c'est une mention
+d'honnêteté de son propre appareil, pas une garantie contre lui.
+
+**Rétrocompatibilité** : l'app lit les trois formats (ancien `iv` base64 seul, `m2`, `m3` ; MP : ancien,
+`d2`, `d3`) et n'écrit `m3`/`d3` **que** pour un message écrit par l'agent ; un message écrit à la main
+reste `m2`/`d2` (son format ne change pas). Une version de l'app antérieure à L15f ne reconnaît pas `m3` :
+elle le lit comme un ancien `iv` et affiche « message illisible ». L15f relève donc la **version minimale**
+de l'app (bandeau de mise à jour existant) avant d'activer l'écriture de `m3`.
 
 ## 5. Validation
 
@@ -179,11 +350,16 @@ rend le plan entier invalide (code `plan_invalid`). Règles (vecteurs `action-pl
 5. `after` et `argsRefs` conformes au §3.2 (vers des actions **antérieures** seulement : aucun cycle).
 6. Aucune contrainte d'exécutant sur `after` ni sur `argsRefs` (PC44) : une action d'appareil peut
    dépendre d'une action d'agent, et inversement (§8.1).
-7. Appareil seulement : chaque `spaceId`, `categoryId`, `parentFolderId`, `folderId` écrit dans `args` est résolu dans
-   l'annuaire local ; un identifiant inconnu bloque le plan (C1 §2.6). Une valeur venue d'`argsRefs`
+7. Appareil seulement : chaque `spaceId`, `categoryId`, `parentFolderId`, `folderId`, `threadId`, `fileId`,
+   `peerId`, `ticketId`, chaque `userIds[i]` et `mentionUserIds[i]` (L00i) écrit dans `args` est résolu dans
+   l'annuaire local (un `messageId`, `dmMessageId`, `replyTo` ou `forwardOf` est résolu à l'exécution) ; un identifiant inconnu bloque le plan (C1 §2.6). Une valeur venue d'`argsRefs`
    est contrôlée à l'exécution (§8.2, étape 3).
 8. Appareil seulement : l'exécutant et l'`after` de chaque action servis par l'API (`PlanView.actions`,
-   §12.1) égalent ceux du plan déchiffré (exécutant selon le §4 et le mode de sa délégation courante).
+   §12.1) égalent ceux du plan déchiffré (exécutant selon le §4 et le mode de sa délégation courante ;
+   pour les exécutants conditionnels du §4.2, recalculé par la même fonction que le worker).
+9. Appareil seulement (L00i) : le risque de chaque action est celui du §4.1, règle 5 (table du `kind`, ou
+   `risk` du manifeste pour `server.call`) ; une action sensible est affichée non cochée, quel que soit
+   l'état servi ou mémorisé.
 
 Un plan invalide **à l'appareil** est refusé par la route de décision avec `reason: "plan_invalid"`
 (§12.1) : le worker reçoit `{"error":"plan_rejected","reason":"plan_invalid"}`. L'API ne voit pas le
@@ -392,6 +568,18 @@ porter `plan: { planId, n }`. L'API vérifie, sinon **`403 action_not_accepted`*
    - les arguments exécutés sont `args` ∪ `refs`, validés par le schéma de l'outil comme aujourd'hui ;
 5. `thread.create` : aucune empreinte (C1 : `serverDigests` ne couvre que `server.call`), l'action doit
    seulement être acceptée et prête ; ses `refs` ne sont pas recontrôlées (risque accepté, PC57, §10.6).
+6. **`message.send`, `message.edit`, `thread.add_members` d'exécutant agent (L00i, §4.2)** : l'API ne voit
+   pas le texte (E2EE) mais voit la **cible** ; `serverDigests[n]` couvre donc la cible :
+   `SHA-256(JCS({ kind, target, argsRefs }))`, `argsRefs` omis s'il est absent, avec
+   `target` = `{ threadId, replyTo? }` (`message.send`), `{ messageId }` (`message.edit`),
+   `{ threadId, userIds }` (`thread.add_members`, `userIds` triés par ordre croissant des unités UTF-16,
+   sans doublon). Un champ de cible fourni par `argsRefs` est **absent** de `target` (comme pour `args`).
+   L'appel du runtime porte `plan`, `target` (non résolue), `argsRefs?` et `refs?` ; l'API vérifie le
+   condensat et les `refs` comme au point 4, puis exige que `target ∪ refs` **égale** la cible réelle de la
+   requête (`:threadId` ou `:messageId` du chemin, `replyToId` et l'ensemble des `userIds` du corps), sinon
+   `403 action_not_accepted`. L'app recalcule ces empreintes à la décision (PC69, §12.1). **Non couvert** :
+   le texte du message (risque accepté, §10.6) ; il reste signé par la `csk` du runtime et marqué « avec
+   Synco AI · mode autonome » (§4.3).
 
 Un `refs` mal formé (valeur non chaîne, clé dans `args`) est `400 invalid_body`. Un outil `auto`
 n'exige rien (un `plan` fourni est alors contrôlé de la même façon) ; `deny` reste refusé avant tout
@@ -401,7 +589,9 @@ n'exige rien (un `plan` fourni est alors contrôlé de la même façon) ; `deny`
 
 L'API ne lit **rien de chiffré** : elle connaît la sortie de chaque action parce qu'elle a **créé
 l'objet elle-même** et l'enregistre à ce moment-là dans `AiActionPlanAction.output` (champs exportés du
-§4, identifiants seulement) :
+§4 et du §4.2, identifiants seulement ; pour les `kind` du §4.2 exécutés par l'appareil, la route ou le
+socket qui crée ou modifie l'objet enregistre la sortie quand il reçoit `X-Synco-Plan` ou le champ
+`plan` de sa charge, aux mêmes conditions ; pour ceux exécutés par le runtime, la route du canal) :
 
 - **action d'agent** : à l'exécution (§8.4), depuis sa propre réponse (`data.id` d'un `server.call`
   quand c'est un identifiant ; `id` et `spaceId` du salon créé par `POST /e2ee/threads`) ;
@@ -493,8 +683,10 @@ chiffrés et dans le `tool_result` du transcript (chiffré). Le lien figure au c
 Ajoutés à 05 §6.2 (les éléments existants restent valides, C1 §7). Clair de chaque résultat de phase
 = `JCS({ v: 1, planId, phase: k, outcomes: [{ n, state, output?, code? }] })`, `outcomes` = les actions
 traitées pendant cette phase (dans l'ordre de `n`), `output` = champs exportés (§4), identifiants
-seulement, `code` = le code d'un **abandon** (§8.3, PC74), seulement avec `state` `failed` ou
-`unknown_outcome`, jamais avec `output`. Les actions d'agent devenues finales et absentes des résultats
+seulement, `code` = le code d'un **abandon** (§8.3, PC74), ou (L00i) d'un échec d'action du §4.2
+(`file_changed`, `member_without_key`, `key_share_failed`, `not_own_message`, `not_agent_message`,
+`message_too_long`), seulement avec `state` `failed` ou `unknown_outcome`, jamais avec `output`. Un
+lecteur antérieur à L00i qui rencontre l'un de ces codes le traite comme un échec sans motif. Les actions d'agent devenues finales et absentes des résultats
 déjà déposés y figurent aussi (reprise après `Retry` ou après un arrêt du worker). `k` est compté **par exécutant** (§8.1).
 
 | `t` / valeur | Déposé par | `id` | Charge | Transition (08 §2) |
@@ -553,6 +745,7 @@ Un client à jour vérifie le mandat servi par `GET …/delegations/:delegationI
 |---|---|---|
 | `POST /e2ee/threads` (créateur `rt1:`) | délégation de l'autorisation `mode = auto` ; `isFeatureAllowed(autonomous_mode)` ; verrou du §8.4 si `create_thread` est `ask` | `403 autonomy_required`, `403 feature_not_allowed`, `403 action_not_accepted` |
 | `POST /e2ee/threads/:threadId/key-envelope` | délégation de l'autorisation `mode = auto` ; politique | `403 autonomy_required`, `403 feature_not_allowed` |
+| `POST /e2ee/threads/:threadId/messages`, `PATCH /e2ee/messages/:messageId`, `POST /e2ee/threads/:threadId/members` (L00i, 04 §4.3) | délégation `mode = auto` ; `isFeatureAllowed(autonomous_mode)` ; **toujours** le verrou du §8.4 (ces gestes ne sont jamais `auto` hors plan) ; `iv` `m3` d'auteur `rt1:<délégation de l'autorisation>` (§4.3) | `403 autonomy_required`, `403 feature_not_allowed`, `403 action_not_accepted`, `400 invalid_body` |
 | `POST /e2ee/threads/:threadId/key-envelope/repose` | délégation `delegationId` du corps `mode = auto` ; politique | idem |
 | `GET /e2ee/threads/envelope-resets` (L03f) | ne liste que les délégants dont la délégation active vers ce runtime est `auto` et autorisée | (filtre) |
 | `POST …/ai/runtime/threads/:threadId/key-envelope/reset` (utilisateur) | `repose_unavailable` aussi si le délégant n'a pas de délégation active `auto` autorisée | `409 repose_unavailable` |
@@ -566,7 +759,10 @@ plan ne se répare qu'en réactivant le mode autonome (C1 §4.3).
 
 Salons : `creatorId = rt1:<delegationId>`, inchangé. Actions `server.call` exécutées par le runtime :
 `AiChatSessionEvent` `actor: "runtime"`, `type: "plan_action"`, `code` = `<planId>.<n>` (07 §5).
-Actions de l'appareil : actions de l'utilisateur ; seul marquage, l'en-tête `X-Synco-Plan`.
+Actions de l'appareil : actions de l'utilisateur ; seul marquage, l'en-tête `X-Synco-Plan` (ou le champ
+`plan` d'une charge de socket, §4.2). Messages écrits par l'agent : champ `author` signé du format `m3`/`d3`
+(§4.3), visible de tous les lecteurs. Les actions du §4.2 exécutées par le runtime écrivent aussi
+`plan_action` (`actor: "runtime"`).
 
 ### 10.6 Risque accepté : références du `thread.create` autonome (PC57)
 
@@ -580,6 +776,14 @@ toujours, le mandat `auto` doit être en vigueur, et la création reste tracée 
 `plan_action`). **Accepté par l'utilisateur (PC57)** ; à revoir si `thread.create` entre un jour dans
 `serverDigests`. Repris dans la liste des risques (§15).
 
+**Extension (L00i, à ratifier par l'utilisateur).** Pour `message.send`, `message.edit` et
+`thread.add_members` exécutés par le runtime, la **cible** (salon, message, membres ajoutés) est couverte
+par le condensat (§8.4, point 6), mais pas le **texte** d'un message : l'API ne le voit pas, et l'app ne
+peut pas le comparer avant l'envoi. Un runtime fautif pourrait écrire, dans le salon accepté, un autre
+texte que celui du plan. Il resterait signé par sa `csk`, marqué « avec Synco AI · mode autonome » et
+tracé (`plan_action`) ; l'utilisateur peut le comparer au plan (bilan). Même nature que PC57 : le mode
+autonome confie déjà au runtime les clés des salons délégués.
+
 ## 11. Politiques d'org des fonctionnalités IA (PC36, PC39, PC42)
 
 ### 11.1 Liste fermée
@@ -588,7 +792,8 @@ toujours, le mandat `auto` doit être en vigueur, et la création reste tracée 
 |---|---|---|---|
 | `autonomous_mode` | actif | `none` (PC39), administrateurs compris | `AiFeatureOptIn` présent avec la `warningVersion` courante |
 | `runtime_mode` | actif | lu de `aiConfig.runtime.members` / `memberIds` (`all` → `all`, `list` → `list` avec ces membres) ; illisible → `list` vide (règle existante, `runtimePolicy.ts:34`) | délégation active (dépôt, 03 §7.1) |
-| `tool_auto_accept` | actif | `all` | réglage local de l'app (`autoAcceptTools`) ; **jamais** pour une action sensible (§4) |
+| `tool_auto_accept` | actif | `all` | réglage local de l'app (`autoAcceptTools`) ; **jamais** pour une action sensible (§4.1) |
+| `web_access` (L00i, PC92) | actif | `none`, administrateurs compris | `AiFeatureOptIn` présent avec la `warningVersion` courante de `web_access` (avertissement propre, §11.3) |
 | `subagents`, `agent_memory`, `runtime_transcription`, `rich_push` | **réservées** (PC42) | — | — |
 
 Une fonctionnalité réservée n'a ni écran ni écriture : `PUT` → `409 feature_reserved`. Une valeur
@@ -599,7 +804,10 @@ hors liste → `404 not_found`. `mode` ∈ `all`, `none`, `list`.
 Fonction unique côté serveur ; rend `{ allowed, enabled }` ; « autorisé et activé » = les deux. `list` :
 autorisé si une ligne `AiFeaturePolicyMember` existe. Points d'appel pour `autonomous_mode` : dépôt
 d'une délégation `auto`, routes du §10.4, second verrou. Pour `runtime_mode` : là où l'API appelle
-aujourd'hui `isRuntimeAllowedForUser` (dépôt, bascule, second verrou, `sweepPolicyViolations`). Le
+aujourd'hui `isRuntimeAllowedForUser` (dépôt, bascule, second verrou, `sweepPolicyViolations`). Pour
+`web_access` (L00i) : prise du bail (`POST …/conversations/:sessionId/lease` rend `features.webAllowed`,
+04 §4.2), manifeste servi au runtime (`web_search` et `web_fetch` absents si faux), et retrait (§11.4).
+Hors de ces deux exceptions (`webAllowed`, qui règle le montage du socket `web`, 10 §4.2), le
 runtime ne lit aucune politique (il applique le mandat et `autonomy.allowed`). L'app masque ou grise,
 seul le serveur fait foi.
 
@@ -614,6 +822,22 @@ seul le serveur fait foi.
    `auto` qui resteraient.
 5. Badge « Autonome » tant que la délégation active est `auto`. Si `warningVersion` courante > celle
    enregistrée, l'app redemande l'acceptation (le serveur répond `enabled: false`).
+
+**`web_access` (L00i, PC92).** Fermé par défaut (`none`) : l'administrateur l'ouvre (`all` ou `list`)
+dans les paramètres IA de l'org, ce qui revient à choisir le service de recherche déclaré par le runtime
+comme sous-traitant (catalogue L14 §8.9). Ensuite **chaque membre autorisé** l'active lui-même dans ses
+réglages IA :
+
+1. l'app montre l'avertissement de `web_access` (case « J'ai compris » non précochée) : « Vos recherches
+   partent chez <service déclaré par le runtime>. Les pages lues voient l'adresse du serveur de votre
+   organisation, pas la vôtre. Rien de privé n'y est envoyé sans votre accord : si une recherche semble
+   contenir une information de Synco, l'agent vous la montre avant de l'envoyer. » ;
+2. `PUT /ai/feature-policies/me/web_access/opt-in { warningVersion }` (§12.3) ;
+3. aucune délégation à redéposer : le prochain bail rend `webAllowed: true` ;
+4. désactivation : `DELETE …/me/web_access/opt-in` ; badge « Web » dans l'en-tête de la conversation tant
+   que l'accès est actif. Une `warningVersion` plus récente redemande l'acceptation (`enabled: false`).
+
+v1 : régime runtime seulement ; le mode navigateur et la passerelle n'ont pas d'outil web.
 
 ### 11.4 Retrait (PC40)
 
@@ -640,6 +864,15 @@ de la liste, `DELETE` de l'opt-in), dans **la même transaction** que l'écritur
 L'écran admin annonce le nombre de personnes concernées **avant** d'enregistrer (`enabledCount` et
 `enabled` par membre, §12.3). Retrait de `runtime_mode` : révocation existante `member_not_allowed`
 (03 §8.1), inchangée. Retrait de `tool_auto_accept` : l'app relit `GET …/me` et vide `autoAcceptTools`.
+
+**Retrait de `web_access` (L00i).** Quand `isFeatureAllowed(web_access)` devient faux (passage à `none`,
+retrait de la liste, `DELETE` de l'opt-in), dans la même transaction : opt-in supprimé (sauf `DELETE`
+lui-même), ligne `AiFeaturePolicyEvent`, puis trame **`feature.revoked { userId, feature: "web_access" }`**
+au runtime de l'org (04 §6). Le superviseur ferme aussitôt le socket `web` des workers de cet
+utilisateur (une requête en cours est coupée, le worker reçoit `web_unavailable`) ; le worker retire
+`web_search` et `web_fetch` de la liste donnée au modèle au tour suivant. Aucune délégation ni
+conversation n'est touchée. Notification `AI_WEB_ACCESS_WITHDRAWN` (« Votre organisation a désactivé
+l'accès web de Synco AI »), pas pour un `DELETE` de l'utilisateur lui-même.
 
 ### 11.5 Reprise de `aiConfig.runtime.members`
 
@@ -670,7 +903,8 @@ comme les autres. Lecture : `GET /ai/feature-policies/:feature/events` (U-admin)
 | `POST /plans/:planId/stop` | U-prop | `{}` | `200 PlanView` (plan `stopped`, §8.6) ; rejeu : `200` | `404`, `409 plan_not_executing` (statut ∉ `accepted`, `executing`, `stopped`) ; un plan `proposed` se refuse par `decision` |
 | `POST /inbox` (existante) | U-prop | `{ "t": "plan_result", "id": "plan:<planId>:<k>", "planId", "phase": <k>, "value": "gcm1:…" }` | `201` / `200` doublon (05 §6.2) | existants + `409 plan_not_executing`, `409 plan_phase_mismatch`, `404 not_found` |
 
-**PC69 — `serverDigests` de la décision.** Pour chaque action `server.call` **acceptée** (après la cascade), le
+**PC69 — `serverDigests` de la décision.** (L00i : s'applique aussi, avec l'empreinte de cible du §8.4 point 6,
+à chaque action `message.send`, `message.edit` et `thread.add_members` d'exécutant agent.) Pour chaque action `server.call` **acceptée** (après la cascade), le
 corps porte l'empreinte `sha256Hex` = SHA-256 de `JCS({ tool, args, argsRefs })` **recalculée par l'app depuis le
 plan déchiffré** (§8.4, point 4). L'API la compare à `serverDigests[n]` déposé par le runtime à la création :
 une empreinte absente pour une action `server.call` acceptée, en double, d'une autre action, ou différente refuse
@@ -734,8 +968,8 @@ Flux (04 §6) : `delegation.revoked.reason` peut valoir `autonomy_withdrawn` ; `
 | `POST /feature-policies/:feature/members/remove` | U-admin | `{ userIds: [1..100] }` | `200 { removed, revoked }` ; §11.4 | idem |
 | `GET /feature-policies/:feature/events` | U-admin | `?before=<id>&limit=1..100` | `200 { events: [...], next }` | idem |
 | `GET /feature-policies/me` | U | — | `200 { features: [{ feature, allowed, enabled, warningVersion }] }` | — |
-| `PUT /feature-policies/me/:feature/opt-in` | U | `{ warningVersion }` (entier ≥ 1) | `200 { feature, enabled: true }` | `403 feature_not_allowed`, `404 not_found` (fonctionnalité sans opt-in en v1 : tout sauf `autonomous_mode`) |
-| `DELETE /feature-policies/me/:feature/opt-in` | U | — | `200 { feature, enabled: false, revoked: [<delegationId>…] }` | `404 not_found` |
+| `PUT /feature-policies/me/:feature/opt-in` | U | `{ warningVersion }` (entier ≥ 1) | `200 { feature, enabled: true }` | `403 feature_not_allowed`, `404 not_found` (fonctionnalité sans opt-in en v1 : tout sauf `autonomous_mode` et `web_access`, L00i) |
+| `DELETE /feature-policies/me/:feature/opt-in` | U | — | `200 { feature, enabled: false, revoked: [<delegationId>…] }` (`revoked` toujours vide pour `web_access`) | `404 not_found` |
 
 Ajouts et retraits sont idempotents. Liste `list` : au plus 1 000 membres (PC30). `q` cherche dans les
 noms comme le sélecteur cherchable existant ; aucune rangée par membre côté app (C1 §5.5).
@@ -768,6 +1002,9 @@ phases, le claim et les résultats de phase d'agent (chiffrés). **Aucun contenu
 | `autonomy_required` | API 403, superviseur ; `code` d'abandon | Délégation ou mandat vérifié non `auto` |
 | `rate_limited` / `refs_inconsistent` / `key_unavailable` | `code` d'abandon (`abandoned`, résultat de phase, bilan) | Action d'agent jamais partie : `429` épuisé, `refs` différentes de la sortie enregistrée, clé du salon indisponible (§8.3, PC74) |
 | `feature_not_allowed` | API 403 | Politique d'org (ou opt-in absent) |
+| `file_changed` / `member_without_key` / `key_share_failed` / `not_own_message` / `message_too_long` | `code` d'un `outcome` `failed` (§9) | Échecs d'une action du §4.2 (L00i) : fichier modifié depuis la lecture, membre sans clé publique exploitable, partage de clé échoué après l'ajout, message d'un autre, texte trop long une fois chiffré |
+| `not_agent_message` | API 409 (canal du runtime) ; `code` d'échec | Le runtime ne modifie qu'un message `m3` écrit par une délégation du même utilisateur vers lui (§4.3) |
+| `tool_policy_sensitive_auto` | API 400 (`PUT` de la config IA) | `toolPolicy[name] = auto` pour un outil sensible (§4.1, règle 2) |
 | `feature_reserved` | API 409 | Fonctionnalité réservée (§11.1) |
 | `policy_not_list` | API 409 | `POST …/feature-policies/:feature/members` alors que la politique n'est pas en mode `list` (§12.3) |
 | `autonomy_withdrawn` | `revokedReason`, `delegation.revoked.reason` | Retrait du mode autonome (§11.4) |
@@ -813,7 +1050,8 @@ après la livraison ; le texte qui en dépendait (« provisoire ») est réécri
 | **PC74** | Le worker déclare les **abandons** d'actions d'agent jamais parties dans `agent-result` (`abandoned`, codes en liste fermée) au lieu de clore en `plan_aborted` ; l'API les applique avant le contrôle des actions occupées, seulement `pending` accepté vers `failed` / `unknown_outcome`, rejeu idempotent ; `value` facultatif si le plan devient terminal | §8.3, §8.7, §9, §12.2, §14 |
 
 **Risques acceptés** : (1) références du `thread.create` autonome non recontrôlées par l'API (PC57,
-§10.6) ; (2) pendant un plan, l'API sait quel objet créé correspond à quelle action (métadonnée sans
+§10.6) ; (1 bis, L00i, à ratifier) texte d'un `message.send` / `message.edit` autonome non couvert par le
+condensat, la cible l'étant (§8.4 point 6, §10.6) ; (2) pendant un plan, l'API sait quel objet créé correspond à quelle action (métadonnée sans
 contenu, effacée à la clôture, PC47, PC56) ; (3) condensat d'une action refusée devinable si ses
 arguments ont peu d'entropie (C1 §2.3).
 
@@ -825,6 +1063,10 @@ arguments ont peu d'entropie (C1 §2.3).
 | L03g | §7, §8.1 (actions prêtes), §8.4 à §8.7, §9, §10.4, §12.1, §12.2, 07 §3, §5, §10 (`AiActionPlan`) ; vecteurs : condensats, `executeCases`, `runCases`, `categoryPlan`, `validationCases` pour la forme vue par l'API |
 | L03h | §11, §12.3, 07 §10 (politiques, purge du journal), 03 §8.1 (`autonomy_withdrawn`) |
 | L08d | §2, §3 (dont la description de l'outil), §5, §7.3, §8.1, §8.3, §8.6, §8.7, §10.3 ; `propose_actions`, reprise après chaque phase, exécution parallèle, `agent-result`, `refs`, `created_key` / `repose` conditionnés, épingle du mandat v2 |
+| L15f (L00i) | §4.2 et §4.3 côté app et API : exécutants `message.*`, `dm.*`, formats `m3`/`d3` (lecture, écriture, affichage, version minimale), champ `plan` des sockets, contrôle `author` des sockets |
+| L15c, L15d, L15g, L15j (L00i) | exécutants d'appareil `thread.add_members` (L15c), `space.add_members` (L15d ou L15c selon la route), `file.update_text` (L15g), `support.*` (L15j) ; `risk` de chaque outil (§4.1) |
+| L15-0 (L00i) | §4.1 : `risk`, `defaultPolicy`, `sensitive`, refus `tool_policy_sensitive_auto`, lecture `ask` d'un `auto` sensible ; registre des exécutants de `kind` vide |
+| L15-rt (L00i) | §4.2 côté runtime : exécutants conditionnels, routes du canal (04 §4.3), signature `m3` par la `csk`, condensats du §8.4 point 6 (API et worker) |
 | L10 à L13 | §4 à §8.2, §8.6, §8.7, §10.2, §11.3, §17 (graphe du plan, arrêt), écrans de C1 §3 et §5.5 |
 
 ## 17. Présentation du plan (L12, L13 ; PC58)

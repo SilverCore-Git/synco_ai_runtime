@@ -17,6 +17,8 @@ protocole du pipe : [06](06-superviseur-worker.md) ; plafonds : [09 §2](09-limi
 | Réseau IP | aucun : pas d'interface active | espace de noms net ; seccomp (`socket` seulement `AF_UNIX`) ; landlock (TCP géré, aucune règle) |
 | Sockets Unix abstraits de l'hôte | aucun | espace de noms net ; landlock (portée « socket abstrait ») |
 | LLM | uniquement le fournisseur de **sa** conversation, par le mandataire | §4 |
+| Web (L00i) | seulement si `webAllowed` : le service de recherche configuré et des `GET` de pages publiques, par le proxy `web` du superviseur (`/run/synco/web.sock`) ; jamais d'IP directe | §4.2 |
+| CDN (L00i, étape 2) | seulement un `GET` d'objet par ticket, vers le CDN configuré, par le relais `cdn` (`/run/synco/cdn.sock`) | §4.3 |
 | API Synco | uniquement par `signed_request` (signé par le superviseur, chemins en liste fermée) | 06 §4 (L05) |
 | Nouveaux processus, `exec` | interdits ; fils d'exécution seulement | seccomp (`clone` exige `CLONE_THREAD`, `clone3` → `ENOSYS`, `execve` → tué) ; racine sans binaire |
 | Privilèges | aucun : capacités retirées (ensemble limitant compris), bits de sécurité verrouillés, `no_new_privs` | `policy::drop_capabilities` |
@@ -94,6 +96,8 @@ Alternatives écartées :
 - *Relais générique (CONNECT)* : le worker ferait le TLS et détiendrait la clé ; aucun contrôle des
   chemins.
 
+### 4.1 Mandataire LLM
+
 Le mandataire (`sandbox/proxy.rs`) :
 
 - un socket `<run_dir>/w-<n>-<pid>/llm.sock` (répertoire `0700`, socket `0600`) servi par une tâche
@@ -169,6 +173,157 @@ pour le chat ou la liste des modèles du fournisseur de sa conversation ; jamais
 un autre hôte ni appeler une autre route de l'API du fournisseur. Pour `gateway`, un serveur Synco
 malveillant peut désigner un autre hôte public : il n'en reçoit que le ticket `sgt1` (émis par lui)
 et le contenu, que le fournisseur voit de toute façon (risque assumé, 03 §2).
+
+### 4.2 Proxy `web` du superviseur (L00i, 2026-11-24 ; catalogue L14 §8 ; PC90 à PC93)
+
+**Choix (PC90)** : la recherche passe par un **service de recherche** appelé par le superviseur, jamais
+par la recherche native du fournisseur d'IA : c'est la seule voie où le runtime voit et contrôle chaque
+requête avant qu'elle ne parte. Même mécanique que le mandataire LLM (§4) : le worker reste sans réseau
+IP, la clé du service reste chez le superviseur.
+
+**Socket.** `<run_dir>/w-<n>-<pid>/web.sock` (`0600`), monté en lecture seule sous `/run/synco/web.sock`,
+**seulement** si (a) la prise du bail a rendu `features.webAllowed = true` (04 §4.2, 12 §11.2) et (b) la
+configuration du runtime a une section `[web.search]` valide. Sinon pas de socket, et le worker ne
+montre ni `web_search` ni `web_fetch` au modèle (`init.web.available = false`, 06 §3). Une trame
+`feature.revoked` (04 §6) ou un renouvellement de bail qui rend `webAllowed = false` fait **fermer** le
+socket : requêtes en cours coupées, connexions suivantes refusées (`web_unavailable`).
+
+**Configuration** (fichier du runtime ; aucune valeur ne vient de l'API ni du pipe) :
+
+| Clé | Règle |
+|---|---|
+| `[web.search] provider` | `staan` (**défaut recommandé**, PC91), `mojeek` (**repli** si le DPA ou la durée de conservation de Staan ne conviennent pas), `searxng` (auto-hébergé), `brave` ; un adaptateur par service derrière une interface unique (L15-web) |
+| `[web.search] base_url` | obligatoire ; `https` port 443, sans identifiants ni requête, nom public (mêmes refus que `gateway_url_allowed`, §4) ; seule exception : `provider = "searxng"` avec `allow_private_host = true` explicite (instance sur le réseau de l'org) |
+| `[web.search] api_key` | injectée par le superviseur dans l'en-tête propre au service ; jamais dans le pipe ni dans un journal |
+| `[web.fetch] enabled` | `true` par défaut ; `false` retire `web_fetch` seul |
+| `[web] synco_hosts` | noms refusés par `web_fetch` en plus de ceux déduits de la configuration (API, CDN, passerelle, keyguard) |
+
+Au démarrage, le superviseur **déclare** le service à l'API (`PUT /api/runtime/v1/web-provider
+{ provider }`, S, 04 §4.1 ; `null` si aucun), pour la page « Mes données » et l'avertissement de
+`web_access` (12 §11.3). PC91 : avant de livrer Staan par défaut, obtenir son DPA et sa durée de
+conservation des requêtes (non publiés au 2026-11-24) ; à défaut, Mojeek devient le défaut.
+
+**Requêtes admises** (HTTP/1.1 clair sur le socket, corps JSON ≤ 4 Kio, tout le reste → `404 web_path` /
+`405 web_method`, sans appel sortant) :
+
+| Requête | Corps | Réponse `200` |
+|---|---|---|
+| `POST /search` | `{ "query": <2 à 200 caractères>, "freshness"?: "day"\|"week"\|"month"\|"year", "lang"?: <2 lettres>, "count"?: 1..10 }`, strict | `{ "results": [{ "title" (≤ 200), "url" (≤ 2 000, `https` ou `http` seulement), "snippet" (≤ 500), "age"? }] }`, 10 au plus, **8 Kio** au plus (extraits tronqués, puis résultats retirés depuis la fin) ; jamais la ville ni l'IP de l'utilisateur |
+| `POST /fetch` | `{ "url": <≤ 2 000>, "maxBytes"?: 1 024..2 097 152 }`, strict | octets bruts du corps (≤ `maxBytes`, défaut et maximum **2 Mio**), en-têtes `content-type` et `x-synco-final-url` (URL après redirections) |
+
+Erreurs : `{ "error": "<code>", "status"?: <HTTP du site> }`, codes `web_bad_request` (400), `web_quota`
+(429), `web_url_refused` (403 : schéma, port, identifiants, IP littérale, nom ou adresse refusés),
+`web_redirect_limit`, `web_too_large`, `web_unsupported_type`, `web_http_status` (statut ≠ 2xx du site),
+`web_timeout` (504), `web_provider` (502 : service de recherche en échec), `web_unavailable` (503).
+
+**Contrôles de `/fetch`** (catalogue §8.7, faits par le **superviseur**, qui ne fait que borner et relayer) :
+
+- `https` (port 443) ou `http` (port 80) seulement ; pas d'identifiants dans l'URL ; pas d'IP littérale ;
+- résolution par le `PublicOnlyResolver` (§4) : refus des adresses privées, de bouclage, de lien local,
+  CGNAT, métadonnées de nuage (`169.254.169.254`, `fd00:ec2::254`), ULA, multicast, réservées ; refus des
+  noms `localhost`, `.local`, `.internal`, `.lan`, `.home.arpa` et des hôtes de Synco ; l'adresse
+  résolue est **épinglée** pour la connexion (anti-rebinding) ;
+- 5 redirections au plus, chacune recontrôlée en entier ; une redirection n'exige **pas** de nouvelle
+  provenance (c'est le site qui la choisit, pas le modèle) ;
+- `GET` seulement ; en-têtes envoyés : `User-Agent: SyncoAI-Fetch/1`, `Accept: text/html, text/plain,
+  text/markdown, application/json, application/xml`, **`Accept-Encoding: identity`** ; aucun cookie,
+  `Authorization`, `Referer` ni `Origin` ; cookies reçus jetés ;
+- types admis : `text/html`, `text/plain`, `text/markdown`, `application/json`, `application/xml` ; un
+  corps compressé (`Content-Encoding` ≠ `identity`) est refusé `web_unsupported_type` (le superviseur ne
+  décompresse rien : pas de bombe de décompression) ;
+- délais : connexion 10 s, total 20 s ; recherche : 10 s au total.
+
+**Quotas** (comptés par le superviseur, qui ne voit pas les tours ; le worker applique en plus les
+quotas par tour et par conversation, 09 §4.2) :
+
+| Quota | `search` | `fetch` |
+|---|---|---|
+| par fenêtre de `maxTurnDurationSecs` et par worker | 10 | 20 |
+| par worker (vie du worker) | 50 | 100 |
+| par heure, tout le runtime | 200 | 500 |
+| connexions simultanées | 2 par worker, 8 pour le runtime | idem (même socket) |
+
+Au-delà : `429 web_quota`, sans appel sortant. Valeurs réglables dans la configuration du runtime.
+
+**Conversion et marquage dans le worker.** La conversion HTML → texte se fait **dans le bac à sable**
+(un HTML hostile n'est jamais analysé par le superviseur) ; texte rendu au modèle : 20 000 caractères par
+défaut, 100 000 au plus (`maxChars`) ; résultat enveloppé `<untrusted source="web:<hôte>">…</untrusted>`
+(balises du contenu neutralisées). Dès qu'un résultat web est entré dans un tour, l'app suspend
+« toujours accepter » pour les plans de ce tour et affiche « l'agent a lu des pages web pendant ce tour »
+(catalogue §8.8 ; l'app le déduit du transcript, aucun champ nouveau).
+
+**Journaux et métriques** : aucun corps, aucune requête, aucune URL ; comptes seulement (P9).
+
+**Risque résiduel (signalé).** Le proxy ouvre au worker une **sortie** qu'il n'avait pas : la garde de
+fuite et la provenance (§4.4) vivent dans le worker, si bien qu'un worker **compromis** (exécution de code
+dans le bac à sable, par exemple par une faille de l'analyse HTML) pourrait faire sortir des données de
+**sa** conversation dans une URL ou une requête, dans la limite des quotas. Il ne joint toujours ni l'API
+hors liste, ni les clés des autres workers. Durcissement possible, non retenu en v1 : contrôle de
+provenance recopié dans le superviseur pour les URL issues de `/search`.
+
+### 4.3 Relais `cdn` (L00i ; catalogue L14 §5.2 ; étape 2, livrée avec le proxy `web` par L15-web)
+
+**v1 (étape 1)** : `read_file` est **appareil seulement** (retiré du manifeste du runtime, 04 §4.2) ; le
+worker garde `tool_unavailable_in_runtime` pour les outils de fichiers (06 §9).
+
+**Étape 2** : socket `/run/synco/cdn.sock`, même mécanique, une seule requête admise :
+`GET /object` avec les en-têtes `x-synco-object` (chemin d'objet rendu par
+`POST /api/runtime/v1/e2ee/files/:fileId/download`, 04 §4.3) et `x-synco-cdn-ticket` (ticket `down` de la
+même réponse). Le superviseur appelle **seulement** le CDN de sa configuration (`[cdn] base_url`, hôte
+fixe, jamais une URL fournie par l'API ou le worker) avec la route de téléchargement d'objet de
+`synco_cdn` (chemin exact fixé par L15-web d'après `synco_cdn`), corps ≤ 256 Kio + 4 Kio (chiffré et
+étiquettes), connexion 10 s, total 20 s ; 20 lectures par fenêtre et par worker, 100 par worker. Le
+worker déchiffre (clé du fichier déballée sous la clé d'espace déléguée) et enveloppe le texte en
+`<untrusted source="file:<id>">`. Erreurs : `cdn_refused`, `cdn_too_large`, `cdn_timeout`, `cdn_status`.
+
+### 4.4 Garde de fuite et provenance (worker ; PC93)
+
+Faites par le worker **avant** toute requête au proxy `web`. Elles ne bloquent ni ne réécrivent jamais :
+elles **demandent confirmation** à l'utilisateur, avec le texte exact qui partirait (PC93). Vecteurs :
+`vectors/web-guard.json`.
+
+**Normalisation** `N(t)` : NFKC, puis décomposition NFD et retrait des marques combinantes (catégorie
+`Mn`), puis minuscules (correspondance simple Unicode). **Mots** : suites maximales de caractères
+alphabétiques ou numériques (propriétés Unicode `Alphabetic`, `Numeric`) ; tout autre caractère sépare.
+
+**Empreintes** (mémoire du worker seulement, jamais écrites ni journalisées), tenues pour **chaque texte
+E2EE déchiffré par un outil** de la conversation (messages, fichiers ; plus tard tickets) :
+
+| Ensemble | Contenu |
+|---|---|
+| `G5` | HMAC-SHA-256 (clé aléatoire de 32 octets tirée au démarrage du worker), tronqué à 8 octets, de chaque suite de **5 mots consécutifs** de `N(texte)` jointe par une espace ; 500 000 entrées au plus |
+| `R` (jetons rares) | adresses e-mail (`[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`, en minuscules) ; suites d'au moins **6 chiffres**, séparateurs simples (espace, point, tiret) permis entre chiffres, gardées en chiffres seuls ; identifiants (CUID `c[a-z0-9]{24}`, UUID) ; URL `http(s)://` du texte, réduites à `hôte + chemin` (hôte en minuscules) |
+| `M` (noms) | noms des membres (`GET …/web-guard/names`, 04 §4.2) et du propriétaire, chacun comme suite de mots de `N(nom)` ; un nom d'**un seul mot de moins de 4 caractères** est ignoré |
+
+**Contrôle d'une chaîne `q`** (la requête de `web_search` ; pour `web_fetch`, le chemin et la chaîne de
+requête de l'URL, décodés du pourcentage) — motifs, dans cet ordre, tous rapportés :
+
+| Motif (`reason`) | Condition |
+|---|---|
+| `e2ee_passage` | une suite de 5 mots consécutifs de `N(q)` est dans `G5` |
+| `e2ee_token` | un jeton rare extrait de `q` (mêmes règles que `R`) est dans `R` |
+| `member_name` | la suite de mots d'un nom de `M` apparaît comme mots consécutifs de `N(q)` |
+| `guard_saturated` | `G5` a atteint 500 000 entrées : **toute** requête web demande confirmation |
+
+**Provenance de `web_fetch`** (catalogue §8.7). Forme canonique `C(u)` : analyse WHATWG, schéma et hôte en
+minuscules (hôte en punycode), port par défaut retiré, fragment retiré, chemin et requête inchangés.
+`web_fetch` est **sans confirmation** seulement si `C(url)` appartient à (a) l'ensemble des URL rendues par
+`web_search` dans **cette** conversation (le worker le reconstruit depuis les résultats d'outils du
+transcript), ou (b) l'ensemble des URL écrites par **l'utilisateur** dans ses messages de la conversation.
+Toute autre URL (inventée par le modèle, trouvée dans une page, un message d'un autre membre, un fichier)
+→ confirmation, motif **`url_provenance`**, avec l'URL complète. Les liens d'une page lue ne rejoignent
+jamais (a).
+
+**Confirmation.** Le worker n'envoie rien, écrit la conversation en `awaiting_confirmation` avec le
+`pendingToolCall` classique (C1 §7 : `args = "__pending__"`, `category: "agent"`), plus un champ
+**`guard`** = `gcm1:` sous `CK`, AAD `sessionId:<toolCallId>:web_guard`, clair
+`JCS({ v: 1, reasons: [<motifs>], spans: [{ start, end }] })` (positions en unités UTF-16 dans la chaîne
+affichée : requête ou URL ; `spans` vide pour `url_provenance` et `guard_saturated`). Lecture rétrocompatible :
+un `pendingToolCall` sans `guard` se confirme comme avant. L'app montre la requête ou l'URL **exacte**,
+les passages soulignés et le motif en clair (« contient un passage d'un message chiffré », « contient le
+nom d'un membre », « adresse non issue d'une recherche ni de vous ») ; boutons « Envoyer » et « Ne pas
+envoyer ». Décision par l'élément `confirm` existant (05 §6.2) ; « toujours accepter » ne s'applique
+**jamais**. Refus → résultat d'outil `{"error":"web_refused_by_user"}`, le tour continue.
 
 ## 5. cgroups v2 (D6)
 

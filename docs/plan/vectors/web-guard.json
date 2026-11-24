@@ -1,0 +1,430 @@
+{
+  "description": "Garde de fuite, provenance et contrôles du proxy web (10 §4.2 et §4.4, L00i, PC90 à PC93). Figés par la spécification, rejoués par L15-web (worker et superviseur).",
+  "normalization": [
+    {
+      "input": "Hélios ÉTÉ",
+      "words": [
+        "helios",
+        "ete"
+      ]
+    },
+    {
+      "input": "ﬁchier",
+      "words": [
+        "fichier"
+      ]
+    },
+    {
+      "input": "Jean-Pierre l'Été",
+      "words": [
+        "jean",
+        "pierre",
+        "l",
+        "ete"
+      ]
+    },
+    {
+      "input": "Ｆｕｌｌ ｗｉｄｔｈ",
+      "words": [
+        "full",
+        "width"
+      ]
+    },
+    {
+      "input": "a_b c1",
+      "words": [
+        "a",
+        "b",
+        "c1"
+      ]
+    },
+    {
+      "input": "naïve café",
+      "words": [
+        "naive",
+        "cafe"
+      ]
+    }
+  ],
+  "guardContext": {
+    "e2eeTexts": [
+      "Le budget du projet Hélios est gelé jusqu'à la réunion du 12 mars avec la direction financière.",
+      "Contact presse : claire.martin@exemple-interne.fr, téléphone 06 12 34 56 78, dossier cm3fileexample000000000001.",
+      "Voir https://wiki.exemple-interne.fr/projets/helios?v=2 pour le détail."
+    ],
+    "memberNames": [
+      "Claire Martin",
+      "Léo",
+      "Bo",
+      "Jean-Pierre Dupont"
+    ]
+  },
+  "guardCases": [
+    {
+      "name": "requête neutre",
+      "query": "meilleur logiciel de gestion de projet 2026",
+      "expectReasons": [],
+      "expect": "ok"
+    },
+    {
+      "name": "cinq mots consécutifs d'un message lu",
+      "query": "projet helios est gele jusqu a la reunion",
+      "expectReasons": [
+        "e2ee_passage"
+      ],
+      "expect": "confirm"
+    },
+    {
+      "name": "quatre mots seulement : pas de passage",
+      "query": "budget du projet helios",
+      "expectReasons": [],
+      "expect": "ok"
+    },
+    {
+      "name": "passage avec accents et majuscules différents",
+      "query": "BUDGET DU PROJET HÉLIOS EST",
+      "expectReasons": [
+        "e2ee_passage"
+      ],
+      "expect": "confirm"
+    },
+    {
+      "name": "adresse e-mail lue dans un message",
+      "query": "qui est claire.martin@exemple-interne.fr",
+      "expectReasons": [
+        "e2ee_passage",
+        "e2ee_token",
+        "member_name"
+      ],
+      "expect": "confirm"
+    },
+    {
+      "name": "adresse e-mail en majuscules",
+      "query": "CLAIRE.MARTIN@EXEMPLE-INTERNE.FR linkedin",
+      "expectReasons": [
+        "e2ee_passage",
+        "e2ee_token",
+        "member_name"
+      ],
+      "expect": "confirm"
+    },
+    {
+      "name": "numéro de téléphone lu, autre séparateur",
+      "query": "annuaire inverse 06.12.34.56.78",
+      "expectReasons": [
+        "e2ee_passage",
+        "e2ee_token"
+      ],
+      "expect": "confirm"
+    },
+    {
+      "name": "numéro de 5 chiffres : pas un jeton rare",
+      "query": "code postal 75012 horaires",
+      "expectReasons": [],
+      "expect": "ok"
+    },
+    {
+      "name": "identifiant CUID lu",
+      "query": "cm3fileexample000000000001",
+      "expectReasons": [
+        "e2ee_token"
+      ],
+      "expect": "confirm"
+    },
+    {
+      "name": "URL interne lue",
+      "query": "https://wiki.exemple-interne.fr/projets/helios",
+      "expectReasons": [
+        "e2ee_passage",
+        "e2ee_token"
+      ],
+      "expect": "confirm"
+    },
+    {
+      "name": "nom complet d'un membre",
+      "query": "avis sur claire martin consultante",
+      "expectReasons": [
+        "member_name"
+      ],
+      "expect": "confirm"
+    },
+    {
+      "name": "nom d'un membre avec trait d'union",
+      "query": "jean pierre dupont linkedin",
+      "expectReasons": [
+        "member_name"
+      ],
+      "expect": "confirm"
+    },
+    {
+      "name": "prénom seul de 3 lettres ignoré",
+      "query": "leo messi transfert",
+      "expectReasons": [],
+      "expect": "ok"
+    },
+    {
+      "name": "prénom de 2 lettres ignoré",
+      "query": "bo diddley guitare",
+      "expectReasons": [],
+      "expect": "ok"
+    },
+    {
+      "name": "prénom seul d'un nom à deux mots : pas de correspondance",
+      "query": "claire de lune debussy",
+      "expectReasons": [],
+      "expect": "ok"
+    },
+    {
+      "name": "passage et nom à la fois",
+      "query": "claire martin budget du projet helios est gele",
+      "expectReasons": [
+        "e2ee_passage",
+        "member_name"
+      ],
+      "expect": "confirm"
+    },
+    {
+      "name": "empreintes saturées : toute requête demande confirmation",
+      "query": "meteo paris demain",
+      "saturated": true,
+      "expectReasons": [
+        "guard_saturated"
+      ],
+      "expect": "confirm"
+    }
+  ],
+  "fetchGuardCases": [
+    {
+      "name": "chemin contenant un passage",
+      "pathAndQuery": "/search/le-budget-du-projet-helios-est-gele",
+      "decoded": "/search/le-budget-du-projet-helios-est-gele",
+      "expectReasons": [
+        "e2ee_passage"
+      ],
+      "expect": "confirm"
+    },
+    {
+      "name": "requête contenant l'e-mail encodé",
+      "pathAndQuery": "/u?mail=claire.martin%40exemple-interne.fr",
+      "decoded": "/u?mail=claire.martin@exemple-interne.fr",
+      "expectReasons": [
+        "e2ee_passage",
+        "e2ee_token",
+        "member_name"
+      ],
+      "expect": "confirm"
+    },
+    {
+      "name": "chemin neutre",
+      "pathAndQuery": "/wiki/Gestion_de_projet",
+      "decoded": "/wiki/Gestion_de_projet",
+      "expectReasons": [],
+      "expect": "ok"
+    }
+  ],
+  "provenance": {
+    "searchUrls": [
+      "https://fr.wikipedia.org/wiki/Gestion_de_projet",
+      "https://www.exemple.org/article?id=42"
+    ],
+    "userUrls": [
+      "https://docs.exemple.com/guide"
+    ],
+    "cases": [
+      {
+        "name": "URL rendue par la recherche",
+        "url": "https://fr.wikipedia.org/wiki/Gestion_de_projet",
+        "canonical": "https://fr.wikipedia.org/wiki/Gestion_de_projet",
+        "expect": "ok"
+      },
+      {
+        "name": "même URL, hôte en majuscules et port par défaut",
+        "url": "HTTPS://FR.Wikipedia.org:443/wiki/Gestion_de_projet",
+        "canonical": "https://fr.wikipedia.org/wiki/Gestion_de_projet",
+        "expect": "ok"
+      },
+      {
+        "name": "fragment retiré",
+        "url": "https://www.exemple.org/article?id=42#commentaires",
+        "canonical": "https://www.exemple.org/article?id=42",
+        "expect": "ok"
+      },
+      {
+        "name": "requête différente : autre URL",
+        "url": "https://www.exemple.org/article?id=43",
+        "canonical": "https://www.exemple.org/article?id=43",
+        "expect": "confirm",
+        "expectReasons": [
+          "url_provenance"
+        ]
+      },
+      {
+        "name": "URL écrite par l'utilisateur",
+        "url": "https://docs.exemple.com/guide",
+        "canonical": "https://docs.exemple.com/guide",
+        "expect": "ok"
+      },
+      {
+        "name": "URL inventée par le modèle avec une donnée en paramètre",
+        "url": "https://attaquant.example/?d=projet-helios",
+        "canonical": "https://attaquant.example/?d=projet-helios",
+        "expect": "confirm",
+        "expectReasons": [
+          "url_provenance"
+        ]
+      },
+      {
+        "name": "chemin différent par la casse : autre URL",
+        "url": "https://fr.wikipedia.org/WIKI/Gestion_de_projet",
+        "canonical": "https://fr.wikipedia.org/WIKI/Gestion_de_projet",
+        "expect": "confirm",
+        "expectReasons": [
+          "url_provenance"
+        ]
+      },
+      {
+        "name": "hôte international en punycode",
+        "url": "https://exämple.de/a",
+        "canonical": "https://xn--exmple-cua.de/a",
+        "expect": "confirm",
+        "expectReasons": [
+          "url_provenance"
+        ]
+      }
+    ]
+  },
+  "ssrfCases": [
+    {"name": "https public", "url": "https://www.exemple.org/page", "resolved": ["93.184.215.14"], "expect": "ok"},
+    {"name": "http port 80", "url": "http://www.exemple.org/page", "resolved": ["93.184.215.14"], "expect": "ok"},
+    {"name": "http sur le port 8080", "url": "http://www.exemple.org:8080/", "resolved": ["93.184.215.14"], "expect": "web_url_refused"},
+    {"name": "https sur le port 8443", "url": "https://www.exemple.org:8443/", "resolved": ["93.184.215.14"], "expect": "web_url_refused"},
+    {"name": "schéma ftp", "url": "ftp://www.exemple.org/", "expect": "web_url_refused"},
+    {"name": "schéma file", "url": "file:///etc/passwd", "expect": "web_url_refused"},
+    {"name": "identifiants dans l'URL", "url": "https://user:pw@www.exemple.org/", "expect": "web_url_refused"},
+    {"name": "IPv4 littérale publique", "url": "https://93.184.215.14/", "expect": "web_url_refused"},
+    {"name": "IPv6 littérale", "url": "https://[2606:2800:21f:cb07:6820:80da:af6b:8b2c]/", "expect": "web_url_refused"},
+    {"name": "localhost", "url": "https://localhost/", "expect": "web_url_refused"},
+    {"name": "suffixe .internal", "url": "https://wiki.corp.internal/", "expect": "web_url_refused", "note": "adresse ou nom privé volontaire, cas de refus (check-secrets:allow)"},
+    {"name": "suffixe .home.arpa", "url": "https://nas.home.arpa/", "expect": "web_url_refused", "note": "adresse ou nom privé volontaire, cas de refus (check-secrets:allow)"},
+    {"name": "suffixe .local", "url": "https://imprimante.local/", "expect": "web_url_refused"},
+    {"name": "suffixe .lan", "url": "https://routeur.lan/", "expect": "web_url_refused", "note": "adresse ou nom privé volontaire, cas de refus (check-secrets:allow)"},
+    {"name": "nom public qui résout vers 10.0.0.5", "url": "https://piege.exemple.org/", "resolved": ["10.0.0.5"], "expect": "web_url_refused", "note": "adresse ou nom privé volontaire, cas de refus (check-secrets:allow)"},
+    {"name": "nom public qui résout vers les métadonnées de nuage", "url": "https://piege.exemple.org/", "resolved": ["169.254.169.254"], "expect": "web_url_refused"},
+    {"name": "métadonnées IPv6", "url": "https://piege.exemple.org/", "resolved": ["fd00:ec2::254"], "expect": "web_url_refused"},
+    {"name": "CGNAT", "url": "https://piege.exemple.org/", "resolved": ["100.64.1.1"], "expect": "web_url_refused"},
+    {"name": "bouclage IPv6", "url": "https://piege.exemple.org/", "resolved": ["::1"], "expect": "web_url_refused"},
+    {"name": "ULA", "url": "https://piege.exemple.org/", "resolved": ["fc00::1"], "expect": "web_url_refused"},
+    {"name": "une adresse publique et une privée : refus", "url": "https://piege.exemple.org/", "resolved": ["93.184.215.14", "192.168.1.10"], "expect": "web_url_refused", "note": "adresse ou nom privé volontaire, cas de refus (check-secrets:allow)"},
+    {"name": "hôte de Synco configuré (API)", "url": "https://api.synco.example.com/api/health", "resolved": ["93.184.215.20"], "syncoHosts": ["api.synco.example.com", "cdn.synco.example.com"], "expect": "web_url_refused"},
+    {"name": "hôte de Synco, casse différente et point final", "url": "https://CDN.synco.example.com./x", "resolved": ["93.184.215.21"], "syncoHosts": ["api.synco.example.com", "cdn.synco.example.com"], "expect": "web_url_refused"},
+    {"name": "redirection vers une adresse privée : refus à l'étape 2", "url": "https://www.exemple.org/r", "resolved": ["93.184.215.14"], "redirects": [{"location": "https://piege.exemple.org/", "resolved": ["127.0.0.1"]}], "expect": "web_url_refused"},
+    {"name": "6 redirections", "url": "https://www.exemple.org/r0", "resolved": ["93.184.215.14"], "redirects": [{"location": "https://www.exemple.org/r1", "resolved": ["93.184.215.14"]}, {"location": "https://www.exemple.org/r2", "resolved": ["93.184.215.14"]}, {"location": "https://www.exemple.org/r3", "resolved": ["93.184.215.14"]}, {"location": "https://www.exemple.org/r4", "resolved": ["93.184.215.14"]}, {"location": "https://www.exemple.org/r5", "resolved": ["93.184.215.14"]}, {"location": "https://www.exemple.org/r6", "resolved": ["93.184.215.14"]}], "expect": "web_redirect_limit"},
+    {"name": "5 redirections : admis", "url": "https://www.exemple.org/r0", "resolved": ["93.184.215.14"], "redirects": [{"location": "https://www.exemple.org/r1", "resolved": ["93.184.215.14"]}, {"location": "https://www.exemple.org/r2", "resolved": ["93.184.215.14"]}, {"location": "https://www.exemple.org/r3", "resolved": ["93.184.215.14"]}, {"location": "https://www.exemple.org/r4", "resolved": ["93.184.215.14"]}, {"location": "https://www.exemple.org/r5", "resolved": ["93.184.215.14"]}], "expect": "ok"}
+  ],
+  "responseCases": [
+    {
+      "name": "HTML",
+      "contentType": "text/html; charset=utf-8",
+      "contentEncoding": null,
+      "size": 50000,
+      "expect": "ok"
+    },
+    {
+      "name": "JSON",
+      "contentType": "application/json",
+      "contentEncoding": null,
+      "size": 1000,
+      "expect": "ok"
+    },
+    {
+      "name": "PDF",
+      "contentType": "application/pdf",
+      "contentEncoding": null,
+      "size": 1000,
+      "expect": "web_unsupported_type"
+    },
+    {
+      "name": "corps compressé gzip",
+      "contentType": "text/html",
+      "contentEncoding": "gzip",
+      "size": 1000,
+      "expect": "web_unsupported_type"
+    },
+    {
+      "name": "corps de 2 Mio exactement",
+      "contentType": "text/plain",
+      "contentEncoding": null,
+      "size": 2097152,
+      "expect": "ok"
+    },
+    {
+      "name": "corps de 2 Mio + 1 octet",
+      "contentType": "text/plain",
+      "contentEncoding": null,
+      "size": 2097153,
+      "expect": "web_too_large"
+    }
+  ],
+  "searchBodyCases": [
+    {
+      "name": "requête de 2 caractères",
+      "body": {
+        "query": "ia"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "requête d'1 caractère",
+      "body": {
+        "query": "a"
+      },
+      "expect": "web_bad_request"
+    },
+    {
+      "name": "requête de 200 caractères",
+      "body": {
+        "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expect": "ok"
+    },
+    {
+      "name": "requête de 201 caractères",
+      "body": {
+        "query": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expect": "web_bad_request"
+    },
+    {
+      "name": "count 11",
+      "body": {
+        "query": "meteo",
+        "count": 11
+      },
+      "expect": "web_bad_request"
+    },
+    {
+      "name": "lang de 3 lettres",
+      "body": {
+        "query": "meteo",
+        "lang": "fra"
+      },
+      "expect": "web_bad_request"
+    },
+    {
+      "name": "champ inconnu (localisation)",
+      "body": {
+        "query": "meteo",
+        "city": "Paris"
+      },
+      "expect": "web_bad_request"
+    },
+    {
+      "name": "freshness inconnu",
+      "body": {
+        "query": "meteo",
+        "freshness": "hour"
+      },
+      "expect": "web_bad_request"
+    }
+  ]
+}

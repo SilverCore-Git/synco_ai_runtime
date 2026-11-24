@@ -15,6 +15,7 @@
 
 pub mod agent;
 pub mod api;
+pub mod artifact;
 pub mod entry;
 pub mod events;
 pub mod keys;

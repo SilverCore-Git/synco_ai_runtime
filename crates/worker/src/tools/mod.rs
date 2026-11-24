@@ -105,6 +105,10 @@ pub fn llm_tools(specs: &[ToolSpec], policy: &BTreeMap<String, ToolPolicy>, plan
         .filter(|s| executable(s) && policy.get(&s.name) != Some(&ToolPolicy::Deny) && !hidden_by_plan(s))
         .map(|s| ToolDef { name: s.name.clone(), description: s.description.clone(), parameters: s.parameters.clone() })
         .collect();
+    // `send_file` (13 §2.5) : propre au worker, hors plan ; `deny` seul le retire.
+    if policy.get(crate::artifact::SEND_FILE) != Some(&ToolPolicy::Deny) {
+        out.push(crate::artifact::tool_def());
+    }
     if plan.is_some() {
         out.push(crate::plan::tool_def());
     }
@@ -297,13 +301,13 @@ mod tests {
         assert_eq!(specs.len(), 5);
         let policy = BTreeMap::from([("list_spaces".to_owned(), ToolPolicy::Deny)]);
         let names: Vec<_> = llm_tools(&specs, &policy, None).into_iter().map(|t| t.name).collect();
-        assert_eq!(names, ["create_task", "ask_question", "search_messages"]);
+        assert_eq!(names, ["create_task", "ask_question", "search_messages", "send_file"]);
         // Plan d'action : les outils mutants `ask` et ceux d'appareil disparaissent, `propose_actions`
         // arrive ; `deny` n'est jamais proposé.
         let plan =
             |mode| -> Vec<String> { llm_tools(&specs, &policy, Some(mode)).into_iter().map(|t| t.name).collect() };
-        assert_eq!(plan(PlanMode::Plan), ["ask_question", "search_messages", "propose_actions"]);
-        assert_eq!(plan(PlanMode::Auto), ["ask_question", "search_messages", "propose_actions"]);
+        assert_eq!(plan(PlanMode::Plan), ["ask_question", "search_messages", "send_file", "propose_actions"]);
+        assert_eq!(plan(PlanMode::Auto), ["ask_question", "search_messages", "send_file", "propose_actions"]);
         let get = |n: &str| specs.iter().find(|s| s.name == n);
         assert_eq!(decide(get("create_task"), &BTreeMap::new()), Decision::AskConfirmation);
         assert_eq!(

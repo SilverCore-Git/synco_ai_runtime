@@ -100,6 +100,16 @@ impl Emitter {
         .await
     }
 
+    /// Trame `artifact` (13 §6.1) : identifiants seulement, émise après le dépôt.
+    pub async fn artifact(&mut self, message_id: &str, tool_call_id: &str, artifact_id: &str) -> Result<(), EmitError> {
+        let seq = self.next();
+        self.send(
+            seq,
+            json!({ "t": "artifact", "messageId": message_id, "toolCallId": tool_call_id, "artifactId": artifact_id }),
+        )
+        .await
+    }
+
     /// Résultat d'un outil (message `tool` d'id `message_id`).
     pub async fn tool_result(
         &mut self,

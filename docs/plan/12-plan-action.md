@@ -221,8 +221,8 @@ s'ajoutent à la liste fermée du §4 ; les lots L15 n'ajoutent ensuite que des 
 
 | `kind` | Outil | `args` (strict) | Risque | Exécutant, mode plan | Exécutant, mode autonome | Champs exportés | Clé ajoutée |
 |---|---|---|---|---|---|---|---|
-| `message.send` | `send_message`, `forward_message` | `threadId` (id) ; `text` (1 à 8 000, ou 0 à 2 000 avec `forwardOf`) ; `replyTo?` (id) ; `mentionUserIds?` (0 à 50 id distincts) ; `fileIds?` (0 à 10 id distincts) ; `forwardOf?` (id du message transféré) | `R1` | appareil | **runtime** si ni `fileIds` (non vide) ni `forwardOf` ; sinon appareil | `id`, `threadId` | aucune |
-| `message.edit` | `edit_message` | `messageId` (id), `text` (1 à 8 000) | `R2` | appareil | **runtime** si le message visé est écrit par l'agent en mode autonome (auteur `rt1:` d'une délégation de ce même utilisateur vers ce runtime, §4.3) ou si `messageId` vient par `argsRefs` d'un `message.send` d'exécutant agent ; sinon appareil | `id`, `threadId` | aucune |
+| `message.send` | `send_message`, `forward_message` | `threadId` (id) ; `text` (1 à 8 000, ou 0 à 2 000 avec `forwardOf`) ; `replyTo?` (id) ; `mentionUserIds?` (0 à 50 id distincts) ; `fileIds?` (0 à 10 id distincts) ; `forwardOf?` (id du message transféré) | `R1` | appareil | **runtime** si ni `fileIds` (non vide) ni `forwardOf`, et si `argsRefs` ne porte que `threadId` ou `replyTo` (PC94, §10.7 : jamais `text`) ; sinon appareil | `id`, `threadId` | aucune |
+| `message.edit` | `edit_message` | `messageId` (id), `text` (1 à 8 000) | `R2` | appareil | **runtime** si le message visé est écrit par l'agent en mode autonome (auteur `rt1:` d'une délégation de ce même utilisateur vers ce runtime, §4.3) ou si `messageId` vient par `argsRefs` d'un `message.send` d'exécutant agent ; et dans les deux cas `argsRefs` ne porte que `messageId` (PC94, §10.7) ; sinon appareil | `id`, `threadId` | aucune |
 | `dm.send` | `send_dm` | `peerId` (id), `text` (1 à 8 000), `fileIds?` (0 à 10) | `R1` | appareil | appareil (EX-13 : aucune clé de MP n'est déléguée, 03 §2) | `id`, `peerId` | aucune |
 | `dm.edit` | `edit_dm` | `dmMessageId` (id), `text` (1 à 8 000) | `R2` | appareil | appareil | `id` | aucune |
 | `file.update_text` | `update_text_file` | `fileId` (id), `content` (chaîne, ≤ 262 144 caractères ; le plan entier reste ≤ 256 Kio, §5 règle 3), `baseVersion` (1 à 100 caractères, valeur rendue par `read_file`) | `R2` | appareil | appareil (CDN, PC6) | `id`, `spaceId` | aucune |
@@ -255,8 +255,8 @@ le worker **abandonne** l'action avec `key_unavailable` (§8.3, PC74) ; la casca
 
 | `kind` | Route | Signature |
 |---|---|---|
-| `message.send` | `POST /api/runtime/v1/e2ee/threads/:threadId/messages` | `iv` `m3` d'auteur `rt1:<delegationId>`, signé par la `csk` du runtime (PC35 : **jamais** la clé de l'utilisateur) |
-| `message.edit` | `PATCH /api/runtime/v1/e2ee/messages/:messageId` | idem, `rev` + 1 |
+| `message.send` | `POST /api/runtime/v1/e2ee/threads/:threadId/messages` | `iv` `m3` d'auteur `rt1:<delegationId>`, signé par la `csk` du runtime (PC35 : **jamais** la clé de l'utilisateur) ; septième partie `td` = déclaration du texte signée par l'utilisateur à la décision (PC94, §10.7) |
+| `message.edit` | `PATCH /api/runtime/v1/e2ee/messages/:messageId` | idem (déclaration `kind = message.edit`), `rev` + 1 |
 | `thread.add_members` | `POST /api/runtime/v1/e2ee/threads/:threadId/members` | clé du salon scellée par le worker pour chaque membre (annuaire `GET /e2ee/members/keys`, épinglage du superviseur 06 §4.3) ; enveloppe FC4 de la `ThreadKey` reprise telle quelle |
 
 **Codes d'échec d'une action** (`code` d'un `outcome` `failed`, §9, en plus des codes d'abandon) :
@@ -282,9 +282,15 @@ author  = "ai"                     écrit par l'agent, envoyé par l'appareil, s
                                    ECDSA P-256 de l'utilisateur (comme m2)
         | "rt1:" delegationId      écrit et envoyé par le runtime en mode autonome, signé par sa csk
 rev     = entier décimal ≥ 0, sans zéro de tête (0 = jamais modifié)
+td      = "td1:" b64u ":" b64u   septième partie, auteur rt1: seulement (PC94, §10.7) :
+                                   iv = "m3." ivB64 "." clientMsgId "." author "." signatureB64 "." rev "." td
 aad     = utf8("synco-msg-v3|" threadId "|" senderId "|" clientMsgId "|" author "|rev:" rev)
 signé   = utf8("synco-sig-v2|thread|" threadId "|" senderId "|" clientMsgId "|" author "|" ivB64 "|" ciphertextB64 "|rev:" rev)
+          || utf8("|" td)          seulement si td est présent (la csk couvre la déclaration : l'ôter casse la signature)
 ```
+
+Une septième partie n'est permise qu'avec un auteur `rt1:` et le préfixe `td1:` (`invalid_format` sinon) ; avec `td`, le
+clair est l'enveloppe `{ salt, text }` du §10.7, sans `td` le texte brut. L'AAD ne change pas.
 
 **Format `d3` (MP)**, auteur `ai` seulement (aucune MP en mode autonome) :
 
@@ -306,6 +312,10 @@ l'a écrit.
 | `ai` | signature non vide, vérifiée avec la clé d'identité de `senderId` (`verifyWithSignKeys`) | comme `m2` : `verified`, `unsigned` (clé ancienne sans preuve), `invalid` ; signature vide → `invalid` |
 | `rt1:<d>` | mandat de `d` servi par `GET …/ai/runtime/delegations/:d/mandate` et vérifié comme en 03 §10, étapes 1 à 3 ; `mandate.userId = senderId` ; `mandate.orgId` = org du salon ; signature vérifiée avec la `csk` du certificat | mandat v2 `auto` : `verified` ; v2 `plan` : `invalid` ; v1 : `unsigned` avec avertissement (même règle que `rt1Policy`, §10.2) ; tout autre écart : `invalid` |
 
+Pour un auteur `rt1:` dont l'état n'est pas `invalid`, le lecteur vérifie **en plus** la déclaration du texte (§10.7) :
+`text_verified`, ou `text_unverified` (déclaration absente, fausse, cible ou texte différent) → message **affiché**
+avec un avertissement visible, jamais masqué (PC94).
+
 Un mandat expiré ou révoqué depuis reste valable pour un message écrit pendant sa validité (même règle
 que 03 §10). Un message `invalid` est masqué comme aujourd'hui ; le rejeu est détecté par
 `noteMessageRevision` avec la même clé que `m2`.
@@ -323,7 +333,8 @@ runtime dans **cette** org (`409 not_agent_message` sinon, 04 §4.3).
 
 **Contrôles de l'API** (elle lit seulement le préfixe et `author`, jamais le contenu) : sur le canal du
 runtime, `iv` doit être `m3` d'auteur `rt1:<délégation de l'autorisation>` (`400 invalid_body` sinon : le
-runtime ne peut pas écrire un message qui se présenterait comme humain) ; sur les sockets de
+runtime ne peut pas écrire un message qui se présenterait comme humain), avec la septième partie `td` égale à la
+déclaration rangée à la décision (`403 action_not_accepted` sinon, §10.7) ; sur les sockets de
 l'utilisateur, un `author` `rt1:` est refusé (`400`). `ai` est libre côté utilisateur : c'est une mention
 d'honnêteté de son propre appareil, pas une garantie contre lui.
 
@@ -577,9 +588,10 @@ porter `plan: { planId, n }`. L'API vérifie, sinon **`403 action_not_accepted`*
    L'appel du runtime porte `plan`, `target` (non résolue), `argsRefs?` et `refs?` ; l'API vérifie le
    condensat et les `refs` comme au point 4, puis exige que `target ∪ refs` **égale** la cible réelle de la
    requête (`:threadId` ou `:messageId` du chemin, `replyToId` et l'ensemble des `userIds` du corps), sinon
-   `403 action_not_accepted`. L'app recalcule ces empreintes à la décision (PC69, §12.1). **Non couvert** :
-   le texte du message (risque accepté, §10.6) ; il reste signé par la `csk` du runtime et marqué « avec
-   Synco AI · mode autonome » (§4.3).
+   `403 action_not_accepted`. L'app recalcule ces empreintes à la décision (PC69, §12.1). **Texte** (`message.send`, `message.edit`,
+   PC94) : l'API ne le voit pas, mais exige dans le `iv` la déclaration signée par l'utilisateur à la décision,
+   identique octet pour octet à celle qu'elle a rangée (`403 action_not_accepted` sinon) ; chaque lecteur la
+   vérifie (§10.7).
 
 Un `refs` mal formé (valeur non chaîne, clé dans `args`) est `400 invalid_body`. Un outil `auto`
 n'exige rien (un `plan` fourni est alors contrôlé de la même façon) ; `deny` reste refusé avant tout
@@ -776,13 +788,147 @@ toujours, le mandat `auto` doit être en vigueur, et la création reste tracée 
 `plan_action`). **Accepté par l'utilisateur (PC57)** ; à revoir si `thread.create` entre un jour dans
 `serverDigests`. Repris dans la liste des risques (§15).
 
-**Extension (L00i, à ratifier par l'utilisateur).** Pour `message.send`, `message.edit` et
-`thread.add_members` exécutés par le runtime, la **cible** (salon, message, membres ajoutés) est couverte
-par le condensat (§8.4, point 6), mais pas le **texte** d'un message : l'API ne le voit pas, et l'app ne
-peut pas le comparer avant l'envoi. Un runtime fautif pourrait écrire, dans le salon accepté, un autre
-texte que celui du plan. Il resterait signé par sa `csk`, marqué « avec Synco AI · mode autonome » et
-tracé (`plan_action`) ; l'utilisateur peut le comparer au plan (bilan). Même nature que PC57 : le mode
-autonome confie déjà au runtime les clés des salons délégués.
+**Extension écartée (L00i → PC94).** L00i proposait d'accepter, pour `message.send` et `message.edit` exécutés par
+le runtime, un texte non couvert (seule la cible l'est, §8.4 point 6). L'utilisateur a refusé ce risque (PC94) : le
+texte est engagé par sa signature à la décision et vérifié par chaque lecteur (§10.7). `thread.add_members` n'a pas
+de texte : sa cible (salon, membres) reste couverte par le condensat.
+
+### 10.7 Texte d'un message autonome signé par l'utilisateur (L00j, PC94, 2026-11-24)
+
+Remplace le risque « texte non couvert » que L00i proposait d'accepter (§10.6). Le texte d'un `message.send` ou
+d'un `message.edit` exécuté par le runtime est **engagé par l'utilisateur** à la décision : l'app signe, avec la
+clé de signature d'identité de l'utilisateur (ECDSA P-256, celle du mandat, 03 §4), une **déclaration** qui couvre
+l'action et une empreinte salée du texte exact ; le runtime la joint au message ; l'API en contrôle la présence ;
+chaque lecteur la vérifie. Un écart n'est **jamais** silencieux : le message reste affiché, avec un avertissement
+visible. Vecteurs : `text-declaration.json`.
+
+**Texte engagé.** C'est le texte **final** du message, celui que le lecteur affiche après déchiffrement : `args.text`
+après la conversion des `mentionUserIds` en jetons de référence (§4.2). Cette conversion est une fonction pure et
+déterministe `agentMessageText(args)`, fixée par L15f et rejouée par L15-rt (mêmes vecteurs) ; sans `mentionUserIds`,
+elle rend `args.text` tel quel. **Aucune normalisation** : ni Unicode (NFC et NFD donnent deux empreintes), ni fins de
+ligne, ni espaces. Encodage : UTF-8 de la chaîne (un texte qui n'est pas de l'UTF-16 bien formé rend le plan invalide,
+§5, comme JCS).
+
+**Sel et empreinte.** L'API voit la déclaration ; une empreinte nue d'un texte court se devinerait. Elle est donc salée,
+avec un sel que l'API ignore et que l'app et le worker calculent tous deux sans rien échanger :
+
+```
+sel        = HKDF-SHA256(ikm = CK (32 octets bruts), salt = vide, info = utf8("synco-text-salt-v1|" sessionId "|" planId "|" n), L = 32)
+textCommit = hex(SHA-256(utf8("synco-text-commit-v1|") || sel || utf8(texte)))
+```
+
+`CK` est la clé de la conversation (03 §6) : le propriétaire et le runtime de sa délégation la détiennent, l'API non.
+Le sel ne révèle rien de `CK` et voyage ensuite vers les lecteurs **dans la partie chiffrée** du message.
+
+**Déclaration** (objet JCS, §3.3) :
+
+```json
+{ "v": 1, "orgId": "<org>", "userId": "<utilisateur>", "planId": "<planId>", "n": 1,
+  "kind": "message.send", "target": { "threadId": "<id>" }, "textCommit": "<64 hex>" }
+```
+
+| Champ | Règle |
+|---|---|
+| `v` | `1` |
+| `orgId`, `userId` | org du plan, propriétaire (le signataire) |
+| `planId`, `n` | l'action |
+| `kind`, `target`, `argsRefs?` | **exactement** l'objet dont `serverDigests[n]` est l'empreinte (§8.4 point 6) : `SHA-256(JCS({ kind, target, argsRefs }))` = `serverDigests[n]` ; `argsRefs` omis s'il est absent |
+| `textCommit` | ci-dessus, 64 caractères hexadécimaux minuscules |
+
+```
+signé     = utf8("synco-text-decl-v1|") || utf8(JCS(déclaration))
+signature = ECDSA-P256-SHA256(clé de signature d'identité de l'utilisateur, signé)   (P1363, 64 octets)
+td        = "td1:" b64u(utf8(JCS(déclaration))) ":" b64u(signature)                (b64u sans remplissage)
+```
+
+Le préfixe `synco-text-decl-v1` sépare ces octets du mandat, des messages `m2`/`m3` et des enveloppes `rt1` : une
+signature ne se rejoue pas d'un usage à l'autre.
+
+**Où elle est portée : à côté du chiffré, en clair, dans le `iv`.** Un message `m3` d'auteur `rt1:` reçoit une
+**septième partie** `td` (§4.3), couverte par la signature `csk` du message. Choix : l'API doit pouvoir contrôler la
+présence et la cohérence sans rien déchiffrer, et le `iv` traverse déjà sans changement toutes les routes, listes,
+diffusions et modifications (aucune colonne nouvelle sur `Message`). Le sel, lui, est **dans** le chiffré : un
+message `m3` `rt1:` porteur de `td` a pour clair `utf8(JCS({ "salt": "<64 hex>", "text": "<texte final>" }))`
+(exactement ces deux clés, sel en hexadécimal minuscule). Sans `td`, le clair reste le texte brut.
+
+**Déroulé.**
+
+1. **Création** (worker, §3) : rien ne change dans le plan ; le worker fixe l'exécutant (règle 4 ci-dessous).
+2. **Décision** (app, PC69, §12.1) : pour chaque `message.send` / `message.edit` accepté d'exécutant agent, l'app
+   calcule le texte final depuis le plan **déchiffré**, le sel, l'empreinte, et signe la déclaration ; le corps de la
+   décision porte `textDeclarations: [{ n, value: td }]`. L'utilisateur accepte donc ce texte-là, et rien d'autre.
+   Une clé de signature indisponible sur l'appareil empêche d'accepter l'action comme action d'agent.
+3. **Contrôle à la décision** (API) : forme de `td`, une entrée au plus par `n`, `n` accepté et d'exécutant agent
+   (`400 invalid_body` sinon) ; `orgId`, `userId`, `planId`, `n` égaux à ceux du plan et de l'appelant, et
+   `SHA-256(JCS({ kind, target, argsRefs }))` de la déclaration égal à `serverDigests[n]` (`409 plan_digest_mismatch`
+   sinon, rien n'est écrit). L'API **ne vérifie pas** la signature (elle ne vérifie aucune signature d'utilisateur,
+   03 §12) : c'est le rôle des lecteurs. `td` est rangé dans `AiActionPlanAction.textDeclaration` (07 §10), effacé à
+   la clôture du plan comme `output` (PC56), et servi dans la `PlanView` (`actions[].textDeclaration`).
+4. **Exécution** (worker) : le worker relit `textDeclaration` dans la `PlanView`, recalcule le texte final, le sel et
+   l'empreinte, et compare à la déclaration ; absente ou différente → abandon `action_not_accepted` (§8.3, PC74,
+   cascade PC54). Sinon il chiffre l'enveloppe `{ salt, text }`, ajoute `td` comme septième partie du `iv` et signe
+   le tout avec sa `csk` (§4.3).
+5. **Contrôle à l'exécution** (API, verrou du §8.4 point 6, canal du runtime) : la septième partie du `iv` doit
+   exister et être **octet pour octet** la `textDeclaration` rangée pour `(planId, n)`, sinon
+   `403 action_not_accepted`. La cohérence avec la cible réelle découle du condensat (§8.4 point 6).
+6. **Lecture** (chaque lecteur, après les contrôles `m3` du §4.3 ; voir ci-dessous).
+
+**Vérification par le lecteur** (seulement pour un `m3` d'auteur `rt1:` dont l'état `m3` n'est pas `invalid`) :
+
+1. `td` absent (ancien format L00i) → `text_unverified`, raison `absent`.
+2. Déclaration lisible : `b64u` valide, JSON dont la sérialisation JCS redonne **les mêmes octets**, `v = 1`, champs
+   et types ci-dessus, `kind` ∈ `message.send`, `message.edit` → sinon `invalid_declaration`.
+3. Expéditeur supprimé ou sans clé de signature servie → `signer_unavailable` (contrôlé d'abord) ;
+   puis `userId = senderId` → sinon `signer_mismatch`. Les contrôles s'appliquent dans l'ordre : la première
+   raison trouvée est retenue (vecteurs `readerCases`).
+4. Cible : `orgId` = org du salon ; `kind = message.send` si `rev = 0`, `message.edit` si `rev ≥ 1` (sinon
+   `kind_mismatch`) ; pour chaque champ de `target` : `threadId` = salon du message, `replyTo` = `replyToId` du
+   message, `messageId` = id du message ; un `replyTo` absent de `target` **et** d'`argsRefs` exige `replyToId` nul →
+   sinon `target_mismatch`. Un champ venu par `argsRefs` n'est pas recontrôlé par le lecteur : l'API l'a confronté à
+   sa sortie enregistrée (§8.4 points 4 et 6).
+5. Signature vérifiée avec les clés de signature de `senderId` (`verifyWithSignKeys`, comme `m2` et le mandat) :
+   `trusted` → suite ; clé ancienne sans preuve → l'état final est au mieux `unsigned` ; échec → `bad_signature`.
+6. Clair : enveloppe stricte `{ salt, text }` → sinon `invalid_envelope` (le clair brut est affiché).
+7. `textCommit` recalculé depuis `salt` et `text` = celui de la déclaration → sinon `text_mismatch`.
+8. Rejeu : une même `(planId, n)` déjà vue sur un **autre** `clientMsgId` du salon (fenêtre chargée, comme
+   `findReplayedMessages`) → le plus récent est `text_unverified`, raison `replayed`.
+
+Tout passe → `text_verified`. Les raisons sont internes (journal, vecteurs) ; l'utilisateur voit un seul
+avertissement.
+
+**Affichage (PC94).** `text_verified` : la mention « avec Synco AI · mode autonome » du §4.3, sans plus.
+`text_unverified` : le message est **affiché** (texte de l'enveloppe, ou clair brut si l'enveloppe est illisible),
+jamais masqué, avec sous la mention un avertissement visible de la même famille que celui d'un message `unsigned`,
+couleur d'alerte : « Texte non confirmé par <nom> : il peut différer de ce qu'il a accepté ». La règle « un message
+`invalid` est masqué » (§4.3) ne change pas : elle vise la signature `csk` et le mandat, pas le texte. Aperçus : la
+même marque d'avertissement. La recherche locale indexe le texte affiché.
+
+**Règles d'exécution (§4.2).**
+
+- **Texte dépendant d'une autre action** : un `message.send` ou `message.edit` dont `argsRefs` porte autre chose que
+  des champs de cible (`threadId`, `replyTo` pour `message.send` ; `messageId` pour `message.edit`), par exemple
+  `text`, est **toujours exécuté par l'appareil** : l'app ne peut pas engager à la décision un texte qu'elle ne connaît
+  pas. Le worker et l'appareil appliquent la même fonction d'exécutant (§5, règle 8).
+- **`message.edit` autonome** : même mécanisme, `kind = message.edit`, `target = { messageId }` ou `argsRefs`, sel de
+  sa propre action. Une retouche à la main d'un message de l'agent reste une révision `m3` `ai` signée par
+  l'utilisateur (§4.3), sans déclaration.
+
+**Clés de l'utilisateur.** Rotation : la déclaration reste vérifiable par la chaîne de transitions d'identité
+(`verifyWithSignKeys`) ; une déclaration signée **avant** la rotation reste `text_verified`. Réinitialisation sans
+chaîne (perte des clés) : la clé ancienne n'a plus de preuve → l'état est au mieux `unsigned` (avertissement habituel),
+comme les messages `m2` de cette période. Utilisateur supprimé : ses clés ne sont plus servies → `text_unverified`
+(`signer_unavailable`), message affiché avec l'avertissement ; le contrôle du mandat (§4.3) suit la règle existante
+des auteurs supprimés, que L15f relève et documente.
+
+**Rétrocompatibilité.** L'app lit `m3` `rt1:` à six parties (L00i, aucun n'est écrit en production avant L15-rt) et
+l'affiche avec l'avertissement (`absent`) ; `m2`, `m3` `ai` et l'ancien `iv` ne sont pas concernés. Le runtime
+n'écrit **que** la forme à sept parties ; l'API la rend obligatoire sur le canal du runtime. La version minimale de
+l'app relevée par L15f (§4.3) couvre aussi la lecture de `td`.
+
+**Ce que la déclaration ne couvre pas** : les pièces jointes et le transfert (déjà exécutés par l'appareil, §4.2) ;
+l'heure d'envoi ; le fait que le runtime envoie bien le message (il peut ne pas l'envoyer : l'action reste alors
+`pending` puis expire, visible au bilan). Un message `text_verified` dit seulement : « ce texte, dans cette cible, a été
+accepté par cet utilisateur pour cette action de ce plan ».
 
 ## 11. Politiques d'org des fonctionnalités IA (PC36, PC39, PC42)
 
@@ -897,7 +1043,7 @@ comme les autres. Lecture : `GET /ai/feature-policies/:feature/events` (U-admin)
 | Méthode et chemin | Auth | Corps | Succès | Refus |
 |---|---|---|---|---|
 | `GET /plans/:planId` | U-prop | — | `200 PlanView` | `404 not_found` |
-| `POST /plans/:planId/decision` | U-prop | `{ "decision": "accept", "accepted": [1,3,4,5], "serverDigests": [{ "n": 3, "sha256Hex": "<hex>" }] }` ou `{ "decision": "reject", "reason"?: "plan_invalid" }` | `200 PlanView` ; même décision rejouée : `200` | `400 invalid_body` (`accepted` vide, hors `1..actionCount`, doublon), `404 not_found`, `409 plan_not_pending` (déjà décidé autrement, expiré), `409 not_runtime`, `409 plan_digest_mismatch` (PC69) |
+| `POST /plans/:planId/decision` | U-prop | `{ "decision": "accept", "accepted": [1,3,4,5], "serverDigests": [{ "n": 3, "sha256Hex": "<hex>" }], "textDeclarations"?: [{ "n": 4, "value": "td1:…" }] }` (PC94, §10.7) ou `{ "decision": "reject", "reason"?: "plan_invalid" }` | `200 PlanView` ; même décision rejouée : `200` | `400 invalid_body` (`accepted` vide, hors `1..actionCount`, doublon), `404 not_found`, `409 plan_not_pending` (déjà décidé autrement, expiré), `409 not_runtime`, `409 plan_digest_mismatch` (PC69) |
 | `POST /plans/:planId/claim` | U-prop | `{ "deviceId": "<id>", "phase": <k> }` | `200 { phase, claimExpiresAt }` (prise ou prolongation) | `404`, `409 plan_claimed` (autre appareil, claim valide), `409 plan_phase_mismatch` (`k` ≠ phases d'appareil closes + 1, ou aucune action d'appareil prête), `409 plan_not_claimable` (statut ∉ `accepted`, `executing`, ou `expiresAt` passé) |
 | `POST /plans/:planId/progress` | U-prop | `{ "deviceId", "n", "state": "executing" \| "done" \| "failed" }` | `200 PlanView` (claim prolongé) ; même état rejoué : `200` (§8.7) | `400 invalid_body` (action d'agent, `n` hors plage), `404`, `409 plan_claim_lost`, `409 plan_phase_mismatch` (action non prête), `409 plan_not_executing` (`executing` après `expiresAt` ou arrêt), `409 action_state_conflict`, `409 action_output_missing` (`done` sans sortie enregistrée, §8.5) |
 | `POST /plans/:planId/stop` | U-prop | `{}` | `200 PlanView` (plan `stopped`, §8.6) ; rejeu : `200` | `404`, `409 plan_not_executing` (statut ∉ `accepted`, `executing`, `stopped`) ; un plan `proposed` se refuse par `decision` |
@@ -912,11 +1058,20 @@ la décision en `409 plan_digest_mismatch` (corps `{ "error": "plan_digest_misma
 action acceptée qui n'est pas un `server.call` n'a pas d'empreinte ; `reject` n'en porte pas (`400 invalid_body`).
 `serverDigests` est exposé dans la `PlanView` (`{ "<n>": "<hex>" }`) pour que l'app compare à ce qu'elle recalcule.
 
+**PC94 — `textDeclarations` de la décision.** Pour chaque `message.send` / `message.edit` accepté d'exécutant agent,
+l'app joint la déclaration signée du texte (§10.7). L'API contrôle la forme et la cohérence avec le plan et
+`serverDigests[n]` (`400 invalid_body` : forme, doublon, `n` non accepté ou d'exécutant `device` ; `409
+plan_digest_mismatch` : `orgId`, `userId`, `planId`, `n` ou empreinte de `{ kind, target, argsRefs }` différents),
+sans vérifier la signature, et la range dans `AiActionPlanAction.textDeclaration`. Une action sans déclaration est
+acceptée, mais le runtime ne pourra pas l'exécuter (`403 action_not_accepted`, §8.4 point 6) : l'app à jour en
+fournit toujours une. `reject` n'en porte pas (`400 invalid_body`).
+
 `PlanView` = `{ planId, sessionId, toolCallId, status, actionCount, serverDigests, createdAt, expiresAt, decidedAt,
 devicePhases, agentPhases, claim: { deviceId, phase, expiresAt } | null, actions: [{ n, executor, after,
-level, ready, state, output }], agentResults: [{ phase, value }] }` (dates ISO 8601 ; `executor` ∈
+level, ready, state, output, textDeclaration }], agentResults: [{ phase, value }] }` (dates ISO 8601 ; `executor` ∈
 `device`, `agent` ; `devicePhases` / `agentPhases` = phases closes ; `output` = sortie enregistrée,
-§8.5, `null` après la clôture du plan, PC56) ; **aucun contenu en clair** : le plan se lit dans
+§8.5, `null` après la clôture du plan, PC56 ; `textDeclaration` = `td` de la décision ou `null`, effacé à la
+clôture comme `output`, §10.7) ; **aucun contenu en clair** : le plan se lit dans
 `pendingToolCall` (§3.4), les `agentResults` sont chiffrés (§9). `deviceId` : identifiant 00 §3.2 tiré
 par l'appareil, opaque pour l'API. Effets de la décision, dans une transaction : `updateMany`
 conditionné à `status = proposed`, `decidedAt`, états `skipped` (avec la cascade), dépôt de
@@ -1049,9 +1204,14 @@ après la livraison ; le texte qui en dépendait (« provisoire ») est réécri
 | **PC70** | Un `cancel` de la conversation pendant un plan accepté vaut `stop` du plan : plus de nouvelle action, les `executing` vont à leur terme, bilan, messages plus retenus après l'arrêt | §7.1, §8.6 |
 | **PC74** | Le worker déclare les **abandons** d'actions d'agent jamais parties dans `agent-result` (`abandoned`, codes en liste fermée) au lieu de clore en `plan_aborted` ; l'API les applique avant le contrôle des actions occupées, seulement `pending` accepté vers `failed` / `unknown_outcome`, rejeu idempotent ; `value` facultatif si le plan devient terminal | §8.3, §8.7, §9, §12.2, §14 |
 
+### Signature du texte autonome (PC94, L00j, 2026-11-24)
+
+| Décision | Contenu | Où |
+|---|---|---|
+| **PC94** | Le risque « texte d'un message autonome non couvert » proposé par L00i est **refusé**. Le texte d'un `message.send` / `message.edit` exécuté par le runtime est engagé à la décision par une déclaration signée par l'utilisateur (empreinte salée du texte final, cible, action), jointe au message dans le `iv` (septième partie `td`, couverte par la `csk`), présence et égalité contrôlées par l'API, vérifiée par chaque lecteur ; texte dépendant d'une autre action → appareil ; échec → message **affiché avec avertissement** | §4.2, §4.3, §8.4, §10.6, §10.7, §12.1 ; 04 §4.3 ; 07 §10 |
+
 **Risques acceptés** : (1) références du `thread.create` autonome non recontrôlées par l'API (PC57,
-§10.6) ; (1 bis, L00i, à ratifier) texte d'un `message.send` / `message.edit` autonome non couvert par le
-condensat, la cible l'étant (§8.4 point 6, §10.6) ; (2) pendant un plan, l'API sait quel objet créé correspond à quelle action (métadonnée sans
+§10.6) ; (1 bis, L00i) **retiré** par PC94 (§10.7) : le texte d'un message autonome est signé par l'utilisateur ; (2) pendant un plan, l'API sait quel objet créé correspond à quelle action (métadonnée sans
 contenu, effacée à la clôture, PC47, PC56) ; (3) condensat d'une action refusée devinable si ses
 arguments ont peu d'entropie (C1 §2.3).
 
@@ -1063,10 +1223,10 @@ arguments ont peu d'entropie (C1 §2.3).
 | L03g | §7, §8.1 (actions prêtes), §8.4 à §8.7, §9, §10.4, §12.1, §12.2, 07 §3, §5, §10 (`AiActionPlan`) ; vecteurs : condensats, `executeCases`, `runCases`, `categoryPlan`, `validationCases` pour la forme vue par l'API |
 | L03h | §11, §12.3, 07 §10 (politiques, purge du journal), 03 §8.1 (`autonomy_withdrawn`) |
 | L08d | §2, §3 (dont la description de l'outil), §5, §7.3, §8.1, §8.3, §8.6, §8.7, §10.3 ; `propose_actions`, reprise après chaque phase, exécution parallèle, `agent-result`, `refs`, `created_key` / `repose` conditionnés, épingle du mandat v2 |
-| L15f (L00i) | §4.2 et §4.3 côté app et API : exécutants `message.*`, `dm.*`, formats `m3`/`d3` (lecture, écriture, affichage, version minimale), champ `plan` des sockets, contrôle `author` des sockets |
+| L15f (L00i) | §4.2 et §4.3 côté app et API : exécutants `message.*`, `dm.*`, formats `m3`/`d3` (lecture, écriture, affichage, version minimale), champ `plan` des sockets, contrôle `author` des sockets ; **§10.7 (L00j)** : `agentMessageText`, sel et déclaration signée à la décision (`textDeclarations`), vérification par le lecteur et avertissement, contrôles API de la décision et de l'exécution, colonne `textDeclaration`, vecteurs `text-declaration.json` régénérés avec le code réel |
 | L15c, L15d, L15g, L15j (L00i) | exécutants d'appareil `thread.add_members` (L15c), `space.add_members` (L15d ou L15c selon la route), `file.update_text` (L15g), `support.*` (L15j) ; `risk` de chaque outil (§4.1) |
 | L15-0 (L00i) | §4.1 : `risk`, `defaultPolicy`, `sensitive`, refus `tool_policy_sensitive_auto`, lecture `ask` d'un `auto` sensible ; registre des exécutants de `kind` vide |
-| L15-rt (L00i) | §4.2 côté runtime : exécutants conditionnels, routes du canal (04 §4.3), signature `m3` par la `csk`, condensats du §8.4 point 6 (API et worker) |
+| L15-rt (L00i) | §4.2 côté runtime : exécutants conditionnels, routes du canal (04 §4.3), signature `m3` par la `csk`, condensats du §8.4 point 6 (API et worker) ; **§10.7 (L00j)** : exécutant (`argsRefs` hors cible → appareil), sel HKDF depuis `CK`, contrôle de la déclaration avant envoi, enveloppe `{ salt, text }`, septième partie `td` signée par la `csk`, contrôle API `td` = déclaration rangée |
 | L10 à L13 | §4 à §8.2, §8.6, §8.7, §10.2, §11.3, §17 (graphe du plan, arrêt), écrans de C1 §3 et §5.5 |
 
 ## 17. Présentation du plan (L12, L13 ; PC58)

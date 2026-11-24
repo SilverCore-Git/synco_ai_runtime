@@ -486,8 +486,8 @@ Ajouts de L00f (2026-11-21 ; 12 §7, §11) à cette passe, après `failTimedOutW
 9. `purgeFeaturePolicyEvents` (PC48) : `AiFeaturePolicyEvent` de plus de **1 an** supprimés, par lots
    bornés (au plus 1 000 lignes par passe, `deleteMany` sur les identifiants lus ; même principe que la
    purge d'`AiThreadEnvelopeEvent`, PC29).
-10. `purgeClosedPlanLinks` (PC56, rattrapage) : `AiActionPlanAction.output` non nul d'un plan en état
-    terminal → `null`, au plus 1 000 lignes par passe (`updateMany` sur les identifiants lus). L'effacement
+10. `purgeClosedPlanLinks` (PC56, rattrapage) : `AiActionPlanAction.output` ou `textDeclaration` (L00j) non nul
+    d'un plan en état terminal → `null`, au plus 1 000 lignes par passe (`updateMany` sur les identifiants lus). L'effacement
     normal se fait dans la transaction de clôture du plan (12 §8.5).
 
 ## 10. Plans d'action et politiques d'org (ajouté par L00f, 2026-11-21 ; 12)
@@ -532,6 +532,7 @@ model AiActionPlanAction {               // une ligne par action (PC58 : transit
   accepted  Boolean  @default(false)
   state     String   @default("pending") // 'pending' | 'executing' | 'done' | 'failed' | 'skipped' | 'unknown_outcome'
   output    Json?                        // { "id": "…", "spaceId"?: "…" } : lien objet ← action, enregistré par l'API (12 §8.5) ; null à la clôture (PC56)
+  textDeclaration String?                // L00j, PC94 : segment td1:… de la décision (12 §10.7) ; cible + empreinte salée, aucun texte ; null à la clôture
   updatedAt DateTime @updatedAt
 
   @@id([planId, n])
@@ -614,6 +615,7 @@ l'utilisateur. Aucun contenu en clair n'est stocké par l'API.
 | Plan, résultats de phase (chiffrés sous `CK`) | `pendingToolCall`, boîte, `AiActionPlan.agentResults` | propriétaire de la conversation | exécuter le plan accepté | vie de la conversation (boîte consommée : 7 jours, §9) |
 | Métadonnées du plan (statut, nombre d'actions, exécutants, `after`, dates, claim, condensats) | `AiActionPlan`, `AiActionPlanAction` | propriétaire | piloter l'exécution, verrou `action_not_accepted` | vie de la conversation |
 | **Lien objet créé ← plan / action** (`output`, en-tête `X-Synco-Plan`) | `AiActionPlanAction.output` | propriétaire (objets qu'il crée) | contrôler les `refs` (PC47) | **le temps du plan** : effacé à la clôture, rattrapage borné (passe 10) (PC56) |
+| **Déclaration du texte d'un message autonome** (cible, action, empreinte **salée** du texte, signature de l'utilisateur ; aucun texte) | `AiActionPlanAction.textDeclaration` | propriétaire | verrou `action_not_accepted` du message du runtime (PC94, 12 §10.7) | **le temps du plan** : effacée à la clôture avec `output`, même rattrapage ; une copie vit dans le `iv` du message envoyé (durée du message) |
 | Journal des actions exécutées par le runtime (`plan_action`, `plan_duplicate_create`, sans identifiant d'objet) | `AiChatSessionEvent` | propriétaire | traçabilité | 90 jours (§5) |
 | Politiques, membres autorisés, opt-in | `AiFeaturePolicy*`, `AiFeatureOptIn` | membres de l'org | appliquer la politique d'org | tant que la politique ou l'appartenance existe |
 | Fichier remis par l'agent (artefact, PC72) : métadonnées et contenu chiffrés sous `CK` ; en clair, identifiant, longueur du chiffré, date (13 §4) | `AiChatArtifact` | propriétaire de la conversation | remettre à l'utilisateur le fichier produit à sa demande | **vie de la conversation** (`onDelete: Cascade`) ; visible dans « Mes données » avec les conversations |

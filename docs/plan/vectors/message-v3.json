@@ -188,11 +188,21 @@
   ],
   "apiCases": [
     {
-      "name": "canal du runtime : m3 rt1 de la délégation de l'autorisation",
+      "name": "canal du runtime : m3 rt1 de la délégation de l'autorisation, sans déclaration td",
       "channel": "runtime",
       "authDelegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
       "iv": "m3.AAECAwQFBgcICQoL.5f1e2d3c-4b5a-4968-8776-655443322110.rt1:a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d.c2lnbmF0dXJlLWRlLXRlc3Q=.0",
-      "expect": "ok"
+      "expect": "action_not_accepted",
+      "note": "L00j, PC94 (12 §10.7) : l'auteur passe le contrôle invalid_body, mais la septième partie td est obligatoire sur le canal du runtime ; était ok avant PC94"
+    },
+    {
+      "name": "canal du runtime : m3 rt1 de la délégation de l'autorisation, avec la déclaration rangée à la décision",
+      "channel": "runtime",
+      "authDelegationId": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "storedTextDeclaration": "td1:eyJraW5kIjoibWVzc2FnZS5zZW5kIiwibiI6MSwib3JnSWQiOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAxIiwicGxhbklkIjoiNmMyZDNlNGYtNTA2MS00YjcyLThjODMtYTRiNWM2ZDdlOGY5IiwidGFyZ2V0Ijp7InRocmVhZElkIjoiY20zdGhyZWFkZXhhbXBsZTAwMDAwMDAwMSJ9LCJ0ZXh0Q29tbWl0IjoiNTQ5OGYyMWE3NzM3OWJhMmU5ZjdjZGVlNTI3MGE1MDQ3NDFjOTAyODg4ZjRmZmM3NmFkZGI0ZTRkOWQzNDU1MSIsInVzZXJJZCI6ImNtM3VzZXJleGFtcGxlMDAwMDAwMDAwMDEiLCJ2IjoxfQ:OuQuEN-5_Sp9SdqPHKh8eKE14zuEcXNeNlfjhvmy7qW70dRAbo9HtHWBqJ5h3dniFB3gYhyOEgJYLA2fmD6kVQ",
+      "iv": "m3.AAECAwQFBgcICQoL.5f1e2d3c-4b5a-4968-8776-655443322110.rt1:a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d.c2lnbmF0dXJlLWRlLXRlc3Q=.0.td1:eyJraW5kIjoibWVzc2FnZS5zZW5kIiwibiI6MSwib3JnSWQiOiJjbTNvcmdleGFtcGxlMDAwMDAwMDAwMDAxIiwicGxhbklkIjoiNmMyZDNlNGYtNTA2MS00YjcyLThjODMtYTRiNWM2ZDdlOGY5IiwidGFyZ2V0Ijp7InRocmVhZElkIjoiY20zdGhyZWFkZXhhbXBsZTAwMDAwMDAwMSJ9LCJ0ZXh0Q29tbWl0IjoiNTQ5OGYyMWE3NzM3OWJhMmU5ZjdjZGVlNTI3MGE1MDQ3NDFjOTAyODg4ZjRmZmM3NmFkZGI0ZTRkOWQzNDU1MSIsInVzZXJJZCI6ImNtM3VzZXJleGFtcGxlMDAwMDAwMDAwMDEiLCJ2IjoxfQ:OuQuEN-5_Sp9SdqPHKh8eKE14zuEcXNeNlfjhvmy7qW70dRAbo9HtHWBqJ5h3dniFB3gYhyOEgJYLA2fmD6kVQ",
+      "expect": "ok",
+      "note": "L00j : déclaration de text-declaration.json (declarationCases[0])"
     },
     {
       "name": "canal du runtime : m3 rt1 d'une autre délégation",

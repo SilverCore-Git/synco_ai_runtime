@@ -213,13 +213,14 @@ reconstruit le mandat selon 03 §4.1 et se fie au mode **vérifié**.
 | Méthode et chemin | Auth | Rôle | Lot |
 |---|---|---|---|
 | `GET /conversations/:sessionId` | S+A | `{ id, title, messages, rev, status, pendingToolCall, encryptionScheme, leaseEpoch, lastErrorCode, awaitingKey }` (champs chiffrés `gcm1:`) | L03 |
-| `POST /conversations/:sessionId/lease` | S+A | Corps vide (ou `{}`) = **prendre** le bail ; `{ leaseEpoch }` = le **renouveler** (07 §4) → `{ leaseEpoch, expiresAt }` (`expiresAt` ISO 8601) ou `409 lease_conflict` | L03 |
+| `POST /conversations/:sessionId/lease` | S+A | Corps vide (ou `{}`) = **prendre** le bail ; `{ leaseEpoch }` = le **renouveler** (07 §4) → `{ leaseEpoch, expiresAt }` (`expiresAt` ISO 8601) ou `409 lease_conflict`. **L00i** : la prise et le renouvellement rendent aussi `features: { webAllowed }` (`isFeatureAllowed(web_access)` autorisé **et** activé pour l'utilisateur de l'autorisation, 12 §11.2) ; absent = `false` (API antérieure) | L03 |
 | `DELETE /conversations/:sessionId/lease` | S+A | Rendre le bail, corps `{ leaseEpoch }` → `204`, ou `409 lease_conflict` | L03 |
 | `PUT /conversations/:sessionId/transcript` | S+A | `{ leaseEpoch, baseRev, messages, title?, status, pendingToolCall, consumedInbox: [id], error?, awaitingKey?, events? }` → `{ rev }` ou `409 rev_conflict` / `lease_conflict` (07 §4) | L03 |
 | `POST /conversations/:sessionId/status` | S+A | `{ leaseEpoch, status, error?, awaitingKey?, events? }` (changement d'état sans réécrire l'historique ; `error` = code de 08 §6) | L03 |
 | `GET /conversations/:sessionId/inbox?after=<curseur>` | S+A | Éléments non consommés (messages, décisions, annulations) déposés par le client via l'API ou par le runtime (05 §6) → `{ "items": [{ id, kind, source, createdAt, payload }] }`, 100 au plus par page, ordre de dépôt ; `payload` = trame sans `v` ni `t` (`null` si illisible) ; curseur = `id` du dernier élément lu | L03 |
 | `POST /conversations/:sessionId/inbox` | S+A | Le runtime rend durable un élément reçu par WebSocket **avant** d'en accuser réception au client (idempotent par `id`). Corps = la trame de 05 §6.2 **sans `v`** (`{ t, … }`, strict) → `201 { id, status }` (nouvel élément) ou `200 { id, status }` (doublon) ; `429 inbox_full`, `429 rt_rate_limited` (20 / 10 s par conversation), `409 not_runtime` | L03 |
-| `GET /conversations/:sessionId/tools` | S+A | Manifeste des outils (même contenu que `GET /api/orgs/:orgId/ai/tools`, `aiChat.ts:216-226`) : `[{ name, description, category, mutating, interactive, parameters }]`, `parameters` en JSON Schema | L03 |
+| `GET /conversations/:sessionId/tools` | S+A | Manifeste des outils (même contenu que `GET /api/orgs/:orgId/ai/tools`, `aiChat.ts:216-226`) : `[{ name, description, category, mutating, interactive, parameters }]`, `parameters` en JSON Schema. **L00i** : chaque entrée ajoute `risk`, `sensitive` et `defaultPolicy?` (12 §4.1) ; `web_search` / `web_fetch` n'y figurent que si `webAllowed` ; `read_support_ticket` et les outils d'appareil seulement (`read_dm`, `send_dm`…) n'y figurent pas | L03 |
+| `GET /conversations/:sessionId/web-guard/names` | S+A | **Ajoutée par L00i (10 §4.2).** Noms affichés des membres de l'org (pas de contenu E2EE : données lisibles par le serveur), pour la garde de fuite du worker : `{ "names": ["<nom>", …] }`, 10 000 au plus, sans identifiant ni e-mail ; `403 feature_not_allowed` si `webAllowed` est faux. Lu une fois par worker, au premier appel d'un outil web | L15-web |
 | `POST /conversations/:sessionId/tools/:name/execute` | S+A | Outil `server` (§5), corps **`{ leaseEpoch, args? }`** | L03 |
 | `POST /conversations/:sessionId/push` | S+A | `{ type }` ∈ `AI_TURN_DONE`, `AI_AWAITING_CONFIRMATION`, `AI_AWAITING_KEY`, `AI_AWAITING_USER`, `AI_FAILED` ; titre et corps construits par l'API, **sans contenu** ; **une notification par entrée dans l'état annoncé**, plafond de sécurité 6 / min par conversation (`429 rt_rate_limited`) → `202 { sent: true \| false }` (voir « Notifications » ci-dessous ; révisé par L03d, Q19) | L03, L03d |
 | `POST /tickets/llm` | S+A | Ticket `sgt1` pour l'utilisateur de l'autorisation, `rt` renseigné (02 §4) → `{ ticket, expiresAt, url }` ; `409 gateway_not_configured` | L02 |
@@ -433,8 +434,26 @@ effective de `create_thread` est `ask` (`403 action_not_accepted`, `409 action_s
 `409 plan_phase_mismatch`) ; le salon créé est enregistré comme sortie de l'action (12 §8.5). En mode
 plan, le runtime ne crée aucun salon : c'est l'appareil (12 §4).
 
-Extensions prévues (à spécifier ici par L14/L15 avant d'être codées) : lecture de fichiers (ticket
-`down`), envoi de message dans un salon, documentation.
+**Compléments de L00i (2026-11-24 ; 12 §4.2, §4.3 ; catalogue L14 §5.1, §5.2)** : routes ajoutées à la
+liste fermée de `runtimeHttpPolicy.ts` (toutes **S+A**, chemins sous `/api/runtime/v1/e2ee/`, donc déjà
+admis par le préfixe du superviseur, 06 §4 ; contrôles communs de cette section : org, accès **actuel**,
+entrée de clé, `403 key_not_delegated`) :
+
+| Méthode et chemin | Équivalent utilisateur | Contrôles propres | Succès | Lot |
+|---|---|---|---|---|
+| `GET /e2ee/threads/:threadId/messages?before=&after=&limit=` | idem | **`after`** ajouté (id d'un message du salon ; `before` et `after` exclusifs, `400 invalid_body` sinon) ; reste inchangé | inchangé, du plus ancien au plus récent | L15-rt |
+| `GET /e2ee/messages/:messageId?limit=` | `get_message` (store de l'app) | message d'un salon de l'org ; `READ` sur le salon ; entrée `thread:<threadId>` ; `limit` des réponses 0 à 50 (20) | `{ "message": { …forme de la liste… }, "replies": [ … ] }` (`replyToId = messageId`, du plus ancien au plus récent) | L15-rt |
+| `POST /e2ee/threads/:threadId/messages` | socket `send-message` | délégation `auto`, politique, verrou 12 §8.4 (point 6) ; corps strict `{ leaseEpoch, content, iv, replyToId?, references?, plan, target, argsRefs?, refs? }` ; `iv` = `m3` d'auteur `rt1:<délégation de l'autorisation>` (12 §4.3) ; `content` ≤ 64 Kio ; aucun `transferOrigin` ni pièce jointe (12 §4.2 : appareil) ; **même service** que le socket (extraction `messagesService.ts`, L15f), donc mêmes droits d'écriture, mêmes diffusions socket aux membres, mêmes notifications | `201 { id, threadId }` ; sortie enregistrée (12 §8.5) | L15-rt |
+| `PATCH /e2ee/messages/:messageId` | socket `edit-message` | idem ; `senderId` = utilisateur de l'autorisation ; `iv` **courant** du message = `m3` d'auteur `rt1:<d>` avec `d` une délégation du **même** utilisateur vers **ce** runtime dans **cette** org (`409 not_agent_message`) ; nouvel `iv` : même `clientMsgId`, `rev` = courant + 1 | `200 { id, threadId }` | L15-rt |
+| `POST /e2ee/threads/:threadId/members` | écran du salon (`thread:update` membres) + `distribute-thread-keys` | délégation `auto`, politique, verrou (point 6) ; corps strict `{ leaseEpoch, members: [{ userId, encryptedKey }] (1 à 100), plan, target, argsRefs?, refs? }` ; chaque `userId` membre de l'org, non banni, ayant accès au salon après l'ajout selon les règles de la route utilisateur ; `commitment` / `signature` **recopiés** par l'API depuis la `ThreadKey` de l'utilisateur (le runtime ne les fournit pas) ; ajout et clés dans **une** transaction (tout ou rien) | `200 { threadId, added }` | L15-rt |
+| `POST /e2ee/files/:fileId/download` | `CdnDownload` | **Étape 2 (10 §4.3), livrée par L15-web** ; fichier d'un espace de l'org ; `READ` ; entrée `space:<workspaceId>` de la version de la clé du fichier ; taille ≤ 256 Kio sinon `413 file_too_large` | `200 { ticket, objectPath, size, encryptedFileKey, keyVersion, iv, mimeType, version }` (`ticket` CDN `down`, durée 60 s ; `version` = valeur `baseVersion` de 12 §4.2) | L15-web |
+
+Toujours **absents** du canal (12 §4.2, 03 §2) : MP (`dm.*`, `read_dm`), support (`support.*`,
+`read_support_ticket` : la clé `support:<id>` n'est jamais déléguée, l'outil est donc **appareil
+seulement**, retiré du manifeste du runtime), ajout de membres à un espace (`space.add_members`,
+appareil), modification de fichier (`file.update_text`, appareil). Le texte d'un message déchiffré par le
+worker ne quitte le bac à sable que vers le fournisseur d'IA de la conversation, **jamais** vers le
+proxy `web` (10 §4.2). Documentation : inchangé (hors canal).
 
 ## 5. Outils `server` exécutés pour le runtime
 
@@ -522,6 +541,7 @@ nouvelle connexion ferme la précédente.
 | `delegation.entries_removed` | `delegationId`, `entries: [{kind, ref, version}]` | Effacer ces clés |
 | `delegation.revoked` | `userId`, `delegationId`, `reason` | Effacer `DK` et les clés ; arrêter les workers de l'utilisateur |
 | `thread.envelope_reset` | `threadId`, `userId`, `delegationId` | **Ajoutée par L03d (Q21).** Un humain a réinitialisé l'enveloppe `rt1` d'un salon créé par ce runtime. `delegationId` = délégation **active** du délégant avec laquelle reposer. Attendu : vérifier **avant de signer** (voir ci-dessous) puis `POST /e2ee/threads/:threadId/key-envelope/repose` (§4.3). Le runtime actuel ne la traite pas encore (`ApiEvent::Unknown`) |
+| `feature.revoked` | `userId`, `feature` (`web_access` en v1) | **Ajoutée par L00i (12 §11.4).** Fermer le socket `web` des workers de cet utilisateur (10 §4.2) ; aucune autre conséquence |
 | `user.revoked` | `userId`, `until` | Liste de révocation des tickets (02 §8). **Émis** après `delegation.revoked` (raisons et `until` : 02 §8 ; révisé après L03c, Q13 = A) |
 | `runtime.unpaired` | — | 01 §9 |
 | `ping` | — | Répondre `pong` |
@@ -608,6 +628,8 @@ et `conversationResult.ts` (L03).
 | `delegation_expired` / `delegation_revoked` | 403 | Délégation plus active |
 | `out_of_scope` | 403 | Ressource hors de l'autorisation (autre conversation, autre org) |
 | `key_not_delegated` | 403 | La clé nécessaire n'est pas dans la délégation |
+| `not_agent_message` | 409 | **L00i** : `PATCH /e2ee/messages/:messageId` sur un message qui n'a pas été écrit par une délégation du même utilisateur vers ce runtime (12 §4.3) |
+| `file_too_large` | 413 | **L00i** : fichier de plus de 256 Kio demandé par `POST /e2ee/files/:fileId/download` |
 | `forbidden` | 403 | Permission de l'utilisateur refusée par le service métier |
 | `tool_denied_by_policy` | 403 | Outil `deny` dans `aiConfig.runtime.toolPolicy` (D5), jamais exécuté |
 | `lease_conflict` | 409 | Bail détenu par un autre worker, ou `leaseEpoch` périmé |

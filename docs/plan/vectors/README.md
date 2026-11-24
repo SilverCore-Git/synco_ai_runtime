@@ -333,7 +333,9 @@ Rejoués par L15-0 (registre et politiques), L15f (validateur de l'app, exécuta
   (`synco-sig-v2`).
 - `verifyPolicy` : état attendu (`verified`, `unsigned`, `invalid`) et mention affichée selon l'auteur et
   le mandat.
-- `apiCases` : contrôle du préfixe et de l'auteur par l'API (canal du runtime, sockets de l'utilisateur).
+- `apiCases` : contrôle du préfixe et de l'auteur par l'API (canal du runtime, sockets de l'utilisateur). Depuis
+  L00j (PC94), un `m3` `rt1:` sans septième partie `td` est refusé sur le canal du runtime
+  (`action_not_accepted`) ; le cas `ok` porte la déclaration de `text-declaration.json`.
 
 **À compléter par L15f** : un générateur TypeScript (`synco_app`, `messageAuth.ts`) produit les chiffrés et
 signatures réels (ECDSA de l'utilisateur pour `ai`, `csk` du certificat de test de `mandate-v2.json` pour
@@ -356,3 +358,31 @@ hôtes réels).
 
 Rejoués par L15-web : la garde et la provenance dans le worker, le reste dans le superviseur (résolveur
 simulé : les cas donnent les adresses résolues).
+
+### 6.4 `text-declaration.json` (12 §10.7 ; L00j, PC94)
+
+Déclaration signée par l'utilisateur du texte d'un message autonome. Contrairement à `message-v3.json`, les
+signatures sont **réelles** (ECDSA P-256, WebCrypto, scalaires de test `0x11` × 32 pour l'utilisateur et `0x33` × 32
+pour un autre membre ; « vérification seulement », §1) et les valeurs dérivées sont exactes. Produit par un
+générateur jetable hors dépôt (bun, `node:crypto`) ; L15f le remplace par un générateur qui importe le code réel
+de `synco_app` et doit retrouver les mêmes sels, empreintes, octets signés et décisions.
+
+- `saltCases` : sel HKDF-SHA256 depuis `CK` (`ckHex`), `info` exacte.
+- `commitCases` : `textCommit` du texte exact ; NFC et NFD, CRLF, espace final, caractère hors BMP donnent des
+  empreintes distinctes (aucune normalisation).
+- `declarationCases` : déclaration, JCS, octets signés, signature, segment `td`, et préimage du condensat de cible
+  (`targetDigestHex` = `serverDigests[n]`, mêmes valeurs que `plan-kinds.json` `targetDigests` pour les objets communs).
+- `plaintextCases` : enveloppe `{ salt, text }` stricte et canonique → `ok` ou `invalid_envelope`.
+- `cskBytesCases` : octets signés par la `csk` avec le suffixe `|td`, AAD inchangée.
+- `parseCases` : `iv` à sept parties (`ok` avec `td`, ou `invalid_format`) ; six parties `rt1:` → `ok`, `td` nul.
+- `readerCases` : message déjà valide au sens `m3`, puis `text_verified` ou `text_unverified` avec la raison
+  (`absent`, `invalid_declaration`, `signer_mismatch`, `signer_unavailable`, `kind_mismatch`, `target_mismatch`,
+  `bad_signature`, `invalid_envelope`, `text_mismatch`) et le texte affiché (`display`) : jamais masqué.
+- `apiDecisionCases` : `textDeclarations` de la décision → `ok`, `invalid_body`, `plan_digest_mismatch` (l'API ne
+  vérifie pas la signature).
+- `apiExecuteCases` : `td` du `iv` contre la déclaration rangée → `ok` ou `action_not_accepted` (égalité octet à
+  octet).
+- `executorCases` : `argsRefs` hors champs de cible (`text`) → exécutant `device` (s'ajoute à `plan-kinds.json`).
+
+Rejoués par L15f (app : écriture de la déclaration, lecture ; API : contrôles) et L15-rt (worker : sel, contrôle
+avant envoi, `iv` ; API côté canal).

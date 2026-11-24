@@ -1537,3 +1537,26 @@ Un commit par point, chacun avec un test qui échoue sans lui.
 - **Ouvert** : signatures réelles des vecteurs `m3` à produire par L15f ; DPA et conservation de Staan (PC91) ;
   chemin exact de téléchargement du CDN pour le relais (L15-web) ; route exacte de `thread.add_members` (L15c) ;
   version minimale de l'app avant l'écriture de `m3` (L15f).
+
+## L00j : signature du texte d'un message autonome (PC94), 2026-11-24
+
+- **Source** : décision PC94 (refus du risque « texte non couvert » proposé par L00i) ; 12 §4.2, §4.3, §8.4, §10.6,
+  §12.1 ; 03 §4 (clé de signature d'identité), 03 §12 (l'API ne vérifie aucune signature d'utilisateur).
+- **Fait** : 12 §10.7 (texte final `agentMessageText`, aucune normalisation ; sel HKDF-SHA256 depuis `CK` par action ;
+  empreinte salée ; déclaration JCS `{ v, orgId, userId, planId, n, kind, target, argsRefs?, textCommit }` signée
+  ECDSA P-256 par l'utilisateur à la décision ; septième partie `td` du `iv` `m3` `rt1:`, couverte par la `csk` ;
+  enveloppe chiffrée `{ salt, text }` ; contrôles API à la décision et à l'exécution ; vérification par le lecteur,
+  avertissement visible, jamais masqué ; `argsRefs` hors cible → appareil ; clés tournées, réinitialisées,
+  utilisateur supprimé ; rétrocompatibilité) ; §4.2, §4.3, §8.4, §10.6, §12.1, §15 (risque 1 bis retiré), §16 ;
+  00 §5 (PC94) ; 04 §4.3 ; 07 §10 (`textDeclaration`, purge, RGPD) ; vecteurs `text-declaration.json`,
+  `message-v3.json` (`apiCases`), README §6.4.
+- **Vérifié** : vecteurs produits par un générateur jetable (bun, WebCrypto, hors dépôt), signatures ECDSA vérifiées
+  à la génération ; lecteur de référence jetable indépendant : 22 `readerCases` et 7 `plaintextCases` sans écart ;
+  condensats de cible identiques à `plan-kinds.json` pour les objets communs ; JSON valides ; `cargo fmt --all
+  --check` ; aucun code modifié.
+- **À ratifier** : déclaration portée en clair dans le `iv` (et non une colonne) ; sel dérivé de `CK` plutôt que tiré
+  et transporté ; l'API ne vérifie pas la signature ; mentions couvertes via le texte final ; avertissement unique
+  quelle que soit la raison.
+- **Ouvert** : `agentMessageText` (conversion des mentions) et régénération des vecteurs avec le code réel (L15f) ;
+  détection du rejeu `(planId, n)` non vectorisée (plusieurs messages) ; comportement actuel de l'app pour un auteur
+  supprimé à relever (L15f).

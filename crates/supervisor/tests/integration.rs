@@ -1360,6 +1360,9 @@ async fn relecture_api_paginee_et_verifiee_localement() {
     let rt = Arc::clone(&env.running.runtime);
     wait_until_async(&rt, |st| st.vault.get(USER).is_some()).await;
     remember_thread(&rt, THREAD, USER, "d-good").await;
+    // La relecture de la première connexion (setup) part après `vault.get(USER)` : on attend sa
+    // requête avant de vider le compteur, sinon elle s'y glisse et décale `requests[1]`.
+    wait_until("première relecture faite", || env.api.with(|st| !st.resets_requests.is_empty())).await;
     let item = |t: &str, u: &str, d: &str| json!({ "threadId": t, "userId": u, "delegationId": d, "resetAt": "2026-11-21T10:00:00.000Z" });
     env.api.with(|st| {
         st.resets_page = 1;

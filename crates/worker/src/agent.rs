@@ -938,6 +938,17 @@ impl Agent {
         Ok(())
     }
 
+    /// Étiquette `<untrusted>` de l'outil qui a produit le résultat de l'appel `call_id`, s'il en a une.
+    fn untrusted_source(&self, call_id: &str) -> Option<&str> {
+        let name = self
+            .messages
+            .iter()
+            .flat_map(|m| m.tool_calls.iter())
+            .find(|tc| tc.id == call_id)
+            .map(|tc| tc.name.as_str())?;
+        self.spec(name)?.untrusted.as_deref()
+    }
+
     fn spec(&self, name: &str) -> Option<&ToolSpec> {
         self.specs.iter().find(|s| s.name == name)
     }
@@ -1130,14 +1141,19 @@ impl Agent {
                         })
                         .collect(),
                 }),
-                Role::Tool => out.push(ChatMessage::Tool {
-                    tool_call_id: m.tool_call_id.clone().unwrap_or_default(),
-                    content: match &m.tool_result {
+                Role::Tool => {
+                    let content = match &m.tool_result {
                         Some(Value::String(s)) => s.clone(),
                         Some(v) => v.to_string(),
                         None => "null".to_owned(),
-                    },
-                }),
+                    };
+                    // Texte écrit par un autre que l'utilisateur : donné au modèle comme une donnée (catalogue §7.4).
+                    let source = m.tool_call_id.as_deref().and_then(|id| self.untrusted_source(id));
+                    out.push(ChatMessage::Tool {
+                        tool_call_id: m.tool_call_id.clone().unwrap_or_default(),
+                        content: source.map_or(content.clone(), |s| crate::untrusted::wrap_untrusted(s, &content)),
+                    });
+                }
             }
         }
         out

@@ -790,6 +790,7 @@ autonome confie déjà au runtime les clés des salons délégués.
 | `autonomous_mode` | actif | `none` (PC39), administrateurs compris | `AiFeatureOptIn` présent avec la `warningVersion` courante |
 | `runtime_mode` | actif | lu de `aiConfig.runtime.members` / `memberIds` (`all` → `all`, `list` → `list` avec ces membres) ; illisible → `list` vide (règle existante, `runtimePolicy.ts:34`) | délégation active (dépôt, 03 §7.1) |
 | `tool_auto_accept` | actif | `all` | réglage local de l'app (`autoAcceptTools`) ; **jamais** pour une action sensible (§4.1) |
+| `web_access` (L00i, PC92) | actif | `none`, administrateurs compris | `AiFeatureOptIn` présent avec la `warningVersion` courante de `web_access` (avertissement propre, §11.3) |
 | `subagents`, `agent_memory`, `runtime_transcription`, `rich_push` | **réservées** (PC42) | — | — |
 
 Une fonctionnalité réservée n'a ni écran ni écriture : `PUT` → `409 feature_reserved`. Une valeur
@@ -800,7 +801,10 @@ hors liste → `404 not_found`. `mode` ∈ `all`, `none`, `list`.
 Fonction unique côté serveur ; rend `{ allowed, enabled }` ; « autorisé et activé » = les deux. `list` :
 autorisé si une ligne `AiFeaturePolicyMember` existe. Points d'appel pour `autonomous_mode` : dépôt
 d'une délégation `auto`, routes du §10.4, second verrou. Pour `runtime_mode` : là où l'API appelle
-aujourd'hui `isRuntimeAllowedForUser` (dépôt, bascule, second verrou, `sweepPolicyViolations`). Le
+aujourd'hui `isRuntimeAllowedForUser` (dépôt, bascule, second verrou, `sweepPolicyViolations`). Pour
+`web_access` (L00i) : prise du bail (`POST …/conversations/:sessionId/lease` rend `features.webAllowed`,
+04 §4.2), manifeste servi au runtime (`web_search` et `web_fetch` absents si faux), et retrait (§11.4).
+Hors de ces deux exceptions (`webAllowed`, qui règle le montage du socket `web`, 10 §4.2), le
 runtime ne lit aucune politique (il applique le mandat et `autonomy.allowed`). L'app masque ou grise,
 seul le serveur fait foi.
 
@@ -815,6 +819,22 @@ seul le serveur fait foi.
    `auto` qui resteraient.
 5. Badge « Autonome » tant que la délégation active est `auto`. Si `warningVersion` courante > celle
    enregistrée, l'app redemande l'acceptation (le serveur répond `enabled: false`).
+
+**`web_access` (L00i, PC92).** Fermé par défaut (`none`) : l'administrateur l'ouvre (`all` ou `list`)
+dans les paramètres IA de l'org, ce qui revient à choisir le service de recherche déclaré par le runtime
+comme sous-traitant (catalogue L14 §8.9). Ensuite **chaque membre autorisé** l'active lui-même dans ses
+réglages IA :
+
+1. l'app montre l'avertissement de `web_access` (case « J'ai compris » non précochée) : « Vos recherches
+   partent chez <service déclaré par le runtime>. Les pages lues voient l'adresse du serveur de votre
+   organisation, pas la vôtre. Rien de privé n'y est envoyé sans votre accord : si une recherche semble
+   contenir une information de Synco, l'agent vous la montre avant de l'envoyer. » ;
+2. `PUT /ai/feature-policies/me/web_access/opt-in { warningVersion }` (§12.3) ;
+3. aucune délégation à redéposer : le prochain bail rend `webAllowed: true` ;
+4. désactivation : `DELETE …/me/web_access/opt-in` ; badge « Web » dans l'en-tête de la conversation tant
+   que l'accès est actif. Une `warningVersion` plus récente redemande l'acceptation (`enabled: false`).
+
+v1 : régime runtime seulement ; le mode navigateur et la passerelle n'ont pas d'outil web.
 
 ### 11.4 Retrait (PC40)
 
@@ -841,6 +861,15 @@ de la liste, `DELETE` de l'opt-in), dans **la même transaction** que l'écritur
 L'écran admin annonce le nombre de personnes concernées **avant** d'enregistrer (`enabledCount` et
 `enabled` par membre, §12.3). Retrait de `runtime_mode` : révocation existante `member_not_allowed`
 (03 §8.1), inchangée. Retrait de `tool_auto_accept` : l'app relit `GET …/me` et vide `autoAcceptTools`.
+
+**Retrait de `web_access` (L00i).** Quand `isFeatureAllowed(web_access)` devient faux (passage à `none`,
+retrait de la liste, `DELETE` de l'opt-in), dans la même transaction : opt-in supprimé (sauf `DELETE`
+lui-même), ligne `AiFeaturePolicyEvent`, puis trame **`feature.revoked { userId, feature: "web_access" }`**
+au runtime de l'org (04 §6). Le superviseur ferme aussitôt le socket `web` des workers de cet
+utilisateur (une requête en cours est coupée, le worker reçoit `web_unavailable`) ; le worker retire
+`web_search` et `web_fetch` de la liste donnée au modèle au tour suivant. Aucune délégation ni
+conversation n'est touchée. Notification `AI_WEB_ACCESS_WITHDRAWN` (« Votre organisation a désactivé
+l'accès web de Synco AI »), pas pour un `DELETE` de l'utilisateur lui-même.
 
 ### 11.5 Reprise de `aiConfig.runtime.members`
 
@@ -936,8 +965,8 @@ Flux (04 §6) : `delegation.revoked.reason` peut valoir `autonomy_withdrawn` ; `
 | `POST /feature-policies/:feature/members/remove` | U-admin | `{ userIds: [1..100] }` | `200 { removed, revoked }` ; §11.4 | idem |
 | `GET /feature-policies/:feature/events` | U-admin | `?before=<id>&limit=1..100` | `200 { events: [...], next }` | idem |
 | `GET /feature-policies/me` | U | — | `200 { features: [{ feature, allowed, enabled, warningVersion }] }` | — |
-| `PUT /feature-policies/me/:feature/opt-in` | U | `{ warningVersion }` (entier ≥ 1) | `200 { feature, enabled: true }` | `403 feature_not_allowed`, `404 not_found` (fonctionnalité sans opt-in en v1 : tout sauf `autonomous_mode`) |
-| `DELETE /feature-policies/me/:feature/opt-in` | U | — | `200 { feature, enabled: false, revoked: [<delegationId>…] }` | `404 not_found` |
+| `PUT /feature-policies/me/:feature/opt-in` | U | `{ warningVersion }` (entier ≥ 1) | `200 { feature, enabled: true }` | `403 feature_not_allowed`, `404 not_found` (fonctionnalité sans opt-in en v1 : tout sauf `autonomous_mode` et `web_access`, L00i) |
+| `DELETE /feature-policies/me/:feature/opt-in` | U | — | `200 { feature, enabled: false, revoked: [<delegationId>…] }` (`revoked` toujours vide pour `web_access`) | `404 not_found` |
 
 Ajouts et retraits sont idempotents. Liste `list` : au plus 1 000 membres (PC30). `q` cherche dans les
 noms comme le sélecteur cherchable existant ; aucune rangée par membre côté app (C1 §5.5).

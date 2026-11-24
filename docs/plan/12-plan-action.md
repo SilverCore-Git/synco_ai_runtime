@@ -878,8 +878,9 @@ message `m3` `rt1:` porteur de `td` a pour clair `utf8(JCS({ "salt": "<64 hex>",
 1. `td` absent (ancien format L00i) → `text_unverified`, raison `absent`.
 2. Déclaration lisible : `b64u` valide, JSON dont la sérialisation JCS redonne **les mêmes octets**, `v = 1`, champs
    et types ci-dessus, `kind` ∈ `message.send`, `message.edit` → sinon `invalid_declaration`.
-3. `userId = senderId` → sinon `signer_mismatch`. Expéditeur supprimé ou sans clé de signature servie →
-   `signer_unavailable`.
+3. Expéditeur supprimé ou sans clé de signature servie → `signer_unavailable` (contrôlé d'abord) ;
+   puis `userId = senderId` → sinon `signer_mismatch`. Les contrôles s'appliquent dans l'ordre : la première
+   raison trouvée est retenue (vecteurs `readerCases`).
 4. Cible : `orgId` = org du salon ; `kind = message.send` si `rev = 0`, `message.edit` si `rev ≥ 1` (sinon
    `kind_mismatch`) ; pour chaque champ de `target` : `threadId` = salon du message, `replyTo` = `replyToId` du
    message, `messageId` = id du message ; un `replyTo` absent de `target` **et** d'`argsRefs` exige `replyToId` nul →

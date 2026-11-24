@@ -53,6 +53,10 @@ pub struct ToolSpec {
     pub sensitive: bool,
     /// Politique par défaut du manifeste (`auto`, `ask`, `interactive`).
     pub default_policy: Option<String>,
+    /// Exception explicite (`web_search`, `web_fetch`) : sensible mais `auto` (12 §4.1 règle 4).
+    pub sensitive_auto_allowed: bool,
+    /// Étiquette `source` de l'enveloppe `<untrusted>` à poser autour du résultat (catalogue §7.4).
+    pub untrusted: Option<String>,
     /// `yes` ou `device_only` ; absent d'un ancien manifeste (liste historique [`UNAVAILABLE_IN_RUNTIME`]).
     pub runtime: Option<String>,
 }
@@ -74,6 +78,11 @@ pub const UNAVAILABLE_IN_RUNTIME: [&str; 5] =
 /// Outils `client` exécutés par le worker.
 pub const WORKER_CLIENT_TOOLS: [&str; 2] = ["create_thread", "search_messages"];
 
+/// Règle provisoire de 12 §4 pour un manifeste sans `risk` : `delete_*` et `create_email_report`.
+fn provisional_sensitive(name: &str) -> bool {
+    name.starts_with("delete_") || name == "create_email_report"
+}
+
 /// Lit le manifeste (entrées mal formées ignorées) : tableau (ancien format) ou `{ version, tools }`.
 #[must_use]
 pub fn parse_manifest(v: &Value) -> Vec<ToolSpec> {
@@ -88,13 +97,19 @@ pub fn parse_manifest(v: &Value) -> Vec<ToolSpec> {
                     }
                     let text = |k: &str| t.get(k).and_then(Value::as_str).map(str::to_owned);
                     let risk = text("risk");
-                    let sensitive = t.get("sensitive").and_then(Value::as_bool).unwrap_or(false)
-                        || risk.as_deref().is_some_and(|r| matches!(r, "R3" | "R4" | "RP"));
+                    let explicit = t.get("sensitive").and_then(Value::as_bool);
+                    // Manifeste sans `risk` ni `sensitive` (API antérieure à L15-0) : règle provisoire par nom (12 §4),
+                    // repli prudent, jamais `auto`.
+                    let sensitive = explicit.unwrap_or(false)
+                        || risk.as_deref().is_some_and(|r| matches!(r, "R3" | "R4" | "RP"))
+                        || (risk.is_none() && explicit.is_none() && provisional_sensitive(&name));
                     Some(ToolSpec {
                         domain: text("domain"),
                         sensitive,
                         risk,
                         default_policy: text("defaultPolicy"),
+                        sensitive_auto_allowed: t.get("sensitiveAutoAllowed").and_then(Value::as_bool).unwrap_or(false),
+                        untrusted: text("untrusted"),
                         runtime: text("runtime"),
                         name,
                         description: t.get("description").and_then(Value::as_str).unwrap_or_default().to_owned(),
@@ -119,10 +134,12 @@ pub const DEVICE_TOOLS: [&str; 3] = ["create_thread", "create_folder", "create_f
 /// personnel (`default_policy: "auto"`, PC89) est `auto` par défaut bien que mutant.
 #[must_use]
 pub fn effective_policy(spec: &ToolSpec, policy: &BTreeMap<String, ToolPolicy>) -> ToolPolicy {
+    // Même règle que `requiresConfirmation` de l'API : sensible, hors exception explicite.
+    let confirm = spec.sensitive && !spec.sensitive_auto_allowed;
     match policy.get(&spec.name).copied() {
-        Some(ToolPolicy::Auto) if spec.sensitive => ToolPolicy::Ask,
+        Some(ToolPolicy::Auto) if confirm => ToolPolicy::Ask,
         Some(p) => p,
-        None if spec.sensitive => ToolPolicy::Ask,
+        None if confirm => ToolPolicy::Ask,
         None if spec.default_policy.as_deref() == Some("auto") => ToolPolicy::Auto,
         None if spec.mutating => ToolPolicy::Ask,
         None => ToolPolicy::Auto,
@@ -472,5 +489,33 @@ mod tests {
         assert!(!domain_handles("create_task"));
         assert!(!worker_runs_client_tool("create_file"));
         assert!(worker_runs_client_tool("search_messages"));
+    }
+
+    #[test]
+    fn exception_web_et_repli_par_nom() {
+        let specs = parse_manifest(&json!([
+            { "name": "web_fetch", "category": "client", "mutating": false, "risk": "R4", "defaultPolicy": "auto", "sensitiveAutoAllowed": true },
+            { "name": "faux_web", "category": "server", "mutating": true, "risk": "R4", "defaultPolicy": "auto" },
+            { "name": "delete_thing", "category": "server", "mutating": true },
+            { "name": "create_email_report", "category": "server", "mutating": true },
+            { "name": "update_thing", "category": "server", "mutating": true },
+            { "name": "mark_read", "category": "server", "mutating": true, "sensitive": false, "defaultPolicy": "auto" },
+            { "name": "taches", "category": "server", "mutating": false, "untrusted": "task" },
+        ]));
+        let get = |n: &str| specs.iter().find(|s| s.name == n);
+        let none = BTreeMap::new();
+        let auto = |n: &str| BTreeMap::from([(n.to_owned(), ToolPolicy::Auto)]);
+        // Exception explicite : `auto` par défaut et configuré.
+        assert_eq!(effective_policy(get("web_fetch").expect("web_fetch"), &none), ToolPolicy::Auto);
+        assert_eq!(effective_policy(get("web_fetch").expect("web_fetch"), &auto("web_fetch")), ToolPolicy::Auto);
+        // Sensible sans exception : jamais `auto`.
+        assert_eq!(decide(get("faux_web"), &none), Decision::AskConfirmation);
+        assert_eq!(decide(get("faux_web"), &auto("faux_web")), Decision::AskConfirmation);
+        // Manifeste sans risk : règle provisoire par nom.
+        assert_eq!(decide(get("delete_thing"), &auto("delete_thing")), Decision::AskConfirmation);
+        assert_eq!(decide(get("create_email_report"), &auto("create_email_report")), Decision::AskConfirmation);
+        assert_eq!(decide(get("update_thing"), &none), Decision::AskConfirmation);
+        assert_eq!(decide(get("mark_read"), &none), Decision::Auto);
+        assert_eq!(get("taches").and_then(|s| s.untrusted.as_deref()), Some("task"));
     }
 }

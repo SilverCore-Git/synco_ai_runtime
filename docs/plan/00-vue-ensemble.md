@@ -287,6 +287,14 @@ d'enveloppe du créateur, `autonomy.allowed`) est repris tel quel dans 12.
 | PC83 | Artefacts : **pas de relecture par l'agent** en v1 ; l'historique garde la forme réduite (2026-11-23) | 13 §2.4, §13 |
 | PC84 | Artefacts : politique d'outil **`auto`** par défaut, l'org peut mettre `deny` (2026-11-23) | 13 §2, §13 |
 | PC85 | Artefacts : **256 Kio (262 144 octets) par fichier** au plus ; les gros fichiers relèvent de l'atelier d'exécution (PC73) ; la route de dépôt a un plafond de corps de 1 Mio (2026-11-23) | 13 §9, §13 ; 04, 09 |
+| PC86 | Porte E : gestes lourds (exclure, rôles, permissions, invitations, e-mails, suppressions) **permis**, sensibles, cochés un par un (2026-11-24) | 12 §4.1 |
+| PC87 | Porte E : 18 exclusions EX-1 à EX-18 du catalogue L14 validées telles quelles (2026-11-24) | catalogue L14 §4 ; 04 §4.3 (MP, support absents du canal) |
+| PC88 | Porte E : mention « avec Synco AI » sous les messages écrits par l'agent, champ signé `author` des formats `m3` / `d3` (2026-11-24) | 12 §4.3 |
+| PC89 | Porte E : gestes personnels (`R2p` : lu, sourdine, statut, rappels) sans confirmation (2026-11-24) | 12 §4.1 |
+| PC90 | Recherche web par un service appelé par le proxy `web` du superviseur, pas la recherche native des fournisseurs (2026-11-24) | 10 §4.2 |
+| PC91 | Service par défaut : Staan (DPA et conservation à obtenir), sinon Mojeek (2026-11-24) | 10 §4.2 |
+| PC92 | `web_access` fermé par défaut ; l'admin l'ouvre, chaque membre l'active avec avertissement (2026-11-24) | 12 §11.1, §11.3, §11.4 |
+| PC93 | Confirmation pour une URL ni issue d'une recherche ni de l'utilisateur, et pour une requête semblant contenir une info privée (2026-11-24) | 10 §4.4 |
 
 ## 5 bis. Analyse des décisions (pour mémoire)
 

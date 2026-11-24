@@ -46,8 +46,10 @@ d'appareil.
 ## 2. Ce qui passe par le plan
 
 - **Politique effective d'un outil** (D5, règle du worker `crates/worker/src/tools/mod.rs:110-120`, que
-  l'API applique désormais aussi) : `toolPolicy[name]` de l'org si présent, sinon `ask` pour un outil
-  `mutating`, `auto` sinon ; un outil `interactive` reste hors plan (`awaiting_user`).
+  l'API applique désormais aussi ; **amendée par L00i**, §4.1) : `toolPolicy[name]` de l'org si présent,
+  sinon `defaultPolicy` du manifeste s'il est présent, sinon `ask` pour un outil `mutating`, `auto`
+  sinon ; puis, pour un outil **sensible** (§4.1), `auto` est lu `ask` (jamais d'exécution directe) ;
+  un outil `interactive` reste hors plan (`awaiting_user`).
 - **Mode plan** (délégation du propriétaire en `plan`, défaut) : le modèle ne voit plus aucun outil
   mutant dont la politique effective est `ask` ni aucun outil d'appareil (`create_thread`,
   `create_folder`, `create_file`) ; il les demande par l'outil interne **`propose_actions`**. Les outils
@@ -156,11 +158,56 @@ Pour `name = "propose_actions"`, et seulement pour lui, `args` est le plan chiff
   `createTextFile` (envoi CDN chiffré, PC6, PC41). Le bac à sable du worker ne change pas.
 - **Exécutant** : fixé à la création par le worker, selon ce tableau et le mode de son mandat vérifié ;
   l'API le stocke avec `after` (§12.2) et l'appareil les recontrôle (§5, règle 8).
-- **Actions sensibles** (C1 §3, règle 3 : non précochées, cochées une par une) : niveau de risque fourni
-  par L14. En attendant L14 : toute action `server.call` dont l'outil supprime (`delete_*`) ou envoie
-  hors de Synco (`create_email_report`) (ratifié, PC48).
+- **Actions sensibles** (C1 §3, règle 3 : non précochées, cochées une par une) : §4.1 (L00i). La règle
+  provisoire de PC48 (`delete_*`, `create_email_report`) est **retirée** : le nom de l'outil ne fait plus
+  foi.
 - Un nouveau `kind` demande un lot dédié et la mise à jour du §5 ; les catalogues L14 et L15 ajoutent
   des `server.call` sans changer ce document.
+
+### 4.1 Risque et sensibilité (L00i, 2026-11-24 ; catalogue L14 §1.2 à §1.4 ; PC86, PC89)
+
+Chaque outil du registre porte un champ **`risk`** (obligatoire, liste fermée), exporté par le manifeste
+(`GET /api/orgs/:orgId/ai/tools` et `GET /api/runtime/v1/conversations/:sessionId/tools`, 04 §4.2) avec
+`sensitive` et `defaultPolicy` :
+
+| `risk` | Niveau | `sensitive` | Politique par défaut | Plan |
+|---|---|---|---|---|
+| `R0` | lecture | non | `auto` | hors plan |
+| `R1` | création | non | `ask` | précochée ; « toujours accepter » (`tool_auto_accept`) permis |
+| `R2` | modification | non | `ask` | idem |
+| `R2p` | modification **personnelle** réversible (marquer lu, sourdine, statut, rappel perso, ordre de ses tâches) | non | **`auto`** (`defaultPolicy`, PC89) | **hors plan, sans confirmation**, dans les deux modes |
+| `R3` | suppression, retrait, perte d'accès | **oui** | `ask` | **non précochée, cochée une par une** |
+| `R4` | sortie hors du cercle courant (e-mail, invitation, lien, webhook, support, URL lue) | **oui** | `ask` | idem |
+| `RP` | droits et accès (rôles, permissions, accès à un élément, ajout de membres) | **oui** | `ask` | idem |
+
+`sensitive = risk ∈ {R3, R4, RP}`, calculé, jamais stocké à part. Règles :
+
+1. **Gestes lourds permis (PC86)** : exclure un membre, changer des rôles ou des permissions, inviter,
+   envoyer un e-mail, supprimer sont des outils comme les autres, mais **sensibles** : jamais précochés,
+   le bouton principal reste grisé tant que chacun n'est pas coché ou retiré, aucun « Tout accepter » ne
+   les couvre (§6), « toujours accepter » ne s'y applique **jamais** (PC42), et ils passent **toujours**
+   par le plan, en mode autonome compris (§10).
+2. **`auto` refusé sur un outil sensible**, à trois endroits : l'écriture de `toolPolicy` par l'org
+   (`PUT` de la config IA) refuse `auto` pour un outil sensible (`400 tool_policy_sensitive_auto`) ;
+   une valeur `auto` déjà en base (écrite avant L00i, ou outil devenu sensible) est **lue** `ask`
+   (format ancien lu, jamais réécrit en silence) ; le worker et l'API appliquent la même lecture
+   (§2). L'org peut toujours **durcir** (`ask`, `deny`) n'importe quel outil.
+3. **Gestes personnels (PC89)** : `R2p` est `mutating: true` mais `defaultPolicy: "auto"` ; il n'entre pas
+   dans le plan et n'affiche qu'une carte d'outil repliée. L'org peut le passer en `ask` ou `deny`.
+4. **Exception `web_search` / `web_fetch`** (`R4`, outils `agent`) : `defaultPolicy: "auto"` malgré `R4`,
+   car leur garde est ailleurs (politique `web_access` §11.1, garde de fuite et provenance de 10 §4.2 qui
+   les font passer en confirmation au cas par cas). Ce sont les **seuls** outils sensibles admis en
+   `auto` ; la liste est fermée dans le registre (`sensitiveAutoAllowed`), pas déduite du nom.
+5. **Risque d'un `kind`** : fixé par ce document (colonne « Risque » du §4 et §4.2), pas par le modèle ;
+   pour `server.call`, c'est le `risk` de l'outil dans le manifeste. L'appareil le relit au rendu (§5,
+   règle 9) : une action sensible n'est jamais précochée même si le plan prétend le contraire (le plan ne
+   porte d'ailleurs aucun champ de risque).
+6. **Verrou serveur** : un appel d'outil sensible sans `plan: { planId, n }` est refusé
+   `403 action_not_accepted`, quelle que soit la valeur de `toolPolicy` (§8.4) ; seuls les outils de la
+   règle 4 font exception, et ils ne passent pas par l'API.
+7. **Rétrocompatibilité** : un manifeste sans `risk` (API antérieure à L15-0) est lu comme aujourd'hui
+   (politique effective du §2 sans `defaultPolicy`) et **toute** action `server.call` y est traitée comme
+   sensible par l'appareil (repli prudent), jusqu'à la mise à jour de l'API.
 
 ## 5. Validation
 
@@ -184,6 +231,9 @@ rend le plan entier invalide (code `plan_invalid`). Règles (vecteurs `action-pl
    est contrôlée à l'exécution (§8.2, étape 3).
 8. Appareil seulement : l'exécutant et l'`after` de chaque action servis par l'API (`PlanView.actions`,
    §12.1) égalent ceux du plan déchiffré (exécutant selon le §4 et le mode de sa délégation courante).
+9. Appareil seulement (L00i) : le risque de chaque action est celui du §4.1, règle 5 (table du `kind`, ou
+   `risk` du manifeste pour `server.call`) ; une action sensible est affichée non cochée, quel que soit
+   l'état servi ou mémorisé.
 
 Un plan invalide **à l'appareil** est refusé par la route de décision avec `reason: "plan_invalid"`
 (§12.1) : le worker reçoit `{"error":"plan_rejected","reason":"plan_invalid"}`. L'API ne voit pas le
@@ -588,7 +638,7 @@ toujours, le mandat `auto` doit être en vigueur, et la création reste tracée 
 |---|---|---|---|
 | `autonomous_mode` | actif | `none` (PC39), administrateurs compris | `AiFeatureOptIn` présent avec la `warningVersion` courante |
 | `runtime_mode` | actif | lu de `aiConfig.runtime.members` / `memberIds` (`all` → `all`, `list` → `list` avec ces membres) ; illisible → `list` vide (règle existante, `runtimePolicy.ts:34`) | délégation active (dépôt, 03 §7.1) |
-| `tool_auto_accept` | actif | `all` | réglage local de l'app (`autoAcceptTools`) ; **jamais** pour une action sensible (§4) |
+| `tool_auto_accept` | actif | `all` | réglage local de l'app (`autoAcceptTools`) ; **jamais** pour une action sensible (§4.1) |
 | `subagents`, `agent_memory`, `runtime_transcription`, `rich_push` | **réservées** (PC42) | — | — |
 
 Une fonctionnalité réservée n'a ni écran ni écriture : `PUT` → `409 feature_reserved`. Une valeur
@@ -768,6 +818,7 @@ phases, le claim et les résultats de phase d'agent (chiffrés). **Aucun contenu
 | `autonomy_required` | API 403, superviseur ; `code` d'abandon | Délégation ou mandat vérifié non `auto` |
 | `rate_limited` / `refs_inconsistent` / `key_unavailable` | `code` d'abandon (`abandoned`, résultat de phase, bilan) | Action d'agent jamais partie : `429` épuisé, `refs` différentes de la sortie enregistrée, clé du salon indisponible (§8.3, PC74) |
 | `feature_not_allowed` | API 403 | Politique d'org (ou opt-in absent) |
+| `tool_policy_sensitive_auto` | API 400 (`PUT` de la config IA) | `toolPolicy[name] = auto` pour un outil sensible (§4.1, règle 2) |
 | `feature_reserved` | API 409 | Fonctionnalité réservée (§11.1) |
 | `policy_not_list` | API 409 | `POST …/feature-policies/:feature/members` alors que la politique n'est pas en mode `list` (§12.3) |
 | `autonomy_withdrawn` | `revokedReason`, `delegation.revoked.reason` | Retrait du mode autonome (§11.4) |

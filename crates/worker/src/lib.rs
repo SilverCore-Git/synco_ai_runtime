@@ -29,6 +29,7 @@ pub mod stub;
 mod time;
 pub mod tools;
 pub mod transcript;
+pub mod untrusted;
 
 /// Ajoute ou remplace un champ d'un objet JSON (sans l'indexation qui panique sur un non-objet).
 pub(crate) fn json_set(v: &mut serde_json::Value, key: &str, value: serde_json::Value) {

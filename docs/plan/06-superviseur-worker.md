@@ -70,7 +70,7 @@ autre trame `0x02` du worker (retrait, `space`, `conv`, `llm_credential`, plusie
 
 | `type` | Champs | Moment |
 |---|---|---|
-| `init` | `sessionId`, `userId`, `orgId`, `runtimeId`, `authId`, `leaseEpoch`, `apiBaseUrl`, `llm` (§3.1), `limits` (§3.2), `toolPolicy` (D5 : `{ "<outil>": "auto" \| "ask" \| "deny" }`), `logLevel` | Première trame, suivie des trames de clés, puis `start` |
+| `init` | `sessionId`, `userId`, `orgId`, `runtimeId`, `authId`, `leaseEpoch`, `apiBaseUrl`, `llm` (§3.1), `limits` (§3.2), `toolPolicy` (D5 : `{ "<outil>": "auto" \| "ask" \| "deny" }`), `logLevel` ; **L00i** : `web` = `{ "available": bool, "provider": "<id>" \| null, "fetch": bool }` (socket `web` monté ou non, 10 §4.2) et `cdnRelay` (bool, étape 2 de 10 §4.3) | Première trame, suivie des trames de clés, puis `start` |
 | `start` | — | Le worker peut commencer (toutes les clés initiales reçues) |
 | `inbox` | `items` : éléments de boîte de réception tels que reçus (05 §6.2, champs encore chiffrés) | Message, décision ou annulation arrivés par WebSocket. **Révisé après L05, 2026-11-20** : un même élément peut arriver **deux fois** au worker (`GET …/inbox` à la reprise, puis `inbox` en direct, 04 §4.2) ; **L07 déduplique la boîte par `id`** (`docs/journal.md`, L05, écart 10) |
 | `keys` | (trame `0x02`) | Clé ajoutée (synchro P11) ou retirée (révocation) |
@@ -309,7 +309,8 @@ politique d'outils, les clés de **sa** conversation et de l'org pour **son** ut
 
 Ne peut pas (L06 le teste) : lire les clés ou la mémoire d'un autre worker ou du superviseur, lire le
 disque hôte, joindre un hôte hors de la liste (API, fournisseurs LLM configurés, passerelle), signer
-une requête lui-même, dépasser ses plafonds `memory.max` / `cpu.max` / `pids.max` (09 §2).
+une requête lui-même, joindre le web autrement que par le proxy `web` (et seulement si `webAllowed`,
+10 §4.2), dépasser ses plafonds `memory.max` / `cpu.max` / `pids.max` (09 §2).
 
 ## 7. Journaux
 
@@ -342,6 +343,9 @@ Résultats d'outil `{"error": code}` donnés au modèle (le code n'est pas un `l
 | `no_recipient_key` | `create_thread` : aucune clé de membre exploitable |
 | `member_key_changed` | `create_thread` : le superviseur a refusé l'annuaire des membres, une clé RSA a changé sans preuve (§4.3, Q25) ; aucun salon créé, rien de scellé (champ `note`) |
 | `unknown_outcome` | Issue inconnue d'un outil mutant (08 §5) |
+| `web_quota`, `web_url_refused`, `web_redirect_limit`, `web_too_large`, `web_unsupported_type`, `web_http_status`, `web_timeout`, `web_provider`, `web_unavailable`, `web_refused_by_user` | **L00i** : résultats d'erreur de `web_search` / `web_fetch` rendus au modèle (10 §4.2, §4.4) ; aucun ne fait échouer le tour |
+| `cdn_refused`, `cdn_too_large`, `cdn_timeout`, `cdn_status` | **L00i, étape 2** : relais `cdn` (10 §4.3) |
+| `key_not_delegated` | **L00i** : lecture E2EE d'un salon hors délégation (04 §4.3) ; rendu au modèle, qui propose de continuer sur l'appareil |
 | `artifact_format`, `artifact_name`, `artifact_not_text`, `artifact_too_large`, `artifact_turn_limit`, `artifact_quota`, `artifact_not_sent` | Outil `send_file` propre au worker (13 §2, §10, ajouté par L00g) : refus de forme ou de borne, ou dépôt impossible ; rien n'est déposé |
 
 `answer` et `upload` sont acceptés même si l'état lu est `queued` (l'API passe l'état à `queued` au dépôt,

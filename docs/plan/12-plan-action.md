@@ -200,7 +200,7 @@ Chaque outil du registre porte un champ **`risk`** (obligatoire, liste fermée),
 3. **Gestes personnels (PC89)** : `R2p` est `mutating: true` mais `defaultPolicy: "auto"` ; il n'entre pas
    dans le plan et n'affiche qu'une carte d'outil repliée. L'org peut le passer en `ask` ou `deny`.
 4. **Exception `web_search` / `web_fetch`** (`R4`, outils `agent`) : `defaultPolicy: "auto"` malgré `R4`,
-   car leur garde est ailleurs (politique `web_access` §11.1, garde de fuite et provenance de 10 §4.2 qui
+   car leur garde est ailleurs (politique `web_access` §11.1, garde de fuite et provenance de 10 §4.4 qui
    les font passer en confirmation au cas par cas). Ce sont les **seuls** outils sensibles admis en
    `auto` ; la liste est fermée dans le registre (`sensitiveAutoAllowed`), pas déduite du nom.
 5. **Risque d'un `kind`** : fixé par ce document (colonne « Risque » du §4 et §4.2), pas par le modèle ;

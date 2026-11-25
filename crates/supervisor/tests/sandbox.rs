@@ -420,7 +420,7 @@ async fn proxy_web_joint_depuis_le_bac_a_sable() {
             line
         }
     };
-    let ok = case(Some(WebRoute { user_id: "u1".into(), window_secs: 1800 })).await;
+    let ok = case(Some(WebRoute::new("u1", 1800))).await;
     assert!(ok.contains("status=200") && ok.contains("https://e.example/"), "{ok}");
     let none = case(None).await;
     assert!(none.contains("error="), "sans route web, aucun socket : {none}");

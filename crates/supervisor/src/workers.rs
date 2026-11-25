@@ -104,7 +104,9 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
         drop(st);
         rt.wake.notify_one();
     };
-    // 2. Bail (07 §4) avant tout lancement.
+    // 2. Bail (07 §4) avant tout lancement. L'instant précède la lecture de `webAllowed` (course avec
+    // `feature.revoked`, vérifiée par le proxy web à `serve`).
+    let granted_at = std::time::Instant::now();
     let lease = match rt.api.take_lease(session_id, &auth_id).await {
         Ok(l) => l,
         Err(e) => {
@@ -160,6 +162,7 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
         web: web.map(|_| crate::sandbox::web_proxy::WebRoute {
             user_id: user_id.clone(),
             window_secs: init.limits.max_turn_duration_secs,
+            granted_at,
         }),
         ..spec
     };

@@ -895,7 +895,23 @@ pub struct WebRoute {
     pub user_id: String,
     /// Fenêtre des quotas par tour (`maxTurnDurationSecs`).
     pub window_secs: u64,
+    /// Instant où l'accès a été lu (juste AVANT la prise du bail) : une révocation reçue depuis empêche
+    /// le socket d'être servi (course entre `feature.revoked` et le lancement du worker).
+    pub granted_at: Instant,
 }
+
+impl WebRoute {
+    /// Route accordée maintenant.
+    #[must_use]
+    pub fn new(user_id: impl Into<String>, window_secs: u64) -> Self {
+        Self { user_id: user_id.into(), window_secs, granted_at: Instant::now() }
+    }
+}
+
+/// Révocations récentes gardées (par utilisateur) pour la course au lancement.
+const RECENT_REVOCATIONS_MAX: usize = 10_000;
+/// Au-delà, une révocation ne peut plus concerner un lancement en cours (prise du bail → `serve`).
+const RECENT_REVOCATION_TTL: Duration = Duration::from_secs(600);
 
 struct RouteCtx {
     proxy: Arc<WebProxy>,
@@ -925,6 +941,8 @@ pub struct WebProxy {
     hour: Mutex<HourCounter>,
     runtime_conns: Arc<Semaphore>,
     routes: Mutex<Vec<Registered>>,
+    /// Dernière révocation par utilisateur (`feature.revoked`, bail sans `webAllowed`).
+    revoked_at: Mutex<std::collections::HashMap<String, Instant>>,
 }
 
 impl core::fmt::Debug for WebProxy {
@@ -999,6 +1017,7 @@ impl WebProxy {
             hour: Mutex::new(HourCounter { start: Instant::now(), searches: 0, fetches: 0 }),
             runtime_conns: Arc::new(Semaphore::new(CONNECTIONS_PER_RUNTIME)),
             routes: Mutex::new(Vec::new()),
+            revoked_at: Mutex::new(std::collections::HashMap::new()),
         }))
     }
 
@@ -1027,6 +1046,14 @@ impl WebProxy {
         socket: PathBuf,
         route: WebRoute,
     ) -> tokio::task::JoinHandle<()> {
+        // Révoqué depuis la lecture de l'accès : rien n'est servi, le socket disparaît.
+        let revoked_since = lock(&self.revoked_at).get(&route.user_id).is_some_and(|t| *t >= route.granted_at);
+        if revoked_since {
+            drop(listener);
+            let _ = std::fs::remove_file(&socket);
+            tracing::info!(code = "web_access_revoked", "socket web non servi (accès retiré au lancement)");
+            return tokio::spawn(async {});
+        }
         let (tx, rx) = watch::channel(false);
         let user_id = route.user_id.clone();
         let now = Instant::now();
@@ -1061,6 +1088,14 @@ impl WebProxy {
     /// `feature.revoked` (12 §11.4) : ferme le socket `web` des workers de `user_id` ; requêtes en cours
     /// coupées (`web_unavailable`), connexions suivantes refusées (socket retiré). Rend le nombre fermé.
     pub fn revoke_user(&self, user_id: &str) -> usize {
+        {
+            let now = Instant::now();
+            let mut recent = lock(&self.revoked_at);
+            recent.retain(|_, t| now.saturating_duration_since(*t) < RECENT_REVOCATION_TTL);
+            if recent.len() < RECENT_REVOCATIONS_MAX || recent.contains_key(user_id) {
+                recent.insert(user_id.to_owned(), now);
+            }
+        }
         let mut routes = lock(&self.routes);
         let mut n = 0usize;
         routes.retain(|r| {

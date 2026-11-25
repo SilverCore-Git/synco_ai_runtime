@@ -397,7 +397,7 @@ async fn aller_retour_recherche_lecture_et_revocation() {
     let dir = tempfile::tempdir().expect("dossier");
     let socket = dir.path().join(WEB_SOCKET_NAME);
     let listener = tokio::net::UnixListener::bind(&socket).expect("socket");
-    let task = proxy.serve(listener, socket.clone(), WebRoute { user_id: "u1".into(), window_secs: 1800 });
+    let task = proxy.serve(listener, socket.clone(), WebRoute::new("u1", 1800));
 
     // Recherche : clé injectée par le superviseur, résultats normalisés.
     let (status, _, v, _) = post(&socket, "/search", &json!({ "query": "gestion de projet", "lang": "fr" })).await;
@@ -464,7 +464,7 @@ async fn quotas_et_corps_trop_grand() {
     let dir = tempfile::tempdir().expect("dossier");
     let socket = dir.path().join(WEB_SOCKET_NAME);
     let listener = tokio::net::UnixListener::bind(&socket).expect("socket");
-    let _task = proxy.serve(listener, socket.clone(), WebRoute { user_id: "u1".into(), window_secs: 1 });
+    let _task = proxy.serve(listener, socket.clone(), WebRoute::new("u1", 1));
     let page = json!({ "url": "https://www.exemple.org/x" });
     for _ in 0..2 {
         assert_eq!(post(&socket, "/fetch", &page).await.0, 200);
@@ -499,12 +499,12 @@ async fn des_workers_inactifs_ne_gardent_aucune_place() {
     for i in 0..CONNECTIONS_PER_RUNTIME {
         let socket = dir.path().join(format!("w{i}.sock"));
         let listener = tokio::net::UnixListener::bind(&socket).expect("socket");
-        idle.push(proxy.serve(listener, socket, WebRoute { user_id: format!("u{i}"), window_secs: 60 }));
+        idle.push(proxy.serve(listener, socket, WebRoute::new(format!("u{i}"), 60)));
     }
     tokio::time::sleep(Duration::from_millis(100)).await;
     let socket = dir.path().join("w9.sock");
     let listener = tokio::net::UnixListener::bind(&socket).expect("socket");
-    let _task = proxy.serve(listener, socket.clone(), WebRoute { user_id: "u9".into(), window_secs: 60 });
+    let _task = proxy.serve(listener, socket.clone(), WebRoute::new("u9", 60));
     let page = json!({ "url": "https://www.exemple.org/x" });
     let served =
         tokio::time::timeout(Duration::from_secs(5), post(&socket, "/fetch", &page)).await.expect("servi à temps");
@@ -524,7 +524,7 @@ async fn sans_place_la_connexion_recoit_429() {
     let dir = tempfile::tempdir().expect("dossier");
     let socket = dir.path().join(WEB_SOCKET_NAME);
     let listener = tokio::net::UnixListener::bind(&socket).expect("socket");
-    let _task = proxy.serve(listener, socket.clone(), WebRoute { user_id: "u1".into(), window_secs: 60 });
+    let _task = proxy.serve(listener, socket.clone(), WebRoute::new("u1", 60));
     // Deux connexions ouvertes et gardées : les deux places du worker.
     let mut held = Vec::new();
     for _ in 0..CONNECTIONS_PER_WORKER {
@@ -534,4 +534,33 @@ async fn sans_place_la_connexion_recoit_429() {
     let (status, _, v, _) = post(&socket, "/search", &json!({ "query": "meteo" })).await;
     assert_eq!((status, v["error"].as_str()), (429, Some("web_quota")));
     drop(held);
+}
+
+#[tokio::test]
+async fn revocation_pendant_le_lancement() {
+    let proxy = WebProxy::with_parts(
+        Some(service(SearchProvider::Searxng, "http://127.0.0.1:9", None)),
+        &WebSettings::default(),
+        Vec::new(),
+        Arc::new(FakeResolver::default()),
+        Arc::new(FakeTransport::default()),
+    )
+    .expect("proxy");
+    let dir = tempfile::tempdir().expect("dossier");
+    // Accès lu (bail), puis `feature.revoked` avant que le socket ne soit servi.
+    let granted = WebRoute::new("u1", 60);
+    assert_eq!(proxy.revoke_user("u1"), 0, "aucun socket encore enregistré");
+    let socket = dir.path().join("a.sock");
+    let listener = tokio::net::UnixListener::bind(&socket).expect("socket");
+    proxy.serve(listener, socket.clone(), granted).await.expect("tâche");
+    assert!(!socket.exists(), "socket retiré");
+    assert!(tokio::net::UnixStream::connect(&socket).await.is_err(), "aucune connexion possible");
+    // Accès relu APRÈS la révocation (réactivé) : servi ; un autre utilisateur n'est pas touché.
+    for (name, user) in [("b.sock", "u1"), ("c.sock", "u2")] {
+        let socket = dir.path().join(name);
+        let listener = tokio::net::UnixListener::bind(&socket).expect("socket");
+        let _task = proxy.serve(listener, socket.clone(), WebRoute::new(user, 60));
+        let (status, _, v, _) = post(&socket, "/search", &json!({ "query": "x" })).await;
+        assert_eq!((status, v["error"].as_str()), (400, Some("web_bad_request")), "{name} servi");
+    }
 }

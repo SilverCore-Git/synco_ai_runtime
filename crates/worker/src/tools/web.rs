@@ -164,12 +164,15 @@ pub struct History {
     pub conv_fetches: usize,
 }
 
-/// Une source `untrusted` qui n'est pas du web : texte de tiers lu par un outil (message, fichier,
-/// ticket, tâche…). Le résultat d'une recherche ou d'une page n'alimente pas la garde (le web n'est
-/// pas un secret de l'org).
+/// Outils dont le résultat ne contient aucune donnée de l'org (catalogue d'outils).
+const NO_ORG_DATA: &[&str] = &["find_tools"];
+
+/// Résultat qui alimente la garde : celui de **tout** outil qui rend des données de l'org (messages,
+/// fichiers, tâches, membres, agenda, réglages…), étiqueté `untrusted` ou non. Seuls le web (le web n'est
+/// pas un secret de l'org) et le catalogue d'outils en sont exclus.
 #[must_use]
-pub fn feeds_guard(untrusted: Option<&str>) -> bool {
-    untrusted.is_some_and(|s| !s.starts_with("web"))
+pub fn feeds_guard(name: &str, untrusted: Option<&str>) -> bool {
+    !is_web_tool(name) && !untrusted.is_some_and(|s| s.starts_with("web")) && !NO_ORG_DATA.contains(&name)
 }
 
 /// Chaînes d'un résultat d'outil (bornées), pour la garde.
@@ -232,7 +235,7 @@ pub fn scan(
                     h.search_urls.insert(c);
                 }
             }
-        } else if feeds_guard(untrusted_of(name).as_deref()) {
+        } else if feeds_guard(name, untrusted_of(name).as_deref()) {
             let mut texts = Vec::new();
             let mut budget = 10_000usize;
             strings_of(result, &mut texts, &mut budget);
@@ -489,6 +492,27 @@ mod tests {
             WEB_SEARCH | WEB_FETCH => Some("web".into()),
             _ => None,
         }
+    }
+
+    #[test]
+    fn la_garde_lit_tous_les_outils_de_l_org() {
+        assert!(feeds_guard("search_messages", Some("message")));
+        // Sans étiquette `untrusted` (tâches, membres, agenda…) : alimente aussi la garde.
+        assert!(feeds_guard("read_tasks", None));
+        assert!(!feeds_guard(WEB_SEARCH, Some("web")));
+        assert!(!feeds_guard(WEB_FETCH, None));
+        assert!(!feeds_guard("autre", Some("web:ex.example")));
+        assert!(!feeds_guard("find_tools", None));
+        let msgs = vec![
+            tool_call("t1", "read_tasks", json!({}), ToolStatus::Done),
+            tool_result("t1", json!({ "tasks": [{ "title": "Contrat Durand signé le 4 mars avec pénalités" }] })),
+        ];
+        let mut g = guard::Guard::with_os_key().expect("clé");
+        let h = scan(&msgs, "now", untrusted, &mut g);
+        assert!(matches!(
+            precheck(WEB_SEARCH, &json!({ "query": "contrat durand signe le 4 mars" }), &h, &g),
+            Precheck::Confirm { .. }
+        ));
     }
 
     fn history() -> Vec<Message> {

@@ -1308,6 +1308,21 @@ async fn handle(State(ctx): State<Arc<RouteCtx>>, req: Request) -> Response {
     }
 }
 
+/// Connexion sans place : `429 web_quota` écrit en une fois (au plus 1 s), puis fermeture.
+async fn refuse_busy(mut io: tokio::net::UnixStream) {
+    use tokio::io::AsyncWriteExt as _;
+    const BODY: &str = r#"{"error":"web_quota"}"#;
+    let resp = format!(
+        "HTTP/1.1 429 Too Many Requests\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{BODY}",
+        BODY.len()
+    );
+    let _ = tokio::time::timeout(Duration::from_secs(1), async {
+        let _ = io.write_all(resp.as_bytes()).await;
+        let _ = io.shutdown().await;
+    })
+    .await;
+}
+
 /// Connexion comptée (places du worker et du runtime rendues à la fermeture).
 struct LimitedConn {
     io: tokio::net::UnixStream,
@@ -1333,7 +1348,8 @@ impl AsyncWrite for LimitedConn {
     }
 }
 
-/// N'accepte une connexion que s'il reste une place pour ce worker **et** pour le runtime.
+/// Accepte d'abord, puis prend une place du worker **et** une du runtime sans attendre ; sans place, la
+/// connexion reçoit `429 web_quota` et est fermée. Un worker sans connexion ouverte ne garde aucune place.
 struct LimitedListener {
     inner: tokio::net::UnixListener,
     worker: Arc<Semaphore>,
@@ -1346,15 +1362,19 @@ impl axum::serve::Listener for LimitedListener {
 
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         loop {
-            let (Ok(w), Ok(r)) =
-                (Arc::clone(&self.worker).acquire_owned().await, Arc::clone(&self.runtime).acquire_owned().await)
-            else {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                continue;
+            let (io, addr) = match self.inner.accept().await {
+                Ok(c) => c,
+                Err(_) => {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    continue;
+                }
             };
-            match self.inner.accept().await {
-                Ok((io, addr)) => return (LimitedConn { io, _worker: w, _runtime: r }, addr),
-                Err(_) => tokio::time::sleep(Duration::from_millis(50)).await,
+            match (Arc::clone(&self.worker).try_acquire_owned(), Arc::clone(&self.runtime).try_acquire_owned()) {
+                (Ok(w), Ok(r)) => return (LimitedConn { io, _worker: w, _runtime: r }, addr),
+                // Les places éventuellement prises sont rendues ici (fin de portée).
+                _ => {
+                    tokio::spawn(refuse_busy(io));
+                }
             }
         }
     }

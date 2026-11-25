@@ -480,3 +480,58 @@ async fn quotas_et_corps_trop_grand() {
     let (status, _, v, _) = post(&socket, "/search", &json!({ "query": "x".repeat(4096) })).await;
     assert_eq!((status, v["error"].as_str()), (400, Some("web_bad_request")), "corps > 4 Kio");
 }
+
+#[tokio::test]
+async fn des_workers_inactifs_ne_gardent_aucune_place() {
+    let mut resolver = FakeResolver::default();
+    resolver.0.insert("www.exemple.org".into(), vec!["93.184.215.14".parse().expect("ip")]);
+    let proxy = WebProxy::with_parts(
+        Some(service(SearchProvider::Searxng, "http://127.0.0.1:9", None)),
+        &WebSettings::default(),
+        Vec::new(),
+        Arc::new(resolver),
+        Arc::new(FakeTransport::default()),
+    )
+    .expect("proxy");
+    let dir = tempfile::tempdir().expect("dossier");
+    // Huit workers qui n'ouvrent jamais de connexion (autant que de places du runtime).
+    let mut idle = Vec::new();
+    for i in 0..CONNECTIONS_PER_RUNTIME {
+        let socket = dir.path().join(format!("w{i}.sock"));
+        let listener = tokio::net::UnixListener::bind(&socket).expect("socket");
+        idle.push(proxy.serve(listener, socket, WebRoute { user_id: format!("u{i}"), window_secs: 60 }));
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let socket = dir.path().join("w9.sock");
+    let listener = tokio::net::UnixListener::bind(&socket).expect("socket");
+    let _task = proxy.serve(listener, socket.clone(), WebRoute { user_id: "u9".into(), window_secs: 60 });
+    let page = json!({ "url": "https://www.exemple.org/x" });
+    let served =
+        tokio::time::timeout(Duration::from_secs(5), post(&socket, "/fetch", &page)).await.expect("servi à temps");
+    assert_eq!(served.0, 200, "le 9e worker est servi");
+}
+
+#[tokio::test]
+async fn sans_place_la_connexion_recoit_429() {
+    let proxy = WebProxy::with_parts(
+        Some(service(SearchProvider::Searxng, "http://127.0.0.1:9", None)),
+        &WebSettings::default(),
+        Vec::new(),
+        Arc::new(FakeResolver::default()),
+        Arc::new(FakeTransport::default()),
+    )
+    .expect("proxy");
+    let dir = tempfile::tempdir().expect("dossier");
+    let socket = dir.path().join(WEB_SOCKET_NAME);
+    let listener = tokio::net::UnixListener::bind(&socket).expect("socket");
+    let _task = proxy.serve(listener, socket.clone(), WebRoute { user_id: "u1".into(), window_secs: 60 });
+    // Deux connexions ouvertes et gardées : les deux places du worker.
+    let mut held = Vec::new();
+    for _ in 0..CONNECTIONS_PER_WORKER {
+        held.push(tokio::net::UnixStream::connect(&socket).await.expect("connexion"));
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let (status, _, v, _) = post(&socket, "/search", &json!({ "query": "meteo" })).await;
+    assert_eq!((status, v["error"].as_str()), (429, Some("web_quota")));
+    drop(held);
+}

@@ -577,6 +577,12 @@ impl Runtime {
                 // les vérifications et l'appel à l'API, sans retarder les évènements suivants.
                 let _ = self.submit_repair(&thread_id, &user_id, &delegation_id).await;
             }
+            ApiEvent::FeatureRevoked { user_id, feature } => {
+                // 12 §11.4 : seul `web_access` a une conséquence côté runtime (socket `web` fermé).
+                if feature == "web_access" {
+                    self.launcher.revoke_web(&user_id);
+                }
+            }
             ApiEvent::RuntimeUnpaired => self.unpaired.notify_one(),
             ApiEvent::Ping | ApiEvent::Unknown => {}
         }
@@ -768,6 +774,8 @@ impl Runtime {
             tool_policy: policy.map(|p| p.runtime.tool_policy.clone()).unwrap_or_default(),
             log_level: self.config.log_level.clone(),
             plan: Some(self.plan_init(st, user_id, policy)),
+            // Fixé par `workers::start` d'après le bail (`webAllowed`) et le lanceur.
+            web: None,
         };
         let route = route.map(|r| LlmRoute { budget: crate::launcher::LlmBudget::from_limits(&init.limits), ..r });
         Ok((init, keys, route))

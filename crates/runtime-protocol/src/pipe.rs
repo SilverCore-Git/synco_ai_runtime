@@ -512,6 +512,22 @@ pub struct Init {
     /// Plans d'action (12) : absent = ancien superviseur, aucun plan (confirmation outil par outil).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<PlanInit>,
+    /// Outils web (L00i, 10 §4.2) : absent = ancien superviseur, aucun outil web.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web: Option<WebInit>,
+}
+
+/// Outils web d'un worker (06 §3, 10 §4.2) : `available` = socket `web` monté (bail `webAllowed` et
+/// section `[web.search]` valide). Aucun secret.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct WebInit {
+    /// Socket `web` monté.
+    pub available: bool,
+    /// Service de recherche déclaré (`staan`, `mojeek`, `searxng`, `brave`), ou `null`.
+    pub provider: Option<String>,
+    /// `web_fetch` permis (`[web.fetch] enabled`).
+    pub fetch: bool,
 }
 
 /// Mode du mandat **vérifié** de la délégation courante du propriétaire (12 §10.1) ; `auto` seulement

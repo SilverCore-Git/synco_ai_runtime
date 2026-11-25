@@ -104,7 +104,9 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
         drop(st);
         rt.wake.notify_one();
     };
-    // 2. Bail (07 §4) avant tout lancement.
+    // 2. Bail (07 §4) avant tout lancement. L'instant précède la lecture de `webAllowed` (course avec
+    // `feature.revoked`, vérifiée par le proxy web à `serve`).
+    let granted_at = std::time::Instant::now();
     let lease = match rt.api.take_lease(session_id, &auth_id).await {
         Ok(l) => l,
         Err(e) => {
@@ -117,7 +119,7 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
         let st = rt.state.lock().await;
         rt.build_init(&st, session_id, &user_id, &auth_id, lease.lease_epoch)
     };
-    let (init, keys, llm) = match prepared {
+    let (mut init, keys, llm) = match prepared {
         Ok(p) => p,
         Err(code) => {
             if code != "init_unavailable" {
@@ -145,7 +147,24 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
             cpu_max_percent: l.worker_cpu_percent,
             pids_max: l.worker_pids_max,
         },
+        web: None,
         llm,
+    };
+    // Outils web (10 §4.2, 12 §11.2) : bail `webAllowed` ET proxy configuré ET route LLM (le socket vit à
+    // côté de `llm.sock`). Sinon pas de socket et le worker ne montre aucun outil web.
+    let web = rt.launcher.web_tools().filter(|_| lease.features.web_allowed && spec.llm.is_some());
+    init.web = Some(runtime_protocol::pipe::WebInit {
+        available: web.is_some(),
+        provider: web.map(|w| w.provider.to_owned()),
+        fetch: web.is_some_and(|w| w.fetch),
+    });
+    let spec = WorkerSpec {
+        web: web.map(|_| crate::sandbox::web_proxy::WebRoute {
+            user_id: user_id.clone(),
+            window_secs: init.limits.max_turn_duration_secs,
+            granted_at,
+        }),
+        ..spec
     };
     let spawned = match rt.launcher.spawn(spec).await {
         Ok(s) => s,
@@ -319,6 +338,19 @@ pub(crate) async fn created_key(
 pub const CREATE_THREAD_PATH: &str = "/api/runtime/v1/e2ee/threads";
 /// Salons créés en attente de leur clé, au plus, par worker.
 const MAX_PENDING_CREATED_THREADS: usize = 64;
+
+/// Renouvellement du bail relayé pour le worker (10 §4.2, 12 §11.2) : une réponse 2xx qui ne rend pas
+/// `features.webAllowed = true` (faux, absent ou illisible) retire l'accès web, comme `feature.revoked`.
+/// Le chemin est comparé comme Express le route : requête retirée, barres obliques finales ignorées,
+/// casse ignorée (`/LEASE/?x=1` atteint la même route).
+fn lease_withdraws_web(method: pipe::HttpMethod, path: &str, session: &str, status: u16, body: &[u8]) -> bool {
+    let bare = path.split(['?', '#']).next().unwrap_or_default().trim_end_matches('/').to_ascii_lowercase();
+    let expected = format!("/api/runtime/v1/conversations/{session}/lease").to_ascii_lowercase();
+    method == pipe::HttpMethod::Post
+        && (200..300).contains(&status)
+        && bare == expected
+        && !serde_json::from_slice::<runtime_protocol::api::LeaseResponse>(body).is_ok_and(|l| l.features.web_allowed)
+}
 
 async fn note_created_thread(rt: &Arc<Runtime>, session: &str, epoch: u64, body: &[u8]) {
     let id = serde_json::from_slice::<serde_json::Value>(body)
@@ -829,11 +861,16 @@ async fn relay(
     let rt = Arc::clone(rt);
     let tx = tx.clone();
     let session = session.to_owned();
+    let user_id = user_id.to_owned();
     tokio::spawn(async move {
         let _permit = permit;
         let result = rt.api.signed(Method::from(req.method), &req.path, body, auth.as_deref()).await;
         let parts = match result {
             Ok(r) => {
+                // Bail renouvelé sans `webAllowed` : socket `web` fermé AVANT que le worker voie la réponse.
+                if lease_withdraws_web(req.method, &req.path, &session, r.status, &r.body) {
+                    rt.launcher.revoke_web(&user_id);
+                }
                 // Salon créé par CE worker (réponse 2xx de l'API, id lu dans la réponse) : seule
                 // source admise pour `created_key`. Noté AVANT que le worker voie la réponse.
                 if req.method == pipe::HttpMethod::Post
@@ -887,6 +924,35 @@ async fn relay(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renouvellement_du_bail_sans_acces_web() {
+        let p = "/api/runtime/v1/conversations/s1/lease";
+        let post = pipe::HttpMethod::Post;
+        let on = br#"{"leaseEpoch":2,"expiresAt":"x","features":{"webAllowed":true}}"#;
+        let off = br#"{"leaseEpoch":2,"expiresAt":"x","features":{"webAllowed":false}}"#;
+        let old = br#"{"leaseEpoch":2,"expiresAt":"x"}"#;
+        assert!(!lease_withdraws_web(post, p, "s1", 200, on));
+        assert!(lease_withdraws_web(post, p, "s1", 200, off));
+        assert!(lease_withdraws_web(post, p, "s1", 200, old));
+        assert!(lease_withdraws_web(post, p, "s1", 200, b"illisible"));
+        // Échec du renouvellement, autre conversation, autre route, autre méthode : rien.
+        assert!(!lease_withdraws_web(post, p, "s1", 409, off));
+        assert!(!lease_withdraws_web(post, p, "s2", 200, off));
+        assert!(!lease_withdraws_web(post, "/api/runtime/v1/conversations/s1/status", "s1", 200, off));
+        assert!(!lease_withdraws_web(pipe::HttpMethod::Delete, p, "s1", 200, off));
+        // Variantes routées par l'API vers le même bail : barre finale, requête, casse.
+        for v in [
+            "/api/runtime/v1/conversations/s1/lease/",
+            "/api/runtime/v1/conversations/s1/lease?x=1",
+            "/api/runtime/v1/conversations/s1/lease//?x=1",
+            "/API/Runtime/V1/conversations/s1/LEASE",
+        ] {
+            assert!(lease_withdraws_web(post, v, "s1", 200, off), "{v}");
+            assert!(!lease_withdraws_web(post, v, "s1", 200, on), "{v}");
+        }
+        assert!(!lease_withdraws_web(post, "/api/runtime/v1/conversations/s1/lease/x", "s1", 200, off));
+    }
 
     #[test]
     fn chemins_du_worker() {

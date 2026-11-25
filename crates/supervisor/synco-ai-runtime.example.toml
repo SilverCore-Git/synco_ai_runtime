@@ -117,3 +117,35 @@ output_eur_per_mtok = 9.2
 # superviseur, qui ajoute la clé à chaque appel vers base_url.
 # La passerelle Synco n'a pas de clé : le worker obtient un ticket sgt1 par l'API.
 [llm.providers.gateway]
+
+# Outils web de l'agent (web_search, web_fetch ; docs/plan/10 §4.2). Sans section [web.search], aucun
+# outil web. Le service choisi reçoit le texte des recherches (jamais l'identité de l'utilisateur) :
+# c'est un sous-traitant de l'organisation, qui signe son contrat (DPA). Staan est le défaut recommandé,
+# Mojeek le repli ; searxng (auto-hébergé) et brave sont aussi pris en charge. Chaque membre doit en plus y
+# être autorisé par l'administrateur de l'org (politique « Accès web », fermée par défaut) et l'activer.
+# [web.search]
+# provider = "staan"
+# base_url = "https://api.staan.ai/v2"
+# api_key_file = "/run/credentials/synco-ai-runtime.service/staan"
+#
+# [web.fetch]
+# enabled = true
+#
+# [web]
+# web_fetch refuse déjà l'API, l'URL publique du runtime, la passerelle, et toute adresse de l'hôte du
+# runtime (interfaces lues au démarrage). À LISTER ICI : les autres hôtes de votre déploiement Synco, qui ne
+# se déduisent pas de cette configuration et ne doivent jamais être lus par l'agent :
+#   - le CDN des fichiers chiffrés (synco_cdn),
+#   - le site et l'app web (et leurs variantes www.),
+#   - le keyguard,
+#   - tout service interne joignable par un nom public (supervision, administration).
+# Un nom refuse aussi ses sous-domaines.
+# synco_hosts = ["cdn.example.com", "app.example.com", "www.example.com", "keyguard.example.com"]
+#
+# [web.quotas]
+# search_per_window = 10   # par worker et par fenêtre de max_turn_duration_secs
+# search_per_worker = 50
+# search_per_hour = 200    # tout le runtime
+# fetch_per_window = 20
+# fetch_per_worker = 100
+# fetch_per_hour = 500

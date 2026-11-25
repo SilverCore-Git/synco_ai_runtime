@@ -123,6 +123,14 @@ pub enum ApiEvent {
         /// Délégation active avec laquelle signer.
         delegation_id: String,
     },
+    /// Fonctionnalité retirée à un utilisateur (L00i, 12 §11.4) : `web_access` en v1, fermer le socket
+    /// `web` de ses workers.
+    FeatureRevoked {
+        /// Utilisateur.
+        user_id: String,
+        /// Fonctionnalité (code).
+        feature: String,
+    },
     /// Révocation des tickets d'un utilisateur émis avant `until` (02 §8).
     UserRevoked {
         /// Utilisateur.
@@ -152,6 +160,7 @@ struct Fields {
     entries: Option<Vec<RemovedEntry>>,
     until: Option<u64>,
     thread_id: Option<String>,
+    feature: Option<Value>,
 }
 
 /// Raison de refus d'une trame du flux.
@@ -215,6 +224,7 @@ pub fn parse_api_event(text: &str) -> Result<ApiEvent, InvalidApiFrame> {
             delegation_id: id(f.delegation_id)?,
             reason: code(f.reason)?,
         },
+        "feature.revoked" => ApiEvent::FeatureRevoked { user_id: id(f.user_id)?, feature: code(f.feature)? },
         "user.revoked" => ApiEvent::UserRevoked { user_id: id(f.user_id)?, until: f.until.ok_or(InvalidApiFrame)? },
         "runtime.unpaired" => ApiEvent::RuntimeUnpaired,
         "ping" => ApiEvent::Ping,
@@ -240,6 +250,11 @@ mod tests {
 
     #[test]
     fn evenements() {
+        assert_eq!(
+            parse_api_event(r#"{"v":1,"type":"feature.revoked","userId":"u1","feature":"web_access"}"#),
+            Ok(ApiEvent::FeatureRevoked { user_id: "u1".into(), feature: "web_access".into() })
+        );
+        assert!(parse_api_event(r#"{"v":1,"type":"feature.revoked","userId":"u1"}"#).is_err());
         assert_eq!(
             parse_api_event(r#"{"v":1,"type":"hello","orgId":"org1","serverTime":5}"#),
             Ok(ApiEvent::Hello { org_id: "org1".into(), server_time: 5 })

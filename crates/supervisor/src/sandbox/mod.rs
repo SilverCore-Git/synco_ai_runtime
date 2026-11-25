@@ -22,6 +22,7 @@ pub mod proxy;
 pub mod selftest;
 #[allow(unsafe_code, reason = "seul module autorisé (L06) ; chaque bloc est justifié dans le fichier")]
 mod sys;
+pub mod web_proxy;
 
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
@@ -40,6 +41,7 @@ use crate::launcher::{
 };
 use cgroup::{CgroupTree, WorkerCgroup};
 use proxy::LlmProxy;
+use web_proxy::{WebProxy, WebRoute};
 
 /// Délai de la sonde de démarrage.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -120,6 +122,7 @@ pub struct SandboxLauncher {
     cgroups: Option<CgroupTree>,
     run_dir: PathBuf,
     proxy: Arc<LlmProxy>,
+    web: Option<Arc<WebProxy>>,
     next_id: AtomicU64,
 }
 
@@ -149,12 +152,26 @@ impl SandboxLauncher {
             Mode::Sandboxed => Some(CgroupTree::setup(settings.cgroup_root.as_deref()).map_err(err)?),
             Mode::Insecure => None,
         };
-        let launcher =
-            Self { mode, program, cgroups, run_dir: settings.run_dir.clone(), proxy, next_id: AtomicU64::new(1) };
+        let launcher = Self {
+            mode,
+            program,
+            cgroups,
+            run_dir: settings.run_dir.clone(),
+            proxy,
+            web: None,
+            next_id: AtomicU64::new(1),
+        };
         if mode == Mode::Sandboxed {
             launcher.probe().await?;
         }
         Ok(launcher)
+    }
+
+    /// Branche le proxy `web` (10 §4.2) : sans lui, aucun worker n'a d'outil web.
+    #[must_use]
+    pub fn with_web(mut self, web: Arc<WebProxy>) -> Self {
+        self.web = web.available().then_some(web);
+        self
     }
 
     /// Mode.
@@ -191,9 +208,23 @@ impl SandboxLauncher {
     /// Lance un enfant du bac à sable. `extra_without` : couches retirées (tests).
     pub async fn spawn_child(
         &self,
+        args: ChildArgs,
+        limits: &ResourceLimits,
+        llm: Option<LlmRoute>,
+        extra_without: Vec<Layer>,
+    ) -> Result<RawWorker, LaunchError> {
+        self.spawn_child_with_web(args, limits, llm, None, extra_without).await
+    }
+
+    /// Comme [`Self::spawn_child`], avec le socket `web` (`web.sock` à côté de `llm.sock`, même
+    /// répertoire monté sous `/run/synco/`) quand `web` est donné, que le proxy est branché et qu'une
+    /// route LLM existe.
+    pub async fn spawn_child_with_web(
+        &self,
         mut args: ChildArgs,
         limits: &ResourceLimits,
         llm: Option<LlmRoute>,
+        web: Option<WebRoute>,
         extra_without: Vec<Layer>,
     ) -> Result<RawWorker, LaunchError> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -220,6 +251,30 @@ impl SandboxLauncher {
             None => None,
         };
         let has_llm = proxy_task.is_some();
+        let web_task = match (web, &self.web) {
+            (Some(route), Some(proxy)) if has_llm => {
+                let socket = dir.join(web_proxy::WEB_SOCKET_NAME);
+                let bound = tokio::net::UnixListener::bind(&socket)
+                    .ok()
+                    .and_then(|l| set_mode(&socket, 0o600).ok().map(|()| l));
+                match bound {
+                    Some(l) => Some(proxy.serve(l, socket, route)),
+                    None => {
+                        if let Some(t) = &proxy_task {
+                            t.abort();
+                        }
+                        let _ = std::fs::remove_dir_all(&dir);
+                        return Err(LaunchError("web_socket"));
+                    }
+                }
+            }
+            _ => None,
+        };
+        let abort_tasks = |p: &Option<tokio::task::JoinHandle<()>>, w: &Option<tokio::task::JoinHandle<()>>| {
+            for t in [p, w].into_iter().flatten() {
+                t.abort();
+            }
+        };
         let cleanup_dir = |dir: &Path| {
             let _ = std::fs::remove_dir_all(dir);
         };
@@ -227,9 +282,7 @@ impl SandboxLauncher {
             Some(tree) => match tree.create(&name, limits) {
                 Ok(c) => Some(c),
                 Err(code) => {
-                    if let Some(t) = &proxy_task {
-                        t.abort();
-                    }
+                    abort_tasks(&proxy_task, &web_task);
                     cleanup_dir(&dir);
                     return Err(LaunchError(code));
                 }
@@ -257,9 +310,7 @@ impl SandboxLauncher {
         let (io, theirs) = match pair {
             Ok(p) => p,
             Err(_) => {
-                if let Some(t) = &proxy_task {
-                    t.abort();
-                }
+                abort_tasks(&proxy_task, &web_task);
                 if let Some(c) = cgroup {
                     c.destroy().await;
                 }
@@ -281,9 +332,7 @@ impl SandboxLauncher {
         let mut child = match spawned {
             Ok(c) => c,
             Err(_) => {
-                if let Some(t) = &proxy_task {
-                    t.abort();
-                }
+                abort_tasks(&proxy_task, &web_task);
                 if let Some(c) = cgroup {
                     c.destroy().await;
                 }
@@ -300,6 +349,7 @@ impl SandboxLauncher {
                 pid,
                 cgroup,
                 proxy_task,
+                web_task,
                 dir: Some(dir),
                 stderr,
                 started,
@@ -370,6 +420,7 @@ pub struct SandboxProcess {
     pid: Option<u32>,
     cgroup: Option<WorkerCgroup>,
     proxy_task: Option<tokio::task::JoinHandle<()>>,
+    web_task: Option<tokio::task::JoinHandle<()>>,
     dir: Option<PathBuf>,
     stderr: Option<tokio::task::JoinHandle<Option<String>>>,
     started: Instant,
@@ -397,7 +448,7 @@ impl SandboxProcess {
     }
 
     async fn cleanup(&mut self) {
-        if let Some(t) = self.proxy_task.take() {
+        for t in [self.proxy_task.take(), self.web_task.take()].into_iter().flatten() {
             t.abort();
         }
         if let Some(d) = self.dir.take() {
@@ -458,7 +509,7 @@ impl WorkerProcess for SandboxProcess {
 
 impl Drop for SandboxProcess {
     fn drop(&mut self) {
-        if let Some(t) = self.proxy_task.take() {
+        for t in [self.proxy_task.take(), self.web_task.take()].into_iter().flatten() {
             t.abort();
         }
         if let Some(d) = self.dir.take() {
@@ -477,7 +528,7 @@ impl WorkerLauncher for SandboxLauncher {
     fn spawn(&self, spec: WorkerSpec) -> BoxFuture<'_, Result<SpawnedWorker, LaunchError>> {
         Box::pin(async move {
             let args = ChildArgs { payload: "worker".into(), ..ChildArgs::default() };
-            let w = self.spawn_child(args, &spec.resources, spec.llm, Vec::new()).await?;
+            let w = self.spawn_child_with_web(args, &spec.resources, spec.llm, spec.web, Vec::new()).await?;
             Ok(SpawnedWorker { io: Box::new(w.io), process: Box::new(w.process) })
         })
     }
@@ -491,6 +542,17 @@ impl WorkerLauncher for SandboxLauncher {
 
     fn injects_llm_credentials(&self) -> bool {
         true
+    }
+
+    fn web_tools(&self) -> Option<crate::launcher::WebTools> {
+        let w = self.web.as_ref()?;
+        Some(crate::launcher::WebTools { provider: w.provider()?, fetch: w.fetch_enabled() })
+    }
+
+    fn revoke_web(&self, user_id: &str) {
+        if let Some(w) = &self.web {
+            w.revoke_user(user_id);
+        }
     }
 }
 

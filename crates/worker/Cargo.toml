@@ -26,6 +26,10 @@ hyper-util.workspace = true
 http-body-util.workspace = true
 bytes.workspace = true
 rsa.workspace = true
+url.workspace = true
+percent-encoding.workspace = true
+icu_normalizer.workspace = true
+icu_properties.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

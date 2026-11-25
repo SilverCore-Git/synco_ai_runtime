@@ -39,7 +39,7 @@ use crate::metrics::Counters;
 use crate::provider::{
     self, ChatMessage, ChatRequest, ChatToolCall, FinishReason, LlmAdapter, LlmError, LlmEvent, ToolDef, Usage,
 };
-use crate::tools::{self, Decision, Outcome, ToolCtx, ToolSpec};
+use crate::tools::{self, Decision, Outcome, ToolCtx, ToolSpec, web};
 use crate::transcript::{self, Message, PendingToolCall, Role, ToolCall, ToolStatus};
 
 /// Résultat d'un outil dont l'exécution a été interrompue (08 §5, texte exact de la spec).
@@ -218,6 +218,10 @@ struct Agent {
     shutdown: Option<ShutdownMsg>,
     lease_lost: Arc<AtomicBool>,
     last_metrics: Instant,
+    /// Socket du proxy `web` (`init.web.available`, à côté de `llm.sock`), fermé dès un `web_unavailable`.
+    web_socket: Option<PathBuf>,
+    /// Noms des membres pour la garde de fuite (`GET …/web-guard/names`, lus une fois par worker).
+    web_names: Option<Vec<String>>,
 }
 
 impl Agent {
@@ -232,6 +236,13 @@ impl Agent {
         let api = Api::new(link.clone(), &init.session_id);
         let em = Emitter::new(link.clone(), ck.clone(), &init.session_id, init.lease_epoch);
         let adapter: Arc<dyn LlmAdapter> = Arc::from(provider::adapter_for(init.llm.provider));
+        // Le socket `web` n'existe que si le superviseur l'a monté (bail `webAllowed`, `[web.search]` valide).
+        let web_socket = init
+            .web
+            .as_ref()
+            .filter(|w| w.available)
+            .and(socket.as_ref())
+            .map(|s| s.with_file_name(web::WEB_SOCKET_NAME));
         Self {
             link,
             api,
@@ -265,6 +276,8 @@ impl Agent {
             shutdown: None,
             lease_lost: Arc::new(AtomicBool::new(false)),
             last_metrics: Instant::now(),
+            web_socket,
+            web_names: None,
             init,
         }
     }
@@ -451,7 +464,96 @@ impl Agent {
             self.link.send(log("warn", "tools_unavailable", &[("status", json!(r.status))])).await?;
         }
         self.llm_tools = tools::llm_tools(&self.specs, &self.init.tool_policy, self.init.plan.map(|p| p.mode));
+        self.filter_web_tools();
         Ok(())
+    }
+
+    /// Outils web retirés de la liste donnée au modèle sans socket `web` (10 §4.2), et `web_fetch` seul
+    /// quand `[web.fetch] enabled = false`.
+    fn filter_web_tools(&mut self) {
+        let available = self.web_socket.is_some();
+        let fetch = self.init.web.as_ref().is_some_and(|w| w.fetch);
+        self.llm_tools.retain(|t| match t.name.as_str() {
+            web::WEB_SEARCH => available,
+            web::WEB_FETCH => available && fetch,
+            _ => true,
+        });
+    }
+
+    /// Socket `web` fermé (révocation, `feature.revoked`) : plus d'outil web pour ce worker.
+    fn close_web(&mut self) {
+        self.web_socket = None;
+        self.filter_web_tools();
+    }
+
+    /// Noms des membres (une fois par worker) ; `None` : lecture impossible.
+    async fn web_member_names(&mut self) -> Result<Option<Vec<String>>, Stop> {
+        if let Some(n) = &self.web_names {
+            return Ok(Some(n.clone()));
+        }
+        let r = self.api.conv(HttpMethod::Get, "/web-guard/names", None).await?;
+        if !r.ok() {
+            return Ok(None);
+        }
+        let names: Vec<String> = r
+            .body
+            .get("names")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .take(web::guard::NAMES_MAX)
+            .map(str::to_owned)
+            .collect();
+        self.web_names = Some(names.clone());
+        Ok(Some(names))
+    }
+
+    /// Garde de fuite et provenance d'un appel web `auto` (10 §4.4, PC93) : envoi, refus immédiat, ou
+    /// confirmation avec le texte exact (jamais de réécriture).
+    async fn web_gate(&mut self, idx: usize, tc: ToolCall, spec: ToolSpec) -> Result<Flow, Stop> {
+        let precheck = if self.web_socket.is_none()
+            || (tc.name == web::WEB_FETCH && !self.init.web.as_ref().is_some_and(|w| w.fetch))
+        {
+            web::Precheck::Refuse(web::UNAVAILABLE)
+        } else {
+            match (self.web_member_names().await?, web::guard::Guard::with_os_key()) {
+                (Some(names), Ok(mut g)) => {
+                    g.add_names(names.iter().map(String::as_str));
+                    let specs = &self.specs;
+                    let untrusted_of = |n: &str| specs.iter().find(|s| s.name == n).and_then(|s| s.untrusted.clone());
+                    let h = web::scan(&self.messages, &tc.id, untrusted_of, &mut g);
+                    web::precheck(&tc.name, &tc.arguments, &h, &g)
+                }
+                // Noms ou aléa indisponibles : la garde ne peut pas être faite, rien ne part.
+                _ => web::Precheck::Refuse(web::UNAVAILABLE),
+            }
+        };
+        match precheck {
+            web::Precheck::Send => self.execute_existing(&tc.id).await,
+            web::Precheck::Refuse(code) => {
+                self.close_call(&tc.id, &tc.name, ToolStatus::Error, json!({ "error": code })).await?;
+                self.persist("running", None).await?;
+                Ok(Flow::Continue)
+            }
+            web::Precheck::Confirm { reasons, spans, .. } => {
+                self.pending = Some(PendingToolCall {
+                    id: tc.id.clone(),
+                    name: tc.name.clone(),
+                    args: tc.arguments.clone(),
+                    category: spec.category.clone(),
+                    mutating: spec.mutating,
+                    interactive: false,
+                    plan_id: None,
+                    guard: Some(web::guard_plaintext(&reasons, &spans)),
+                });
+                let mid = self.messages.get(idx).map(|m| m.id.clone()).unwrap_or_default();
+                self.em.tool_call(&mid, &tc, false).await?;
+                self.persist("awaiting_confirmation", None).await?;
+                self.push("AI_AWAITING_CONFIRMATION").await;
+                Ok(Flow::Awaiting)
+            }
+        }
     }
 
     async fn fetch_inbox(&mut self) -> Result<(), Stop> {
@@ -876,7 +978,9 @@ impl Agent {
                     }
                     self.execute_existing(&p.id).await.map(Some)
                 } else {
-                    self.close_call(&p.id, &p.name, ToolStatus::Rejected, json!({ "error": REJECTED_BY_USER })).await?;
+                    // Refus d'un envoi web retenu par la garde : code machine (10 §4.4), le tour continue.
+                    let code = if web::is_web_tool(&p.name) { web::REFUSED_BY_USER } else { REJECTED_BY_USER };
+                    self.close_call(&p.id, &p.name, ToolStatus::Rejected, json!({ "error": code })).await?;
                     Ok(Some(Flow::Continue))
                 }
             }
@@ -1454,6 +1558,7 @@ impl Agent {
                     mutating: spec.mutating,
                     interactive: spec.interactive,
                     plan_id: None,
+                    guard: None,
                 });
                 let mid = self.messages.get(idx).map(|m| m.id.clone()).unwrap_or_default();
                 self.em.tool_call(&mid, &tc, spec.interactive).await?;
@@ -1461,6 +1566,10 @@ impl Agent {
                 self.push(push).await;
                 Ok(Flow::Awaiting)
             }
+            Decision::Auto if web::is_web_tool(&tc.name) => match spec {
+                Some(spec) => self.web_gate(idx, tc, spec).await,
+                None => Ok(Flow::Continue),
+            },
             Decision::Auto => self.execute_existing(&tc.id).await,
         }
     }
@@ -1496,6 +1605,11 @@ impl Agent {
         }
         self.em.tool_call(&mid, &executing, spec.interactive).await?;
         let mut outcome = self.run_tool(&spec, &tc.arguments).await;
+        if web::is_web_tool(&tc.name)
+            && matches!(&outcome, Outcome::Failed(v) if v.get("error").and_then(Value::as_str) == Some(web::UNAVAILABLE))
+        {
+            self.close_web();
+        }
         if let Outcome::NeedKey { kind, reference } = &outcome {
             self.link
                 .send(WorkerMsg::NeedKey(NeedKeyMsg { kind: (*kind).to_owned(), reference: reference.clone() }))
@@ -1520,6 +1634,7 @@ impl Agent {
                     mutating: spec.mutating,
                     interactive: spec.interactive,
                     plan_id: None,
+                    guard: None,
                 });
                 self.awaiting_key = Some(format!("{kind}:{reference}"));
                 let accepted = ToolCall { status: ToolStatus::Accepted, ..tc };
@@ -1546,6 +1661,12 @@ impl Agent {
     }
 
     async fn run_tool(&self, spec: &ToolSpec, args: &Value) -> Outcome {
+        if web::is_web_tool(&spec.name) {
+            // `web_fetch` désactivé par la configuration du runtime : jamais d'appel, même accepté.
+            let fetch_off = spec.name == web::WEB_FETCH && !self.init.web.as_ref().is_some_and(|w| w.fetch);
+            let socket = self.web_socket.as_deref().filter(|_| !fetch_off);
+            return web::execute(socket, &spec.name, args).await;
+        }
         let ctx =
             ToolCtx { api: &self.api, lease_epoch: self.init.lease_epoch, user_id: &self.init.user_id, plan: None };
         tools::execute(&ctx, spec, args).await
@@ -1742,6 +1863,10 @@ fn clear_pending(p: &PendingToolCall) -> Value {
     if let Some(plan_id) = &p.plan_id {
         crate::json_set(&mut v, "planId", json!(plan_id));
     }
+    // Motifs de la garde web (10 §4.4), en clair : le snapshot entier est chiffré sous `CK` (05 §5).
+    if let Some(guard) = &p.guard {
+        crate::json_set(&mut v, "guard", json!(guard));
+    }
     v
 }
 
@@ -1758,6 +1883,24 @@ mod tests {
 
     fn resp(status: u16, body: Value, relay: Option<&str>) -> ApiResponse {
         ApiResponse { status, body, relay_error: relay.map(str::to_owned), retry_after: None }
+    }
+
+    #[test]
+    fn snapshot_porte_la_garde_web() {
+        let p = PendingToolCall {
+            id: "call_1".into(),
+            name: "web_search".into(),
+            args: json!({ "query": "x" }),
+            category: "client".into(),
+            mutating: false,
+            interactive: false,
+            plan_id: None,
+            guard: Some(web::guard_plaintext(&["member_name"], &[(0, 4)])),
+        };
+        let v = clear_pending(&p);
+        let g: Value = serde_json::from_str(v["guard"].as_str().expect("guard")).expect("json");
+        assert_eq!(g, json!({ "v": 1, "reasons": ["member_name"], "spans": [{ "start": 0, "end": 4 }] }));
+        assert!(clear_pending(&PendingToolCall { guard: None, ..p }).get("guard").is_none());
     }
 
     #[test]

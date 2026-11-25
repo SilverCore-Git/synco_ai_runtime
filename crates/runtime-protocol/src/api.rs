@@ -209,6 +209,18 @@ pub struct LeaseResponse {
     pub lease_epoch: u64,
     /// Expiration (ISO 8601).
     pub expires_at: String,
+    /// Fonctionnalités de l'utilisateur de l'autorisation (L00i, 04 §4.2) ; absent = API antérieure.
+    #[serde(default)]
+    pub features: LeaseFeatures,
+}
+
+/// `features` du bail : absent ou illisible = tout refusé.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeaseFeatures {
+    /// `isFeatureAllowed(web_access)` autorisé **et** activé (12 §11.2).
+    #[serde(default)]
+    pub web_allowed: bool,
 }
 
 /// `GET /conversations/:sessionId` (seuls les champs que lit le superviseur).

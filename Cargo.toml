@@ -41,6 +41,12 @@ http-body-util = { version = "=0.1.5" }
 bytes = { version = "=1.12.1" }
 # Boucle d'agent (L07) : scellement RSA-OAEP des clés de salon créées par le worker.
 rsa = { version = "=0.10.0", default-features = false }
+# Outils web du worker (L15-web) : crates déjà présentes dans Cargo.lock (dépendances de `reqwest` / `url`),
+# devenues directes sans nouvelle crate dans l'arbre ; mêmes versions épinglées.
+url = { version = "=2.5.8", default-features = false, features = ["std"] }
+percent-encoding = { version = "=2.3.2" }
+icu_normalizer = { version = "=2.4.0", default-features = false, features = ["compiled_data"] }
+icu_properties = { version = "=2.4.0" }
 
 # Règles « zéro panique » de synco_cdn, communes aux crates du runtime (synco-e2ee garde sa copie) ;
 # assouplies pour les tests dans clippy.toml.

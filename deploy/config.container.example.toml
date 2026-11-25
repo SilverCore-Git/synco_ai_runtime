@@ -53,3 +53,14 @@ trust_proxy_hops = 1
 #
 # Passerelle Synco AI (Ollama) : aucune clé, le worker obtient un ticket sgt1 par l'API.
 # [llm.providers.gateway]
+#
+# Outils web de l'agent (docs/plan/10 §4.2) : service de recherche configuré ici, clé dans un secret monté.
+# [web.search]
+# provider = "staan"
+# base_url = "https://api.staan.ai/v2"
+# api_key_file = "/run/secrets/staan-api-key"
+#
+# [web]
+# Hôtes de Synco à refuser à web_fetch en plus de l'API, de l'URL publique et de la passerelle :
+# CDN, site / app web, keyguard (sous-domaines compris).
+# synco_hosts = ["cdn.example.com", "app.example.com", "keyguard.example.com"]

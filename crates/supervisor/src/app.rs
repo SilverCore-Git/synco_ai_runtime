@@ -98,6 +98,12 @@ async fn main_loop(rt: Arc<Runtime>) {
         if !wait_paired(&rt).await {
             break;
         }
+        // Service de recherche déclaré à l'API (10 §4.2, `PUT /web-provider`), pour « Mes données » et
+        // l'avertissement de `web_access` ; une API antérieure (404) n'empêche rien.
+        let provider = rt.launcher.web_tools().map(|w| w.provider);
+        if let Err(e) = rt.api.put_web_provider(provider).await {
+            tracing::warn!(code = e.code().unwrap_or("web_provider_not_declared"), "service de recherche non déclaré");
+        }
         match run_paired(&rt).await {
             StreamEnd::Shutdown => break,
             StreamEnd::Unpaired => {

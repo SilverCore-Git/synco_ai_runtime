@@ -1560,3 +1560,38 @@ Un commit par point, chacun avec un test qui échoue sans lui.
 - **Ouvert** : `agentMessageText` (conversion des mentions) et régénération des vecteurs avec le code réel (L15f) ;
   détection du rejeu `(planId, n)` non vectorisée (plusieurs messages) ; comportement actuel de l'app pour un auteur
   supprimé à relever (L15f).
+
+## L15-web : recherche et lecture web de l'agent (PC90 à PC96), 2026-11-25
+
+- **Source** : 10 §4.2 et §4.4, 09 §4.2, 06 §3 et §9, 04 §4.2 et §6, 12 §4.1 et §11 ; vecteurs `web-guard.json` ;
+  catalogue L14 §3.13 et §8.
+- **Fait** : proxy `web` du superviseur (`sandbox/web_proxy.rs`) : `web.sock` à côté de `llm.sock` (même montage),
+  seulement si le bail rend `features.webAllowed` et si `[web.search]` est valide ; `POST /search` et `POST /fetch`
+  stricts (corps ≤ 4 Kio) ; adaptateurs Staan (`/search/web`, `Authorization: Bearer`, marchés fr-fr / en-us /
+  de-de, sans fraîcheur), Mojeek (`/search?fmt=json&api_key=`, `since` dont une semaine calculée en AAAAMMJJ),
+  SearXNG (`format=json`, `time_range`), Brave (`X-Subscription-Token`, `freshness` pd/pw/pm/py) ; résultats
+  normalisés (10 au plus, 8 Kio) ; lecture : `https:443` / `http:80`, ni identifiants ni IP littérale, noms privés
+  et hôtes de Synco refusés, **toutes** les adresses résolues publiques (NAT64, 6to4, Teredo, IPv4 compatible,
+  site-local refusés en plus), adresse **épinglée** (client par saut, résolveur qui refuse tout autre nom),
+  5 redirections recontrôlées, en-têtes imposés, `Accept-Encoding: identity`, corps compressé refusé, types texte,
+  2 Mio, 10 s / 20 s ; quotas par fenêtre, par worker et par heure ; 2 connexions par worker, 8 pour le runtime ;
+  `feature.revoked` ferme le socket et coupe les requêtes en cours ; `PUT /web-provider` au démarrage. Worker
+  (`tools/web.rs`, `web/guard.rs`, `web/html.rs`) : arguments, quotas du tour et de la conversation (transcript),
+  garde de fuite (G5 HMAC tronqué, jetons rares, noms des membres lus une fois par `GET …/web-guard/names`),
+  provenance (URL des résultats de `web_search` et des messages de l'utilisateur, jamais les liens d'une page),
+  confirmation par `pendingToolCall.guard` (`gcm1:`, AAD `sessionId:<toolCallId>:web_guard`, clair JCS), refus
+  `web_refused_by_user`, conversion HTML → texte dans le bac à sable, outils retirés sans socket. Protocole :
+  `init.web`, `LeaseResponse.features`, `ApiEvent::FeatureRevoked`, `FieldName::WebGuard`.
+- **Vérifié** : `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test
+  --workspace` (363 réussis, 11 ignorés ; 334 réussis et 10 ignorés avant) ; vecteurs `web-guard.json` rejoués en entier (normalisation,
+  garde, garde d'URL, provenance dans le worker ; SSRF, réponses, corps de recherche dans le superviseur, résolveur
+  et transport simulés) ; aller-retour sur socket avec faux Staan et faux site locaux ; bac à sable sur l'hôte
+  (`sandbox-host.sh` : 12/12 dont `proxy_web_joint_depuis_le_bac_a_sable`, et `aller_retour_avec_bac_a_sable`).
+- **Écarts** : clé du service par `api_key_file` / `api_key_env` (comme les fournisseurs LLM) au lieu de `api_key`
+  en clair ; la garde est alimentée par **tous** les résultats d'outils étiquetés `untrusted` hors web (pas
+  seulement E2EE : tâches, noms…) ; enveloppe `<untrusted source="web">` (étiquette du manifeste), l'hôte est
+  donné dans le champ `source` du résultat ; passages d'une URL soulignés seulement si l'URL n'a rien d'encodé ;
+  un renouvellement de bail qui rendrait `webAllowed = false` ne ferme pas le socket (seul `feature.revoked` le
+  fait) ; noms des membres illisibles → aucune requête (`web_unavailable`) ; relais `cdn` (10 §4.3) non livré.
+- **Ouvert** : DPA et durée de conservation de Staan (PC91) ; journal du superviseur pour un renouvellement de bail
+  `webAllowed = false` ; relais `cdn` (étape 2).

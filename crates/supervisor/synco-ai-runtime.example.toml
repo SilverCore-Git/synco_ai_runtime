@@ -132,8 +132,15 @@ output_eur_per_mtok = 9.2
 # enabled = true
 #
 # [web]
-# Noms refusés par web_fetch en plus de l'API, de l'URL publique et de la passerelle (CDN, keyguard…).
-# synco_hosts = ["cdn.example.com", "keyguard.example.com"]
+# web_fetch refuse déjà l'API, l'URL publique du runtime, la passerelle, et toute adresse de l'hôte du
+# runtime (interfaces lues au démarrage). À LISTER ICI : les autres hôtes de votre déploiement Synco, qui ne
+# se déduisent pas de cette configuration et ne doivent jamais être lus par l'agent :
+#   - le CDN des fichiers chiffrés (synco_cdn),
+#   - le site et l'app web (et leurs variantes www.),
+#   - le keyguard,
+#   - tout service interne joignable par un nom public (supervision, administration).
+# Un nom refuse aussi ses sous-domaines.
+# synco_hosts = ["cdn.example.com", "app.example.com", "www.example.com", "keyguard.example.com"]
 #
 # [web.quotas]
 # search_per_window = 10   # par worker et par fenêtre de max_turn_duration_secs

@@ -344,8 +344,9 @@ pub fn ip_refused(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
             let [a, b, c, _] = v4.octets();
-            // 192.0.0.0/24 (affectations du protocole IETF) ; 169.254.169.254 est déjà en lien local.
-            a == 192 && b == 0 && c == 0
+            // 192.0.0.0/24 (affectations du protocole IETF), 192.88.99.0/24 (relais 6to4 anycast, déprécié) ;
+            // 169.254.169.254 est déjà en lien local.
+            (a == 192 && b == 0 && c == 0) || (a == 192 && b == 88 && c == 99)
         }
         IpAddr::V6(v6) => {
             let seg = v6.segments();
@@ -364,8 +365,61 @@ pub fn ip_refused(ip: IpAddr) -> bool {
                 || (s0 == 0x2001 && s1 == 0) // Teredo
                 || (s0 == 0x0100 && seg.get(1..4).is_some_and(|r| r.iter().all(|&x| x == 0))) // rejet 100::/64
                 || (seg.get(..6).is_some_and(|r| r.iter().all(|&x| x == 0)) && tail_v4) // ::a.b.c.d
+                // ::ffff:0:a.b.c.d (IPv4 traduite, SIIT) : refusée quelle que soit l'adresse IPv4 portée.
+                || (seg.get(..4).is_some_and(|r| r.iter().all(|&x| x == 0)) && seg.get(4) == Some(&0xffff) && seg.get(5) == Some(&0))
         }
     }
+}
+
+/// Adresses IPv4 locales de `/proc/net/fib_trie` (entrées `/32 host LOCAL`).
+#[must_use]
+pub fn parse_fib_trie_local(text: &str) -> BTreeSet<IpAddr> {
+    let mut out = BTreeSet::new();
+    let mut last: Option<Ipv4Addr> = None;
+    for line in text.lines() {
+        let t = line.trim_start_matches([' ', '|', '+', '-']).trim();
+        if line.contains("/32 host LOCAL") {
+            if let Some(ip) = last {
+                out.insert(IpAddr::V4(ip));
+            }
+        } else if let Ok(ip) = t.parse::<Ipv4Addr>() {
+            last = Some(ip);
+        }
+    }
+    out
+}
+
+/// Adresses IPv6 de `/proc/net/if_inet6` (premier champ : 32 chiffres hexadécimaux).
+#[must_use]
+pub fn parse_if_inet6(text: &str) -> BTreeSet<IpAddr> {
+    text.lines()
+        .filter_map(|l| l.split_whitespace().next())
+        .filter(|h| h.len() == 32)
+        .filter_map(|h| u128::from_str_radix(h, 16).ok())
+        .map(|v| IpAddr::V6(Ipv6Addr::from(v)))
+        .collect()
+}
+
+/// Adresses de l'hôte : interfaces (`/proc`) et adresses source des routes par défaut (socket UDP
+/// « connecté » sans envoi de paquet). Au mieux : une lecture impossible n'ajoute rien.
+#[must_use]
+pub fn host_local_ips() -> BTreeSet<IpAddr> {
+    let mut out = BTreeSet::new();
+    if let Ok(t) = std::fs::read_to_string("/proc/net/fib_trie") {
+        out.extend(parse_fib_trie_local(&t));
+    }
+    if let Ok(t) = std::fs::read_to_string("/proc/net/if_inet6") {
+        out.extend(parse_if_inet6(&t));
+    }
+    for (bind, probe) in [("0.0.0.0:0", "192.0.2.1:9"), ("[::]:0", "[2001:db8::1]:9")] {
+        if let Ok(sock) = std::net::UdpSocket::bind(bind)
+            && sock.connect(probe).is_ok()
+            && let Ok(a) = sock.local_addr()
+        {
+            out.insert(a.ip());
+        }
+    }
+    out
 }
 
 /// Toutes les adresses résolues doivent être publiques (une seule privée suffit à refuser).
@@ -606,6 +660,7 @@ pub async fn fetch(
     raw: &str,
     max: usize,
     synco_hosts: &BTreeSet<String>,
+    local_ips: &BTreeSet<IpAddr>,
     resolver: &dyn Resolver,
     transport: &dyn Transport,
 ) -> Result<Fetched, FetchError> {
@@ -622,7 +677,7 @@ pub async fn fetch(
             .await
             .map_err(|_| FetchError::Timeout)?
             .map_err(|()| FetchError::UrlRefused)?;
-        if !addrs_allowed(&addrs) {
+        if !addrs_allowed(&addrs) || addrs.iter().any(|a| local_ips.contains(a)) {
             return Err(FetchError::UrlRefused);
         }
         let pinned: Vec<SocketAddr> = addrs.iter().map(|a| SocketAddr::new(*a, port)).collect();
@@ -637,7 +692,12 @@ pub async fn fetch(
                 return Err(FetchError::RedirectLimit);
             }
             redirects = redirects.saturating_add(1);
-            url = url.join(&loc).map_err(|_| FetchError::UrlRefused)?;
+            let next = url.join(&loc).map_err(|_| FetchError::UrlRefused)?;
+            // Rétrogradation https → http refusée (le site ne peut pas faire lire en clair).
+            if url.scheme() == "https" && next.scheme() != "https" {
+                return Err(FetchError::UrlRefused);
+            }
+            url = next;
             continue;
         }
         if !(200..300).contains(&hop.status) {
@@ -753,11 +813,14 @@ pub fn provider_request(s: &SearchService, b: &SearchBody, today: i64) -> Result
                     q.append_pair("lb", &l.to_ascii_uppercase());
                 }
                 if let Some(f) = &b.freshness {
-                    let since = match f.as_str() {
-                        "week" => civil_yyyymmdd(today.saturating_sub(7)),
-                        other => other.to_owned(),
+                    // Toujours une date AAAAMMJJ (jamais un mot-clé que le service pourrait ignorer).
+                    let days = match f.as_str() {
+                        "day" => 1,
+                        "week" => 7,
+                        "month" => 30,
+                        _ => 365,
                     };
-                    q.append_pair("since", &since);
+                    q.append_pair("since", &civil_yyyymmdd(today.saturating_sub(days)));
                 }
                 if let Some(k) = &key {
                     q.append_pair("api_key", k);
@@ -934,6 +997,8 @@ pub struct WebProxy {
     search: Option<SearchService>,
     fetch_enabled: bool,
     synco_hosts: BTreeSet<String>,
+    /// Adresses de l'hôte du runtime, refusées par `web_fetch` même publiques (lues au démarrage).
+    local_ips: BTreeSet<IpAddr>,
     quotas: WebQuotas,
     search_http: reqwest::Client,
     resolver: Arc<dyn Resolver>,
@@ -982,13 +1047,26 @@ impl WebProxy {
         settings: &WebSettings,
         derived_synco_hosts: impl IntoIterator<Item = String>,
     ) -> Result<Arc<Self>, &'static str> {
-        Self::with_parts(
+        let proxy = Self::with_parts(
             search,
             settings,
             derived_synco_hosts,
             Arc::new(SystemResolver),
             Arc::new(ReqwestTransport::default()),
-        )
+        )?;
+        Ok(proxy.with_local_ips(host_local_ips()))
+    }
+
+    /// Même proxy, avec les adresses de l'hôte refusées (`Arc` encore unique : construction).
+    #[must_use]
+    pub fn with_local_ips(self: Arc<Self>, ips: BTreeSet<IpAddr>) -> Arc<Self> {
+        match Arc::try_unwrap(self) {
+            Ok(mut p) => {
+                p.local_ips = ips;
+                Arc::new(p)
+            }
+            Err(shared) => shared,
+        }
     }
 
     /// Proxy aux pièces injectées (tests : résolveur et transport simulés, aucun appel réseau).
@@ -1010,6 +1088,7 @@ impl WebProxy {
             search,
             fetch_enabled: settings.fetch.enabled,
             synco_hosts,
+            local_ips: BTreeSet::new(),
             quotas: settings.quotas,
             search_http: search_client(allow_private)?,
             resolver,
@@ -1233,7 +1312,9 @@ impl WebProxy {
 
     async fn do_fetch(&self, body: &FetchBody) -> Response {
         let max = body.max_bytes.unwrap_or(MAX_FETCH_BYTES);
-        match fetch(&body.url, max, &self.synco_hosts, self.resolver.as_ref(), self.transport.as_ref()).await {
+        match fetch(&body.url, max, &self.synco_hosts, &self.local_ips, self.resolver.as_ref(), self.transport.as_ref())
+            .await
+        {
             Ok(f) => {
                 tracing::debug!(code = "web_fetch_done", bytes = f.body.len(), "page relayée");
                 let mut out = Response::builder()

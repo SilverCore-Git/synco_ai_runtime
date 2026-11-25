@@ -90,7 +90,7 @@ async fn ssrf_des_vecteurs() {
         }
         let synco: BTreeSet<String> =
             case["syncoHosts"].as_array().into_iter().flatten().filter_map(|h| h.as_str().map(str::to_owned)).collect();
-        let r = fetch(url, MAX_FETCH_BYTES, &synco, &resolver, &transport).await;
+        let r = fetch(url, MAX_FETCH_BYTES, &synco, &BTreeSet::new(), &resolver, &transport).await;
         let got = match &r {
             Ok(_) => "ok",
             Err(e) => e.code(),
@@ -122,7 +122,15 @@ async fn reponses_des_vecteurs() {
                 size,
             ),
         );
-        let r = fetch("https://www.exemple.org/doc", MAX_FETCH_BYTES, &BTreeSet::new(), &resolver, &transport).await;
+        let r = fetch(
+            "https://www.exemple.org/doc",
+            MAX_FETCH_BYTES,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &resolver,
+            &transport,
+        )
+        .await;
         let got = match &r {
             Ok(f) => {
                 assert_eq!(f.body.len(), size, "{name}");
@@ -158,6 +166,9 @@ fn adresses_supplementaires_refusees() {
         "0.0.0.0",
         "255.255.255.255",
         "::ffff:127.0.0.1",
+        "::ffff:0:a00:5", // IPv4 traduite (SIIT) vers 10.0.0.5, check-secrets:allow (adresse refusée par le test)
+        "::ffff:0:5db8:d70e", // IPv4 traduite d'une adresse publique : refusée aussi
+        "192.88.99.1",
     ] {
         assert!(ip_refused(bad.parse().expect("ip")), "{bad}");
     }
@@ -239,6 +250,16 @@ fn requetes_des_adaptateurs() {
         "https://www.mojeek.com/search?q=m%C3%A9t%C3%A9o+paris&fmt=json&t=5&lb=FR&since=20261118&api_key=k"
     );
     assert_eq!(r.auth_header, None);
+    // Mojeek : toute fraîcheur devient une date (jour, mois de 30 jours, année de 365 jours).
+    for (f, since) in [("day", "20261124"), ("month", "20261026"), ("year", "20251125")] {
+        let r = provider_request(
+            &service(SearchProvider::Mojeek, "https://www.mojeek.com", Some("k")),
+            &body("x y", Some(f), None, None),
+            today,
+        )
+        .expect("mojeek");
+        assert!(r.url.query_pairs().any(|(k, v)| k == "since" && v == since), "{f}: {}", r.url);
+    }
     let r =
         provider_request(&service(SearchProvider::Searxng, "https://searx.example", None), &b, today).expect("searxng");
     assert_eq!(
@@ -563,4 +584,37 @@ async fn revocation_pendant_le_lancement() {
         let (status, _, v, _) = post(&socket, "/search", &json!({ "query": "x" })).await;
         assert_eq!((status, v["error"].as_str()), (400, Some("web_bad_request")), "{name} servi");
     }
+}
+
+#[tokio::test]
+async fn redirection_vers_http_et_adresses_de_l_hote_refusees() {
+    let mut resolver = FakeResolver::default();
+    resolver.0.insert("www.exemple.org".into(), vec!["93.184.215.14".parse().expect("ip")]);
+    let mut transport = FakeTransport::default();
+    transport
+        .responses
+        .insert("https://www.exemple.org/a".into(), (302, Some("http://www.exemple.org/b".into()), None, None, 0));
+    transport
+        .responses
+        .insert("http://www.exemple.org/c".into(), (302, Some("https://www.exemple.org/d".into()), None, None, 0));
+    let none: BTreeSet<String> = BTreeSet::new();
+    let no_ip: BTreeSet<IpAddr> = BTreeSet::new();
+    let r = fetch("https://www.exemple.org/a", MAX_FETCH_BYTES, &none, &no_ip, &resolver, &transport).await;
+    assert_eq!(r.err(), Some(FetchError::UrlRefused), "https → http refusé");
+    let r = fetch("http://www.exemple.org/c", MAX_FETCH_BYTES, &none, &no_ip, &resolver, &transport).await;
+    assert!(r.is_ok(), "http → https admis");
+    // Adresse publique de l'hôte du runtime : refusée.
+    let local: BTreeSet<IpAddr> = ["93.184.215.14".parse().expect("ip")].into_iter().collect();
+    let r = fetch("https://www.exemple.org/d", MAX_FETCH_BYTES, &none, &local, &resolver, &transport).await;
+    assert_eq!(r.err(), Some(FetchError::UrlRefused));
+}
+
+#[test]
+fn adresses_de_l_hote_lues_dans_proc() {
+    let fib = "Main:\n  +-- 0.0.0.0/0 3 0 5\n     |-- 0.0.0.0\n        /0 universe UNICAST\n     |-- 203.0.113.7\n        /32 host LOCAL\n     |-- 203.0.113.255\n        /32 link BROADCAST\n";
+    let v4 = parse_fib_trie_local(fib);
+    assert_eq!(v4.into_iter().collect::<Vec<_>>(), vec!["203.0.113.7".parse::<IpAddr>().expect("ip")]);
+    let v6 = parse_if_inet6("20010db8000000000000000000000001 02 40 00 80 eth0\nbad\n");
+    assert!(v6.contains(&"2001:db8::1".parse::<IpAddr>().expect("ip")));
+    assert_eq!(v6.len(), 1);
 }

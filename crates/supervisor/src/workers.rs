@@ -336,6 +336,15 @@ pub const CREATE_THREAD_PATH: &str = "/api/runtime/v1/e2ee/threads";
 /// Salons créés en attente de leur clé, au plus, par worker.
 const MAX_PENDING_CREATED_THREADS: usize = 64;
 
+/// Renouvellement du bail relayé pour le worker (10 §4.2, 12 §11.2) : une réponse 2xx qui ne rend pas
+/// `features.webAllowed = true` (faux, absent ou illisible) retire l'accès web, comme `feature.revoked`.
+fn lease_withdraws_web(method: pipe::HttpMethod, path: &str, session: &str, status: u16, body: &[u8]) -> bool {
+    method == pipe::HttpMethod::Post
+        && (200..300).contains(&status)
+        && path.strip_prefix("/api/runtime/v1/conversations/").and_then(|r| r.strip_suffix("/lease")) == Some(session)
+        && !serde_json::from_slice::<runtime_protocol::api::LeaseResponse>(body).is_ok_and(|l| l.features.web_allowed)
+}
+
 async fn note_created_thread(rt: &Arc<Runtime>, session: &str, epoch: u64, body: &[u8]) {
     let id = serde_json::from_slice::<serde_json::Value>(body)
         .ok()
@@ -845,11 +854,16 @@ async fn relay(
     let rt = Arc::clone(rt);
     let tx = tx.clone();
     let session = session.to_owned();
+    let user_id = user_id.to_owned();
     tokio::spawn(async move {
         let _permit = permit;
         let result = rt.api.signed(Method::from(req.method), &req.path, body, auth.as_deref()).await;
         let parts = match result {
             Ok(r) => {
+                // Bail renouvelé sans `webAllowed` : socket `web` fermé AVANT que le worker voie la réponse.
+                if lease_withdraws_web(req.method, &req.path, &session, r.status, &r.body) {
+                    rt.launcher.revoke_web(&user_id);
+                }
                 // Salon créé par CE worker (réponse 2xx de l'API, id lu dans la réponse) : seule
                 // source admise pour `created_key`. Noté AVANT que le worker voie la réponse.
                 if req.method == pipe::HttpMethod::Post
@@ -903,6 +917,24 @@ async fn relay(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renouvellement_du_bail_sans_acces_web() {
+        let p = "/api/runtime/v1/conversations/s1/lease";
+        let post = pipe::HttpMethod::Post;
+        let on = br#"{"leaseEpoch":2,"expiresAt":"x","features":{"webAllowed":true}}"#;
+        let off = br#"{"leaseEpoch":2,"expiresAt":"x","features":{"webAllowed":false}}"#;
+        let old = br#"{"leaseEpoch":2,"expiresAt":"x"}"#;
+        assert!(!lease_withdraws_web(post, p, "s1", 200, on));
+        assert!(lease_withdraws_web(post, p, "s1", 200, off));
+        assert!(lease_withdraws_web(post, p, "s1", 200, old));
+        assert!(lease_withdraws_web(post, p, "s1", 200, b"illisible"));
+        // Échec du renouvellement, autre conversation, autre route, autre méthode : rien.
+        assert!(!lease_withdraws_web(post, p, "s1", 409, off));
+        assert!(!lease_withdraws_web(post, p, "s2", 200, off));
+        assert!(!lease_withdraws_web(post, "/api/runtime/v1/conversations/s1/status", "s1", 200, off));
+        assert!(!lease_withdraws_web(pipe::HttpMethod::Delete, p, "s1", 200, off));
+    }
 
     #[test]
     fn chemins_du_worker() {

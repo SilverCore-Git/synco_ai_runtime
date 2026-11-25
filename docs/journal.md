@@ -1591,7 +1591,9 @@ Un commit par point, chacun avec un test qui échoue sans lui.
   en clair ; la garde est alimentée par **tous** les résultats d'outils étiquetés `untrusted` hors web (pas
   seulement E2EE : tâches, noms…) ; enveloppe `<untrusted source="web">` (étiquette du manifeste), l'hôte est
   donné dans le champ `source` du résultat ; passages d'une URL soulignés seulement si l'URL n'a rien d'encodé ;
-  un renouvellement de bail qui rendrait `webAllowed = false` ne ferme pas le socket (seul `feature.revoked` le
-  fait) ; noms des membres illisibles → aucune requête (`web_unavailable`) ; relais `cdn` (10 §4.3) non livré.
-- **Ouvert** : DPA et durée de conservation de Staan (PC91) ; journal du superviseur pour un renouvellement de bail
-  `webAllowed = false` ; relais `cdn` (étape 2).
+  noms des membres illisibles → aucune requête (`web_unavailable`) ; relais `cdn` (10 §4.3) non livré.
+- **Reprise (2026-11-25)** : un renouvellement de bail relayé pour le worker qui ne rend pas `webAllowed = true`
+  (faux, absent, illisible) ferme le socket `web` de l'utilisateur avant que le worker voie la réponse
+  (`workers.rs`, `lease_withdraws_web`), comme `feature.revoked` (10 §4.2). `cargo test --workspace` : 364 réussis,
+  11 ignorés.
+- **Ouvert** : DPA et durée de conservation de Staan (PC91) ; relais `cdn` (étape 2).

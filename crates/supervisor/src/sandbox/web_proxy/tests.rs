@@ -351,6 +351,14 @@ async fn post(socket: &std::path::Path, path: &str, body: &Value) -> (u16, Optio
     (status, final_url, serde_json::from_slice(&bytes).unwrap_or(Value::Null), bytes)
 }
 
+/// Attente bornée : un test qui attend une fermeture (socket, tâche) échoue en 5 s au lieu de bloquer.
+async fn within<T>(what: &str, fut: impl std::future::Future<Output = T>) -> T {
+    match tokio::time::timeout(Duration::from_secs(5), fut).await {
+        Ok(v) => v,
+        Err(_) => panic!("délai de 5 s dépassé : {what}"),
+    }
+}
+
 type Seen = Arc<Mutex<Vec<HashMap<String, String>>>>;
 
 fn headers_of(h: &axum::http::HeaderMap) -> HashMap<String, String> {
@@ -460,7 +468,7 @@ async fn aller_retour_recherche_lecture_et_revocation() {
     // Révocation : socket fermé, connexions suivantes refusées.
     assert_eq!(proxy.revoke_user("autre"), 0);
     assert_eq!(proxy.revoke_user("u1"), 1);
-    let _ = tokio::time::timeout(Duration::from_secs(5), task).await;
+    within("la révocation n'a pas arrêté le socket", task).await.expect("tâche");
     assert!(tokio::net::UnixStream::connect(&socket).await.is_err());
 }
 
@@ -527,8 +535,7 @@ async fn des_workers_inactifs_ne_gardent_aucune_place() {
     let listener = tokio::net::UnixListener::bind(&socket).expect("socket");
     let _task = proxy.serve(listener, socket.clone(), WebRoute::new("u9", 60));
     let page = json!({ "url": "https://www.exemple.org/x" });
-    let served =
-        tokio::time::timeout(Duration::from_secs(5), post(&socket, "/fetch", &page)).await.expect("servi à temps");
+    let served = within("le 9e worker n'est pas servi", post(&socket, "/fetch", &page)).await;
     assert_eq!(served.0, 200, "le 9e worker est servi");
 }
 
@@ -552,7 +559,9 @@ async fn sans_place_la_connexion_recoit_429() {
         held.push(tokio::net::UnixStream::connect(&socket).await.expect("connexion"));
     }
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let (status, _, v, _) = post(&socket, "/search", &json!({ "query": "meteo" })).await;
+    let (status, _, v, _) =
+        within("connexion sans place ni refusée ni fermée", post(&socket, "/search", &json!({ "query": "meteo" })))
+            .await;
     assert_eq!((status, v["error"].as_str()), (429, Some("web_quota")));
     drop(held);
 }
@@ -573,7 +582,9 @@ async fn revocation_pendant_le_lancement() {
     assert_eq!(proxy.revoke_user("u1"), 0, "aucun socket encore enregistré");
     let socket = dir.path().join("a.sock");
     let listener = tokio::net::UnixListener::bind(&socket).expect("socket");
-    proxy.serve(listener, socket.clone(), granted).await.expect("tâche");
+    within("socket servi malgré la révocation pendant le lancement", proxy.serve(listener, socket.clone(), granted))
+        .await
+        .expect("tâche");
     assert!(!socket.exists(), "socket retiré");
     assert!(tokio::net::UnixStream::connect(&socket).await.is_err(), "aucune connexion possible");
     // Accès relu APRÈS la révocation (réactivé) : servi ; un autre utilisateur n'est pas touché.
@@ -581,7 +592,8 @@ async fn revocation_pendant_le_lancement() {
         let socket = dir.path().join(name);
         let listener = tokio::net::UnixListener::bind(&socket).expect("socket");
         let _task = proxy.serve(listener, socket.clone(), WebRoute::new(user, 60));
-        let (status, _, v, _) = post(&socket, "/search", &json!({ "query": "x" })).await;
+        let (status, _, v, _) =
+            within("socket réactivé non servi", post(&socket, "/search", &json!({ "query": "x" }))).await;
         assert_eq!((status, v["error"].as_str()), (400, Some("web_bad_request")), "{name} servi");
     }
 }

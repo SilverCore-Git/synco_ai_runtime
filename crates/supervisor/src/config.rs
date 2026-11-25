@@ -55,6 +55,9 @@ pub struct Config {
     /// Plans d'action de l'agent (12 §8.7).
     #[serde(default)]
     pub plan: PlanSettings,
+    /// Outils web de l'agent (10 §4.2, L15-web) : service de recherche, lecture de pages, quotas.
+    #[serde(default)]
+    pub web: crate::sandbox::web_proxy::WebSettings,
     /// Journal : `error`, `warn`, `info`, `debug`.
     #[serde(default = "default_log_level")]
     pub log_level: String,
@@ -454,6 +457,7 @@ impl Config {
             return Err(invalid("plan.concurrency : de 1 à 8"));
         }
         self.limits.validate()?;
+        crate::sandbox::web_proxy::validate_settings(&self.web).map_err(invalid)?;
         for (id, p) in &self.llm.providers {
             if !KNOWN_PROVIDERS.contains(&id.as_str()) {
                 return Err(invalid(format!("llm.providers.{id} : fournisseur inconnu")));
@@ -519,6 +523,28 @@ impl Config {
             out.push("dev_allow_http_public_url : réservé au développement".to_owned());
         }
         out
+    }
+
+    /// Hôtes de Synco déduits de la configuration, refusés par `web_fetch` (10 §4.2) : API, URL publique
+    /// du runtime, passerelle configurée.
+    #[must_use]
+    pub fn derived_synco_hosts(&self) -> Vec<String> {
+        let gateway = self.llm.providers.get("gateway").and_then(|p| p.base_url.clone());
+        [Some(self.api_url.clone()), Some(self.public_url.clone()), gateway]
+            .into_iter()
+            .flatten()
+            .filter_map(|u| reqwest::Url::parse(&u).ok()?.host_str().map(str::to_owned))
+            .collect()
+    }
+
+    /// Proxy `web` (10 §4.2) : clé du service lue ici (jamais journalisée ni transmise au worker).
+    pub fn web_proxy(&self) -> Result<std::sync::Arc<crate::sandbox::web_proxy::WebProxy>> {
+        let search = match &self.web.search {
+            Some(s) => Some(crate::sandbox::web_proxy::SearchService::from_settings(s).map_err(invalid)?),
+            None => None,
+        };
+        crate::sandbox::web_proxy::WebProxy::new(search, &self.web, self.derived_synco_hosts())
+            .map_err(|e| invalid(e.to_owned()))
     }
 
     /// Lit les secrets des fournisseurs (D1). Jamais journalisés.
@@ -619,6 +645,26 @@ allowed_origins = ["https://app.example.com"]
                 Config::parse(&format!("{MIN}\n[plan]\nconcurrency = {bad}\n")).is_err(),
                 "{bad} refusé au démarrage"
             );
+        }
+    }
+
+    #[test]
+    fn section_web() {
+        let ok = format!(
+            "{MIN}\n[web.search]\nprovider = \"staan\"\nbase_url = \"https://api.staan.ai/v2\"\napi_key_env = \"SYNCO_TEST_STAAN\"\n"
+        );
+        let c = Config::parse(&ok).unwrap();
+        assert!(c.web.fetch.enabled, "lecture permise par défaut");
+        assert!(c.derived_synco_hosts().contains(&"api.example.com".to_owned()));
+        for bad in [
+            "[web.search]\nprovider = \"google\"\nbase_url = \"https://x.example\"\napi_key_env = \"K\"\n",
+            "[web.search]\nprovider = \"staan\"\nbase_url = \"http://api.staan.ai/v2\"\napi_key_env = \"K\"\n",
+            "[web.search]\nprovider = \"staan\"\nbase_url = \"https://api.staan.ai/v2\"\n",
+            "[web.search]\nprovider = \"brave\"\nbase_url = \"https://localhost\"\napi_key_env = \"K\"\n",
+            "[web.quotas]\nfetch_per_hour = 0\n",
+            "[web]\napi_key = \"en-clair\"\n",
+        ] {
+            assert!(Config::parse(&format!("{MIN}\n{bad}")).is_err(), "{bad}");
         }
     }
 

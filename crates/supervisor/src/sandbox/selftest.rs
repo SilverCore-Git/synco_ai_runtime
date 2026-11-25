@@ -56,6 +56,7 @@ pub fn run_in_sandbox(stream: UnixStream, test: &str, args: &[String], llm_socke
         "seccomp_kill" => seccomp_kill(stream),
         "write_fs" => write_fs(stream),
         "proxy" => proxy(stream, args, llm_socket),
+        "web" => web(stream, args, llm_socket),
         _ => finish(stream, true, "unknown_test"),
     }
 }
@@ -272,6 +273,38 @@ fn proxy(stream: UnixStream, args: &[String], llm_socket: Option<PathBuf>) -> u8
     if method == "POST" {
         req = req.header("content-type", "application/json").body(br#"{"model":"m","stream":true}"#.to_vec());
     }
+    let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+        Ok(rt) => rt,
+        Err(e) => return finish(stream, true, &format!("runtime:{}", errno_of(&e))),
+    };
+    let res = rt.block_on(async move {
+        let mut resp = synco_ai_runtime_worker::llm::send(&socket, req).await?;
+        let mut body = Vec::new();
+        while let Some(chunk) = resp.next_chunk().await? {
+            body.extend_from_slice(&chunk);
+        }
+        Ok::<_, synco_ai_runtime_worker::llm::LlmError>((resp.status(), body))
+    });
+    match res {
+        Ok((status, body)) => {
+            let text = String::from_utf8_lossy(&body).replace('\n', "\\n");
+            finish(stream, false, &format!("status={status} body={text}"))
+        }
+        Err(e) => finish(stream, false, &format!("error={e}")),
+    }
+}
+
+/// Requête au proxy `web` (`web.sock`, à côté de `llm.sock`) : `args[0]` = chemin, `args[1]` = corps JSON.
+/// Ligne : `blocked status=<n> body=<corps>`, ou `blocked error=…` sans socket.
+fn web(stream: UnixStream, args: &[String], llm_socket: Option<PathBuf>) -> u8 {
+    let Some(socket) = llm_socket.map(|s| s.with_file_name(super::web_proxy::WEB_SOCKET_NAME)) else {
+        return finish(stream, false, "no_web_socket");
+    };
+    let path = args.first().map_or("/search", String::as_str);
+    let body = args.get(1).cloned().unwrap_or_default().into_bytes();
+    let req = synco_ai_runtime_worker::llm::LlmRequest::new("POST", path)
+        .header("content-type", "application/json")
+        .body(body);
     let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
         Ok(rt) => rt,
         Err(e) => return finish(stream, true, &format!("runtime:{}", errno_of(&e))),

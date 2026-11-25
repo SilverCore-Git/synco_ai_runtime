@@ -257,7 +257,8 @@ pub async fn execute(args: Args) -> Result<()> {
             let secrets = config.read_provider_secrets()?;
             let proxy =
                 LlmProxy::new(secrets, RuntimeQuota::from_config(&config)).map_err(|e| Error::Config(e.into()))?;
-            let launcher = build_launcher(&config, args.insecure_no_sandbox, proxy).await?;
+            let launcher =
+                build_launcher(&config, args.insecure_no_sandbox, proxy).await?.with_web(config.web_proxy()?);
             tracing::info!(code = "worker_launcher", launcher = launcher_name(&launcher), "lanceur de workers prêt");
             let (keys, created) = seal::load_or_create(&config.state_dir, &backend)?;
             if created {

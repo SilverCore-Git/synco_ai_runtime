@@ -48,6 +48,18 @@ pub struct WorkerSpec {
     /// Fournisseur LLM joignable par le worker, **seul** accès réseau (mandataire du superviseur,
     /// docs/plan/10 §4). L'API n'est jointe que par `signed_request` (06 §4). `None` : aucun.
     pub llm: Option<LlmRoute>,
+    /// Proxy `web` (10 §4.2) : seulement si le bail rend `webAllowed` et si le lanceur a un service de
+    /// recherche ; le socket est posé à côté de celui du mandataire LLM (exige `llm`).
+    pub web: Option<crate::sandbox::web_proxy::WebRoute>,
+}
+
+/// Outils web d'un lanceur (section `[web.search]` valide).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WebTools {
+    /// Service déclaré (`staan`, `mojeek`, `searxng`, `brave`).
+    pub provider: &'static str,
+    /// `web_fetch` permis.
+    pub fetch: bool,
 }
 
 /// Route du mandataire LLM d'un worker. Aucun secret : la clé du fournisseur reste dans le
@@ -179,6 +191,14 @@ pub trait WorkerLauncher: Send + Sync + 'static {
     fn injects_llm_credentials(&self) -> bool {
         false
     }
+
+    /// Outils web du lanceur (proxy `web` configuré), `None` : aucun outil web.
+    fn web_tools(&self) -> Option<WebTools> {
+        None
+    }
+
+    /// `feature.revoked` (`web_access`) : ferme le socket `web` des workers de `user_id`.
+    fn revoke_web(&self, _user_id: &str) {}
 }
 
 /// Bouchon de L05 : le worker de `synco-ai-runtime-worker` dans une tâche, sans isolation.

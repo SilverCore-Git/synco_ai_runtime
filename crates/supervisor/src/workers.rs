@@ -117,7 +117,7 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
         let st = rt.state.lock().await;
         rt.build_init(&st, session_id, &user_id, &auth_id, lease.lease_epoch)
     };
-    let (init, keys, llm) = match prepared {
+    let (mut init, keys, llm) = match prepared {
         Ok(p) => p,
         Err(code) => {
             if code != "init_unavailable" {
@@ -145,7 +145,23 @@ pub async fn launch(rt: &Arc<Runtime>, session_id: &str) -> Result<(), &'static 
             cpu_max_percent: l.worker_cpu_percent,
             pids_max: l.worker_pids_max,
         },
+        web: None,
         llm,
+    };
+    // Outils web (10 §4.2, 12 §11.2) : bail `webAllowed` ET proxy configuré ET route LLM (le socket vit à
+    // côté de `llm.sock`). Sinon pas de socket et le worker ne montre aucun outil web.
+    let web = rt.launcher.web_tools().filter(|_| lease.features.web_allowed && spec.llm.is_some());
+    init.web = Some(runtime_protocol::pipe::WebInit {
+        available: web.is_some(),
+        provider: web.map(|w| w.provider.to_owned()),
+        fetch: web.is_some_and(|w| w.fetch),
+    });
+    let spec = WorkerSpec {
+        web: web.map(|_| crate::sandbox::web_proxy::WebRoute {
+            user_id: user_id.clone(),
+            window_secs: init.limits.max_turn_duration_secs,
+        }),
+        ..spec
     };
     let spawned = match rt.launcher.spawn(spec).await {
         Ok(s) => s,

@@ -490,6 +490,12 @@ impl ApiClient {
         .await
     }
 
+    /// `PUT /web-provider` (S, L00i, 10 §4.2) : service de recherche configuré, ou `null`.
+    pub async fn put_web_provider(&self, provider: Option<&str>) -> Result<(), ApiError> {
+        let body = serde_json::to_vec(&serde_json::json!({ "provider": provider })).map_err(|_| ApiError::Decode)?;
+        self.no_content(Method::Put, "/api/runtime/v1/web-provider", Some(body), None).await
+    }
+
     /// `POST /metrics` (≤ 1 / min).
     pub async fn metrics(&self, workers: usize, queued: usize) -> Result<(), ApiError> {
         let body = serde_json::to_vec(&serde_json::json!({

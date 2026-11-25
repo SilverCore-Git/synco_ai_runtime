@@ -83,6 +83,7 @@ fn init() -> Init {
         tool_policy: BTreeMap::new(),
         log_level: "info".into(),
         plan: None,
+        web: None,
     }
 }
 
@@ -173,7 +174,8 @@ cgroup_root = "/sys/fs/cgroup/synco-l06-inexistant"
 async fn mode_insecure_processus_separe() {
     let run = run_dir();
     let l = launcher(&run, Mode::Insecure, no_proxy()).await;
-    let spec = WorkerSpec { session_id: "sess1".into(), user_id: "user1".into(), resources: limits(), llm: None };
+    let spec =
+        WorkerSpec { session_id: "sess1".into(), user_id: "user1".into(), resources: limits(), llm: None, web: None };
     let args = synco_ai_runtime::sandbox::ChildArgs { payload: "worker".into(), ..Default::default() };
     let started = Instant::now();
     let mut w = l.spawn_child(args, &spec.resources, None, vec![]).await.unwrap();
@@ -368,6 +370,64 @@ async fn mandataire_llm_injecte_la_cle() {
     assert!(none.line.contains("no_llm_socket"), "{}", none.line);
 }
 
+/// Proxy `web` (L15-web, 10 §4.2) : le worker isolé joint `web.sock` (monté avec `llm.sock`) ; la
+/// recherche part vers le service configuré (faux SearXNG local) ; sans route web, aucun socket ; une
+/// révocation ferme le socket.
+#[tokio::test]
+#[ignore = "noyau : espaces de noms, cgroup délégué (tests/sandbox-host.sh)"]
+async fn proxy_web_joint_depuis_le_bac_a_sable() {
+    use synco_ai_runtime::sandbox::web_proxy::{SearchProvider, SearchService, WebProxy, WebRoute, WebSettings};
+    let app = axum::Router::new().route(
+        "/search",
+        axum::routing::get(|| async {
+            axum::Json(
+                serde_json::json!({ "results": [{ "title": "T", "url": "https://e.example/", "content": "C" }] }),
+            )
+        }),
+    );
+    let tcp = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = tcp.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(tcp, app).await.unwrap() });
+    let search = SearchService {
+        provider: SearchProvider::Searxng,
+        base_url: format!("http://{addr}"),
+        key: None,
+        allow_private_host: true,
+    };
+    let web = WebProxy::new(Some(search), &WebSettings::default(), Vec::new()).unwrap();
+    let run = run_dir();
+    let l = launcher(&run, Mode::Sandboxed, no_proxy()).await.with_web(Arc::clone(&web));
+    let llm = Some(LlmRoute {
+        provider: "openai".into(),
+        base_url: "https://api.example.com/v1".into(),
+        budget: LlmBudget::default(),
+    });
+    let case = |route: Option<WebRoute>| {
+        let l = &l;
+        let llm = llm.clone();
+        async move {
+            let args = synco_ai_runtime::sandbox::ChildArgs {
+                payload: "selftest".into(),
+                test: Some("web".into()),
+                test_args: vec!["/search".into(), r#"{"query":"meteo"}"#.into()],
+                ..Default::default()
+            };
+            let RawWorker { mut io, mut process } =
+                l.spawn_child_with_web(args, &limits(), llm, route, vec![]).await.unwrap();
+            let mut line = String::new();
+            let _ = tokio::time::timeout(Duration::from_secs(30), io.read_to_string(&mut line)).await;
+            let _ = process.wait().await;
+            line
+        }
+    };
+    let ok = case(Some(WebRoute { user_id: "u1".into(), window_secs: 1800 })).await;
+    assert!(ok.contains("status=200") && ok.contains("https://e.example/"), "{ok}");
+    let none = case(None).await;
+    assert!(none.contains("error="), "sans route web, aucun socket : {none}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(web.revoke_user("u1"), 0, "socket déjà fermé avec son worker");
+}
+
 /// Vrai worker (bouchon de protocole) par `WorkerLauncher::spawn` : PID 1 de son espace de noms,
 /// protocole complet ; mesure du coût (lancement → `ready`, mémoire d'un worker vide).
 #[tokio::test]
@@ -418,7 +478,8 @@ async fn vrai_worker_et_cout() {
     let (rss, pss, nprocs) = rss_pss[n / 2];
     eprintln!("COUT processus par worker : {nprocs} (assistant + worker) ; RSS {rss} Kio, PSS {pss} Kio");
     // Interface du superviseur.
-    let spec = WorkerSpec { session_id: "sess1".into(), user_id: "user1".into(), resources: limits(), llm: None };
+    let spec =
+        WorkerSpec { session_id: "sess1".into(), user_id: "user1".into(), resources: limits(), llm: None, web: None };
     let mut spawned = l.spawn(spec).await.unwrap();
     pipe::write_json(&mut spawned.io, &SupervisorMsg::Init(Box::new(init()))).await.unwrap();
     assert!(matches!(read_worker(&mut spawned.io).await, WorkerMsg::Ready(_)));

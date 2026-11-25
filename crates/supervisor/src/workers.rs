@@ -338,10 +338,14 @@ const MAX_PENDING_CREATED_THREADS: usize = 64;
 
 /// Renouvellement du bail relayé pour le worker (10 §4.2, 12 §11.2) : une réponse 2xx qui ne rend pas
 /// `features.webAllowed = true` (faux, absent ou illisible) retire l'accès web, comme `feature.revoked`.
+/// Le chemin est comparé comme Express le route : requête retirée, barres obliques finales ignorées,
+/// casse ignorée (`/LEASE/?x=1` atteint la même route).
 fn lease_withdraws_web(method: pipe::HttpMethod, path: &str, session: &str, status: u16, body: &[u8]) -> bool {
+    let bare = path.split(['?', '#']).next().unwrap_or_default().trim_end_matches('/').to_ascii_lowercase();
+    let expected = format!("/api/runtime/v1/conversations/{session}/lease").to_ascii_lowercase();
     method == pipe::HttpMethod::Post
         && (200..300).contains(&status)
-        && path.strip_prefix("/api/runtime/v1/conversations/").and_then(|r| r.strip_suffix("/lease")) == Some(session)
+        && bare == expected
         && !serde_json::from_slice::<runtime_protocol::api::LeaseResponse>(body).is_ok_and(|l| l.features.web_allowed)
 }
 
@@ -934,6 +938,17 @@ mod tests {
         assert!(!lease_withdraws_web(post, p, "s2", 200, off));
         assert!(!lease_withdraws_web(post, "/api/runtime/v1/conversations/s1/status", "s1", 200, off));
         assert!(!lease_withdraws_web(pipe::HttpMethod::Delete, p, "s1", 200, off));
+        // Variantes routées par l'API vers le même bail : barre finale, requête, casse.
+        for v in [
+            "/api/runtime/v1/conversations/s1/lease/",
+            "/api/runtime/v1/conversations/s1/lease?x=1",
+            "/api/runtime/v1/conversations/s1/lease//?x=1",
+            "/API/Runtime/V1/conversations/s1/LEASE",
+        ] {
+            assert!(lease_withdraws_web(post, v, "s1", 200, off), "{v}");
+            assert!(!lease_withdraws_web(post, v, "s1", 200, on), "{v}");
+        }
+        assert!(!lease_withdraws_web(post, "/api/runtime/v1/conversations/s1/lease/x", "s1", 200, off));
     }
 
     #[test]

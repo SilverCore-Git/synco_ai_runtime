@@ -1863,6 +1863,10 @@ fn clear_pending(p: &PendingToolCall) -> Value {
     if let Some(plan_id) = &p.plan_id {
         crate::json_set(&mut v, "planId", json!(plan_id));
     }
+    // Motifs de la garde web (10 §4.4), en clair : le snapshot entier est chiffré sous `CK` (05 §5).
+    if let Some(guard) = &p.guard {
+        crate::json_set(&mut v, "guard", json!(guard));
+    }
     v
 }
 
@@ -1879,6 +1883,24 @@ mod tests {
 
     fn resp(status: u16, body: Value, relay: Option<&str>) -> ApiResponse {
         ApiResponse { status, body, relay_error: relay.map(str::to_owned), retry_after: None }
+    }
+
+    #[test]
+    fn snapshot_porte_la_garde_web() {
+        let p = PendingToolCall {
+            id: "call_1".into(),
+            name: "web_search".into(),
+            args: json!({ "query": "x" }),
+            category: "client".into(),
+            mutating: false,
+            interactive: false,
+            plan_id: None,
+            guard: Some(web::guard_plaintext(&["member_name"], &[(0, 4)])),
+        };
+        let v = clear_pending(&p);
+        let g: Value = serde_json::from_str(v["guard"].as_str().expect("guard")).expect("json");
+        assert_eq!(g, json!({ "v": 1, "reasons": ["member_name"], "spans": [{ "start": 0, "end": 4 }] }));
+        assert!(clear_pending(&PendingToolCall { guard: None, ..p }).get("guard").is_none());
     }
 
     #[test]

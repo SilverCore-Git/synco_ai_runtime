@@ -85,6 +85,9 @@ pub enum FieldName {
     ArtifactMeta,
     /// `artifact` : contenu d'un artefact (13 §3) ; le `messageId` de l'AAD est l'`artifactId`.
     Artifact,
+    /// `web_guard` : motifs de confirmation d'un appel web (10 §4.4) ; le `messageId` de l'AAD est le
+    /// `toolCallId`.
+    WebGuard,
 }
 
 impl FieldName {
@@ -116,6 +119,7 @@ impl FieldName {
             Self::Plan => Ok("plan".to_owned()),
             Self::ArtifactMeta => Ok("artifact_meta".to_owned()),
             Self::Artifact => Ok("artifact".to_owned()),
+            Self::WebGuard => Ok("web_guard".to_owned()),
             Self::PlanResult(k) | Self::PlanAgentResult(k) => {
                 check_uint(*k)?;
                 if *k == 0 {

@@ -41,9 +41,12 @@ seccompiler.workspace = true
 libc.workspace = true
 bytes.workspace = true
 http-body-util.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
 tokio-tungstenite = { workspace = true, features = ["connect"] }
 
 [lints]

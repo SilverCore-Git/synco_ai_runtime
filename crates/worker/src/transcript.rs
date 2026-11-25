@@ -207,6 +207,9 @@ pub struct PendingToolCall {
     /// `planId` d'un `propose_actions` (12 §3.4) : `args` est alors le plan, chiffré avec l'AAD du plan
     /// (`sessionId:planId:plan`) au lieu de celle de `pendingToolCall.args`.
     pub plan_id: Option<String>,
+    /// `web_search` / `web_fetch` retenu par la garde de fuite ou la provenance (10 §4.4) : clair
+    /// `JCS({ v: 1, reasons, spans })`, chiffré à l'écriture (`gcm1:`, AAD `sessionId:<toolCallId>:web_guard`).
+    pub guard: Option<String>,
 }
 
 impl core::fmt::Debug for PendingToolCall {
@@ -388,6 +391,9 @@ pub fn encode_pending(ck: &SymmetricKey, sid: &str, p: &PendingToolCall) -> Resu
     if let Some(plan_id) = &p.plan_id {
         crate::json_set(&mut out, "planId", json!(plan_id));
     }
+    if let Some(g) = &p.guard {
+        crate::json_set(&mut out, "guard", enc_text(ck, sid, &p.id, &FieldName::WebGuard, g)?);
+    }
     Ok(out)
 }
 
@@ -420,6 +426,13 @@ pub fn decode_pending(ck: &SymmetricKey, sid: &str, v: &Value, mode: Read) -> Op
         category: o.get("category").and_then(Value::as_str).unwrap_or("server").to_owned(),
         mutating: o.get("mutating").and_then(Value::as_bool).unwrap_or(true),
         interactive: o.get("interactive").and_then(Value::as_bool).unwrap_or(false),
+        // Rétrocompatible : sans `guard`, l'appel se confirme comme avant ; illisible = ignoré (le worker
+        // n'en a pas besoin pour exécuter un appel accepté).
+        guard: o
+            .get("guard")
+            .and_then(is_gcm1)
+            .and_then(|g| o.get("id")?.as_str().map(|id| (id, g)))
+            .and_then(|(id, g)| session::decrypt_field(ck, sid, id, "web_guard", g).ok()),
     })
 }
 
@@ -504,10 +517,38 @@ mod tests {
             mutating: true,
             interactive: false,
             plan_id: None,
+            guard: None,
         };
         let e = encode_pending(&ck, SID, &p).unwrap();
         assert!(e["args"].as_str().unwrap().starts_with("gcm1:"));
         assert_eq!(decode_pending(&ck, SID, &e, Read::Strict), Some(p));
+    }
+
+    #[test]
+    fn appel_web_en_attente_avec_garde() {
+        let ck = SymmetricKey::from_bytes([0xdd; 32]);
+        let clear = r#"{"reasons":["member_name"],"spans":[{"end":12,"start":0}],"v":1}"#;
+        let p = PendingToolCall {
+            id: "call_9".into(),
+            name: "web_search".into(),
+            args: json!({ "query": "claire martin" }),
+            category: "client".into(),
+            mutating: false,
+            interactive: false,
+            plan_id: None,
+            guard: Some(clear.into()),
+        };
+        let e = encode_pending(&ck, SID, &p).unwrap();
+        let g = e["guard"].as_str().unwrap();
+        assert!(g.starts_with("gcm1:") && !e.to_string().contains("member_name"));
+        // AAD `sessionId:<toolCallId>:web_guard` (lue par l'app).
+        assert_eq!(session::decrypt_field(&ck, SID, "call_9", "web_guard", g).unwrap(), clear);
+        assert!(session::decrypt_field(&ck, SID, "call_8", "web_guard", g).is_err());
+        assert_eq!(decode_pending(&ck, SID, &e, Read::Strict), Some(p.clone()));
+        // Ancien format sans `guard` : lu comme avant.
+        let mut old = e.clone();
+        old.as_object_mut().unwrap().remove("guard");
+        assert_eq!(decode_pending(&ck, SID, &old, Read::Strict), Some(PendingToolCall { guard: None, ..p }));
     }
 
     #[test]
@@ -524,6 +565,7 @@ mod tests {
             mutating: true,
             interactive: false,
             plan_id: Some(plan_id.into()),
+            guard: None,
         };
         let e = encode_pending(&ck, SID, &p).unwrap();
         assert_eq!(e["planId"], plan_id, "planId en clair");

@@ -1985,6 +1985,8 @@ dependencies = [
  "ed25519-dalek",
  "futures-util",
  "http-body-util",
+ "hyper",
+ "hyper-util",
  "landlock",
  "libc",
  "reqwest",
@@ -2004,6 +2006,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "url",
  "zeroize",
 ]
 
@@ -2015,12 +2018,16 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "icu_normalizer",
+ "icu_properties",
+ "percent-encoding",
  "rsa",
  "runtime-protocol",
  "serde_json",
  "synco-e2ee",
  "tempfile",
  "tokio",
+ "url",
  "zeroize",
 ]
 

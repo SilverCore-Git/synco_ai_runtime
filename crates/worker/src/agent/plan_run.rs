@@ -306,6 +306,7 @@ impl Agent {
             mutating: true,
             interactive: false,
             plan_id: Some(plan_id.clone()),
+            guard: None,
         });
         let mid = self.messages.get(idx).map(|m| m.id.clone()).unwrap_or_default();
         self.em.tool_call(&mid, &tc, false).await?;

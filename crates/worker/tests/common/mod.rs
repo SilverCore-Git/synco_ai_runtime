@@ -139,6 +139,8 @@ pub struct ApiState {
     pub artifact_requests: u32,
     /// `POST …/agent-result` reçus.
     pub agent_posts: Vec<Value>,
+    /// Noms rendus par `GET …/web-guard/names` (garde de fuite, L15-web) ; `None` : `403 feature_not_allowed`.
+    pub web_names: Option<Vec<String>>,
     /// `POST …/agent-result` reçus avec des abandons (PC74) ou menant à un plan terminal.
     pub abandon_posts: Vec<Value>,
     /// Appels d'exécution avec `plan` reçus (corps complet).
@@ -517,6 +519,10 @@ impl FakeApi {
                 (201, json!({ "id": id }))
             }),
             ("GET", ["tools"]) => self.with(|st| (200, st.tools.clone())),
+            ("GET", ["web-guard", "names"]) => self.with(|st| match &st.web_names {
+                Some(n) => (200, json!({ "names": n })),
+                None => err(403, "feature_not_allowed"),
+            }),
             ("POST", ["plans"]) => self.with(|st| {
                 if !lease_ok(st) {
                     return err(409, "lease_conflict");
@@ -892,6 +898,7 @@ pub fn init(epoch: u64) -> Init {
         tool_policy: BTreeMap::new(),
         log_level: "info".into(),
         plan: None,
+        web: None,
     }
 }
 
